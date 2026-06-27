@@ -106,6 +106,20 @@ Before every commit, merge, or push to origin/main, AI coding agents must run `n
 See:
 [docs/agent/AI_GIT_WORKFLOW_POLICY.md](docs/agent/AI_GIT_WORKFLOW_POLICY.md)
 
+## Project Design Documents
+
+Canonical project contracts live under `docs/`:
+
+- Agent workflow: [docs/agent/AI_AGENT_RULES.md](docs/agent/AI_AGENT_RULES.md), [docs/agent/AGENT_TASK_TEMPLATE.md](docs/agent/AGENT_TASK_TEMPLATE.md), [docs/agent/CODE_REVIEW_CHECKLIST.md](docs/agent/CODE_REVIEW_CHECKLIST.md)
+- Product: [docs/product/PROJECT_BRIEF.md](docs/product/PROJECT_BRIEF.md)
+- Architecture: [docs/architecture/ARCHITECTURE_PRINCIPLES.md](docs/architecture/ARCHITECTURE_PRINCIPLES.md), [docs/architecture/DOMAIN_MODEL.md](docs/architecture/DOMAIN_MODEL.md), [docs/architecture/EVENT_MODEL.md](docs/architecture/EVENT_MODEL.md), [docs/architecture/PROJECTION_MODEL.md](docs/architecture/PROJECTION_MODEL.md), [docs/architecture/COMMAND_EVENT_TRACEABILITY.md](docs/architecture/COMMAND_EVENT_TRACEABILITY.md)
+- Rules: [docs/rules/RULES_PROFILE_FIBA.md](docs/rules/RULES_PROFILE_FIBA.md), [docs/rules/RULES_ENGINE_SPEC.md](docs/rules/RULES_ENGINE_SPEC.md)
+- Security: [docs/security/USER_ROLES_AND_PERMISSIONS.md](docs/security/USER_ROLES_AND_PERMISSIONS.md)
+- API: [docs/api/API_CONTRACTS.md](docs/api/API_CONTRACTS.md), [docs/api/SOCKET_CONTRACTS.md](docs/api/SOCKET_CONTRACTS.md)
+- Database: [docs/database/DATABASE_SCHEMA.md](docs/database/DATABASE_SCHEMA.md)
+- UI: [docs/ui/UI_DASHBOARDS.md](docs/ui/UI_DASHBOARDS.md), [docs/ui/KEYBOARD_SHORTCUTS.md](docs/ui/KEYBOARD_SHORTCUTS.md)
+- Quality: [docs/quality/TEST_PLAN.md](docs/quality/TEST_PLAN.md), [docs/quality/ACCEPTANCE_CRITERIA.md](docs/quality/ACCEPTANCE_CRITERIA.md), [docs/quality/EDGE_CASES.md](docs/quality/EDGE_CASES.md)
+
 API health endpoint:
 
 ```http

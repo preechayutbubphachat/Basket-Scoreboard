@@ -19,6 +19,10 @@ npm run migrate:status
 
 The AI must not push to origin/main if `npm run build` fails.
 
+## Required Project Document Pre-Flight
+
+Before coding, read the task-relevant canonical project documents under `docs/`, including agent, product, architecture, rules, security, API, database, UI, and quality contracts when the task touches those areas.
+
 ## Required Guard Search
 
 Before merge or push to main, run:
