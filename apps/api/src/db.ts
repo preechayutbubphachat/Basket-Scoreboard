@@ -9,6 +9,7 @@ export function createDatabasePool() {
     password: process.env.DATABASE_PASSWORD ?? "",
     waitForConnections: true,
     connectionLimit: 10,
+    multipleStatements: true,
     namedPlaceholders: true
   });
 }
