@@ -7,6 +7,7 @@ import {
   discoverMigrationFiles,
   getMigrationStatus,
   runMigrations,
+  resolveMigrationsDir,
   type MigrationConnection
 } from "../../apps/api/src/migrations";
 import { calculateSha256 } from "../../apps/api/src/migrations/checksum";
@@ -165,6 +166,12 @@ describe("migration runner", () => {
   it("handles a missing migrations folder safely", async () => {
     await expect(discoverMigrationFiles(join(tmpdir(), crypto.randomUUID()))).rejects.toThrow(
       "Migrations directory not found"
+    );
+  });
+
+  it("resolves the repository migrations directory from an app workspace", () => {
+    expect(resolveMigrationsDir(join(process.cwd(), "apps", "api"))).toBe(
+      join(process.cwd(), "migrations")
     );
   });
 

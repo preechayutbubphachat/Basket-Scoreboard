@@ -3,6 +3,7 @@ export {
   MariaDbMigrationConnection,
   discoverMigrationFiles,
   getDefaultMigrationsDir,
+  resolveMigrationsDir,
   runMigrations,
   schemaMigrationsSql,
   type AppliedMigration,
