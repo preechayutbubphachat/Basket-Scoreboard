@@ -100,6 +100,36 @@ API health endpoint:
 GET /api/v1/health
 ```
 
+## Plesk Deployment
+
+Plesk Node.js settings:
+
+- Application Root: project root
+- Document Root: `apps/web/dist`
+- Application Startup File: `app.js`
+
+Before Restart App:
+
+```bash
+npm install
+npm run build
+```
+
+Health check:
+
+```text
+https://scoreboard.ob-gate.com/api/v1/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "service": "basket-scoreboard-api"
+}
+```
+
 ## Next Safe Step
 
 Phase 2 should wire the MariaDB-backed match event store MVP into the API:

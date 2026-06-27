@@ -1,12 +1,12 @@
-import { createDatabasePool } from "./db";
+import { createDatabasePool } from "./db.js";
 import {
   MariaDbMigrationConnection,
   buildDbCheckReport,
   getDefaultMigrationsDir,
   getMigrationStatus,
   runMigrations
-} from "./migrations";
-import { getDatabaseConfig, hasDatabaseEnv } from "./config/env";
+} from "./migrations/index.js";
+import { getDatabaseConfig, hasDatabaseEnv } from "./config/env.js";
 
 const command = process.argv[2] ?? "run";
 

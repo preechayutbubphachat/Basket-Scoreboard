@@ -4,7 +4,7 @@ import {
   type AppliedMigration,
   type DatabaseHealth,
   type MigrationConnection
-} from "./migrationRunner";
+} from "./migrationRunner.js";
 
 export type MigrationStatus = {
   database: DatabaseHealth;

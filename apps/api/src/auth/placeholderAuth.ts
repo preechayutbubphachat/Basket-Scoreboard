@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { apiError } from "../errors/apiErrors";
+import { apiError } from "../errors/apiErrors.js";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
 
 export type AuthenticatedUser = {

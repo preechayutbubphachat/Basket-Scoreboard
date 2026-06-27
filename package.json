@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @basket-scoreboard/api",
     "dev:web": "npm run dev --workspace @basket-scoreboard/web",
+    "start": "node app.js",
     "build": "tsc -b && npm run build --workspace @basket-scoreboard/web",
     "test": "vitest run",
     "test:db": "vitest run tests/db",

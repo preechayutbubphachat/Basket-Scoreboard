@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
-import { calculateSha256 } from "./checksum";
+import { calculateSha256 } from "./checksum.js";
 
 export type MigrationFile = {
   filename: string;

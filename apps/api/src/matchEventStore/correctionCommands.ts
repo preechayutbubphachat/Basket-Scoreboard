@@ -9,8 +9,8 @@ import type {
   ScoreAddedPayload
 } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
-import type { AuthenticatedUser } from "../auth/placeholderAuth";
-import { insertAuditLog } from "./auditRepository";
+import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
+import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,
   findDuplicateCommand,
@@ -20,13 +20,13 @@ import {
   listMatchEvents,
   lockMatchStream,
   updateScoreboardProjection
-} from "./repositories";
+} from "./repositories.js";
 import {
   advanceProjectionSeq,
   applyScoreAdded,
   applyScoreRemovedByCorrection,
   type ScoreboardProjection
-} from "./projection";
+} from "./projection.js";
 
 type CorrectionCommand =
   | CorrectionRequestCommand

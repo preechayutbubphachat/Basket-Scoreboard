@@ -1,5 +1,5 @@
-import type { DatabaseConfig } from "../config/env";
-import type { MigrationStatus } from "./migrationStatus";
+import type { DatabaseConfig } from "../config/env.js";
+import type { MigrationStatus } from "./migrationStatus.js";
 
 export type DbCheckReport = {
   database: {

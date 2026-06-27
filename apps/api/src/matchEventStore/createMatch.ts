@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool } from "mysql2/promise";
 import type { CreateMatchRequest } from "@basket-scoreboard/api-contracts";
-import { createInitialScoreboardProjection } from "./projection";
+import { createInitialScoreboardProjection } from "./projection.js";
 
 export async function createMatch(options: {
   pool: Pool;

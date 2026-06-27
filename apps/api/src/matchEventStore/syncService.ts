@@ -1,5 +1,5 @@
 import type { Pool } from "mysql2/promise";
-import { getCurrentSeq, getScoreboardProjection, listMatchEvents } from "./repositories";
+import { getCurrentSeq, getScoreboardProjection, listMatchEvents } from "./repositories.js";
 
 export async function getMatchSync(options: {
   pool: Pool;
