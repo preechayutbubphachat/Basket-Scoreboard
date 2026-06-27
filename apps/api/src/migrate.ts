@@ -1,51 +1,64 @@
-import { readdir, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { createDatabasePool } from "./db";
+import {
+  MariaDbMigrationConnection,
+  buildDbCheckReport,
+  getDefaultMigrationsDir,
+  getMigrationStatus,
+  runMigrations
+} from "./migrations";
+import { getDatabaseConfig, hasDatabaseEnv } from "./config/env";
 
-const migrationsDir = resolve(process.cwd(), "../../migrations");
+const command = process.argv[2] ?? "run";
 
-async function runMigrations() {
+async function withMigrationConnection<T>(
+  callback: (connection: MariaDbMigrationConnection) => Promise<T>
+) {
   const pool = createDatabasePool();
   const connection = await pool.getConnection();
+  const migrationConnection = new MariaDbMigrationConnection(connection);
 
   try {
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        filename VARCHAR(255) PRIMARY KEY,
-        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    const files = (await readdir(migrationsDir))
-      .filter((file) => file.endsWith(".sql"))
-      .sort();
-
-    for (const file of files) {
-      const [rows] = await connection.query(
-        "SELECT filename FROM schema_migrations WHERE filename = ?",
-        [file]
-      );
-
-      if (Array.isArray(rows) && rows.length > 0) {
-        continue;
-      }
-
-      const sql = await readFile(resolve(migrationsDir, file), "utf8");
-      await connection.beginTransaction();
-      await connection.query(sql);
-      await connection.query(
-        "INSERT INTO schema_migrations (filename) VALUES (?)",
-        [file]
-      );
-      await connection.commit();
-    }
-  } catch (error) {
-    await connection.rollback();
-    throw error;
+    return await callback(migrationConnection);
   } finally {
     connection.release();
     await pool.end();
   }
 }
 
-await runMigrations();
+if (!hasDatabaseEnv()) {
+  throw new Error(
+    "Database environment is not fully configured. Set DATABASE_HOST, DATABASE_PORT, DATABASE_NAME, DATABASE_USER, and DATABASE_PASSWORD."
+  );
+}
+
+if (command === "status") {
+  const status = await withMigrationConnection((connection) =>
+    getMigrationStatus({ migrationsDir: getDefaultMigrationsDir(), connection })
+  );
+
+  console.log(JSON.stringify(status, null, 2));
+} else if (command === "check") {
+  const status = await withMigrationConnection((connection) =>
+    getMigrationStatus({ migrationsDir: getDefaultMigrationsDir(), connection })
+  );
+  const report = buildDbCheckReport({
+    config: getDatabaseConfig(),
+    status
+  });
+
+  console.log(JSON.stringify(report, null, 2));
+} else if (command === "run") {
+  const result = await withMigrationConnection((connection) =>
+    runMigrations({
+      migrationsDir: getDefaultMigrationsDir(),
+      connection,
+      logger: console
+    })
+  );
+
+  if (result.failed) {
+    process.exitCode = 1;
+  }
+} else {
+  throw new Error(`Unknown migration command: ${command}`);
+}

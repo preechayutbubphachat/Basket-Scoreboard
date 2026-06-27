@@ -12,8 +12,11 @@
     "dev:web": "npm run dev --workspace @basket-scoreboard/web",
     "build": "tsc -b && npm run build --workspace @basket-scoreboard/web",
     "test": "vitest run",
+    "test:db": "vitest run tests/db",
     "lint": "tsc -b --pretty false",
-    "migrate": "npm run migrate --workspace @basket-scoreboard/api"
+    "db:check": "npm run db:check --workspace @basket-scoreboard/api",
+    "migrate": "npm run migrate --workspace @basket-scoreboard/api",
+    "migrate:status": "npm run migrate:status --workspace @basket-scoreboard/api"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
