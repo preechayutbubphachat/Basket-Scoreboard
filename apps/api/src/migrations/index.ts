@@ -13,3 +13,4 @@ export {
 } from "./migrationRunner";
 export { calculateSha256 } from "./checksum";
 export { getMigrationStatus, type MigrationStatus } from "./migrationStatus";
+export { buildDbCheckReport, type DbCheckReport } from "./dbVerification";
