@@ -1,4 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { apiError } from "../errors/apiErrors";
+import { reasonCodes } from "@basket-scoreboard/api-contracts";
 
 export type AuthenticatedUser = {
   userId: string;
@@ -19,8 +21,7 @@ export async function placeholderAuth(request: FastifyRequest) {
 export async function requireScorerOrAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!request.user || !["ADMIN", "SCORER"].includes(request.user.role)) {
     await reply.status(403).send({
-      error: "FORBIDDEN",
-      message: "Scorer or admin role required"
+      ...apiError(reasonCodes.FORBIDDEN, "Scorer or admin role required")
     });
   }
 }

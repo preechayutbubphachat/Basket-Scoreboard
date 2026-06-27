@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { healthResponseSchema } from "@basket-scoreboard/api-contracts";
 import type { Pool } from "mysql2/promise";
 import { createDatabasePool } from "./db";
+import { fastifyErrorHandler } from "./errors/apiErrors";
 import { registerMatchRoutes } from "./routes/matchRoutes";
 
 export function buildApiApp(options: { pool?: Pool } = {}) {
@@ -9,6 +10,8 @@ export function buildApiApp(options: { pool?: Pool } = {}) {
     logger: false
   });
   const pool = options.pool ?? createDatabasePool();
+
+  app.setErrorHandler(fastifyErrorHandler);
 
   app.get("/api/v1/health", async () => {
     return healthResponseSchema.parse({

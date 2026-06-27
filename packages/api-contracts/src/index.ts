@@ -7,6 +7,27 @@ export const healthResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
+export const reasonCodes = {
+  VALIDATION_ERROR: "VALIDATION_ERROR",
+  UNAUTHORIZED: "UNAUTHORIZED",
+  FORBIDDEN: "FORBIDDEN",
+  MATCH_NOT_FOUND: "MATCH_NOT_FOUND",
+  INVALID_EXPECTED_SEQ: "INVALID_EXPECTED_SEQ",
+  DUPLICATE_COMMAND: "DUPLICATE_COMMAND",
+  DB_CONSTRAINT_ERROR: "DB_CONSTRAINT_ERROR",
+  INTERNAL_ERROR: "INTERNAL_ERROR"
+} as const;
+
+export type ReasonCode = (typeof reasonCodes)[keyof typeof reasonCodes];
+
+export type ApiErrorResponse = {
+  error: {
+    reasonCode: ReasonCode;
+    message: string;
+    details?: unknown;
+  };
+};
+
 export const createMatchSchema = z.object({
   matchCode: z.string().min(1).max(80).nullable().optional(),
   tournamentId: z.string().uuid().nullable().optional(),

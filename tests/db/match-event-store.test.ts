@@ -11,6 +11,8 @@ import {
   getDefaultMigrationsDir,
   runMigrations
 } from "../../apps/api/src/migrations";
+import { insertAuditLog, listAuditLogsForMatch } from "../../apps/api/src/matchEventStore/auditRepository";
+import { correctionEventTypes } from "../../packages/event-model/src";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
@@ -198,6 +200,110 @@ describeDb("match event store MVP", () => {
       await app.close();
       await pool.end();
     }
+  });
+
+  it("returns safe errors and supports audit log insert/list without exposing audit data publicly", async () => {
+    const { app, pool } = await buildMigratedApp();
+
+    try {
+      const invalidCreateResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        payload: { matchCode: "" }
+      });
+      expect(invalidCreateResponse.statusCode).toBe(400);
+      expect(invalidCreateResponse.json()).toMatchObject({
+        error: {
+          reasonCode: "VALIDATION_ERROR",
+          message: "Request validation failed"
+        }
+      });
+      expect(JSON.stringify(invalidCreateResponse.json())).not.toContain("DATABASE_PASSWORD");
+
+      const matchCode = `M-${randomUUID()}`;
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        payload: {
+          matchCode,
+          ruleProfileId: "FIBA_2024"
+        }
+      });
+      const created = createResponse.json<{ matchId: string; currentSeq: number }>();
+
+      const mismatchCommand = scoreCommand(randomUUID(), 0);
+      const mismatchResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        payload: mismatchCommand
+      });
+      expect(mismatchResponse.json()).toMatchObject({
+        status: "REJECTED",
+        reasonCode: "MATCH_NOT_FOUND"
+      });
+
+      const duplicateMatchCodeResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        payload: {
+          matchCode,
+          ruleProfileId: "FIBA_2024"
+        }
+      });
+      expect(duplicateMatchCodeResponse.statusCode).toBe(409);
+      expect(duplicateMatchCodeResponse.json()).toMatchObject({
+        error: { reasonCode: "DB_CONSTRAINT_ERROR" }
+      });
+
+      const connection = await pool.getConnection();
+      try {
+        const audit = await insertAuditLog(connection, {
+          entityType: "match",
+          entityId: created.matchId,
+          action: "CORRECTION_READY_EVENT_REVIEWED",
+          actorUserId: "00000000-0000-4000-8000-000000000001",
+          actorRole: "SCORER",
+          deviceId: "placeholder-device",
+          oldValue: null,
+          newValue: { status: "reviewed" },
+          reason: "audit foundation test",
+          correlationId: randomUUID(),
+          causationId: null,
+          eventSeq: null
+        });
+        const auditLogs = await listAuditLogsForMatch(connection, created.matchId);
+        expect(auditLogs).toEqual([
+          expect.objectContaining({
+            auditId: audit.auditId,
+            entityId: created.matchId,
+            action: "CORRECTION_READY_EVENT_REVIEWED",
+            reason: "audit foundation test"
+          })
+        ]);
+      } finally {
+        connection.release();
+      }
+
+      const publicResponse = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${created.matchId}/scoreboard`
+      });
+      expect(JSON.stringify(publicResponse.json())).not.toContain("audit foundation test");
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+});
+
+describe("correction event type foundation", () => {
+  it("defines correction event types without destructive correction behavior", () => {
+    expect(correctionEventTypes).toEqual([
+      "CORRECTION_REQUESTED",
+      "CORRECTION_APPLIED",
+      "CORRECTION_REJECTED",
+      "SCORE_REMOVED_BY_CORRECTION"
+    ]);
   });
 });
 
