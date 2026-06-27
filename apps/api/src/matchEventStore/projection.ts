@@ -43,3 +43,28 @@ export function applyScoreAdded(
     currentSeq: seqNo
   };
 }
+
+export function applyScoreRemovedByCorrection(
+  projection: ScoreboardProjection,
+  payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    homeScore:
+      payload.teamSide === "HOME" ? Math.max(0, projection.homeScore - payload.points) : projection.homeScore,
+    awayScore:
+      payload.teamSide === "AWAY" ? Math.max(0, projection.awayScore - payload.points) : projection.awayScore,
+    currentSeq: seqNo
+  };
+}
+
+export function advanceProjectionSeq(
+  projection: ScoreboardProjection,
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    currentSeq: seqNo
+  };
+}
