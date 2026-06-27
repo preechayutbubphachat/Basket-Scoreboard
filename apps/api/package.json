@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "migrate": "tsx src/migrate.ts"
+    "migrate": "tsx src/migrate.ts run",
+    "migrate:status": "tsx src/migrate.ts status"
   },
   "dependencies": {
     "@basket-scoreboard/api-contracts": "file:../../packages/api-contracts",
