@@ -1,11 +1,12 @@
 import { createDatabasePool } from "./db";
 import {
   MariaDbMigrationConnection,
+  buildDbCheckReport,
   getDefaultMigrationsDir,
   getMigrationStatus,
   runMigrations
 } from "./migrations";
-import { hasDatabaseEnv } from "./config/env";
+import { getDatabaseConfig, hasDatabaseEnv } from "./config/env";
 
 const command = process.argv[2] ?? "run";
 
@@ -36,6 +37,16 @@ if (command === "status") {
   );
 
   console.log(JSON.stringify(status, null, 2));
+} else if (command === "check") {
+  const status = await withMigrationConnection((connection) =>
+    getMigrationStatus({ migrationsDir: getDefaultMigrationsDir(), connection })
+  );
+  const report = buildDbCheckReport({
+    config: getDatabaseConfig(),
+    status
+  });
+
+  console.log(JSON.stringify(report, null, 2));
 } else if (command === "run") {
   const result = await withMigrationConnection((connection) =>
     runMigrations({
