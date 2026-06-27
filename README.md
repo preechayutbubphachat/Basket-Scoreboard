@@ -54,8 +54,11 @@ npm run dev
 npm run dev:web
 npm run build
 npm run test
+npm run migrate:status
 npm run migrate
 ```
+
+Migration commands require `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, and `DATABASE_PASSWORD`. They do not run automatically when the API server starts.
 
 API health endpoint:
 
