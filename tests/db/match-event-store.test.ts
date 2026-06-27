@@ -429,6 +429,10 @@ describeDb("match event store MVP", () => {
         currentSeq: 2
       });
 
+      const [beforeStaleApplyRows] = await pool.query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS event_count FROM match_events WHERE match_id = ?",
+        [created.matchId]
+      );
       const staleApplyResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
@@ -438,11 +442,17 @@ describeDb("match event store MVP", () => {
         status: "SYNC_REQUIRED",
         currentSeq: 2
       });
+      const [afterStaleApplyRows] = await pool.query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS event_count FROM match_events WHERE match_id = ?",
+        [created.matchId]
+      );
+      expect(afterStaleApplyRows[0]!.event_count).toBe(beforeStaleApplyRows[0]!.event_count);
 
+      const applyCommand = applyScoreCorrectionCommand(created.matchId, 2, 2, 1);
       const applyResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
-        payload: applyScoreCorrectionCommand(created.matchId, 2, 2, 1)
+        payload: applyCommand
       });
       expect(applyResponse.json()).toMatchObject({
         status: "ACCEPTED",
@@ -454,11 +464,33 @@ describeDb("match event store MVP", () => {
         ]
       });
 
+      const duplicateApplyResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        payload: applyCommand
+      });
+      expect(duplicateApplyResponse.json()).toMatchObject({
+        status: "DUPLICATE_ACCEPTED",
+        currentSeq: 5,
+        appendedEvents: []
+      });
+
       const eventsResponse = await app.inject({
         method: "GET",
         url: `/api/v1/matches/${created.matchId}/events`
       });
-      const events = eventsResponse.json<Array<{ seqNo: number; eventType: string; reason?: string }>>();
+      const events = eventsResponse.json<
+        Array<{
+          eventId: string;
+          seqNo: number;
+          eventType: string;
+          commandId: string;
+          correlationId: string;
+          causationId: string | null;
+          reason?: string;
+        }>
+      >();
+      expect(events.map((event) => event.seqNo)).toEqual([1, 2, 3, 4, 5]);
       expect(events.map((event) => event.eventType)).toEqual([
         "SCORE_ADDED",
         "CORRECTION_REQUESTED",
@@ -467,6 +499,23 @@ describeDb("match event store MVP", () => {
         "CORRECTION_APPLIED"
       ]);
       expect(events[0]!.eventType).toBe("SCORE_ADDED");
+      expect(events[0]!.commandId).not.toBe(applyCommand.commandId);
+      expect(events[4]!.commandId).toBe(applyCommand.commandId);
+      expect(events.slice(2).map((event) => event.correlationId)).toEqual([
+        applyCommand.correlationId,
+        applyCommand.correlationId,
+        applyCommand.correlationId
+      ]);
+      expect(new Set(events.slice(2).map((event) => event.commandId)).size).toBe(3);
+      expect(events[2]!.causationId).toBe(events[0]!.eventId);
+      expect(events[3]!.causationId).toBe(events[2]!.eventId);
+      expect(events[4]!.causationId).toBe(events[1]!.eventId);
+
+      const [afterDuplicateApplyRows] = await pool.query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS event_count FROM match_events WHERE match_id = ?",
+        [created.matchId]
+      );
+      expect(afterDuplicateApplyRows[0]!.event_count).toBe(5);
 
       const stateResponse = await app.inject({
         method: "GET",
