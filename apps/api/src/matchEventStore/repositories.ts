@@ -1,5 +1,6 @@
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import type { CommandResult, MatchEventType } from "@basket-scoreboard/api-contracts";
+import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
 import type { ScoreboardProjection } from "./projection.js";
 import { parseJsonField } from "./json.js";
 
@@ -54,13 +55,18 @@ export type MatchEventRecord = {
   ruleProfileId: string;
 };
 
-export async function ensurePlaceholderUser(connection: PoolConnection) {
+export async function ensurePlaceholderUser(connection: PoolConnection, user?: AuthenticatedUser) {
+  const actor = user ?? {
+    userId: "00000000-0000-4000-8000-000000000001",
+    role: "SCORER"
+  };
+
   await connection.query(
     "INSERT IGNORE INTO users (user_id, email, display_name, status) VALUES (?, ?, ?, 'ACTIVE')",
     [
-      "00000000-0000-4000-8000-000000000001",
-      "placeholder-scorer@example.local",
-      "Placeholder Scorer"
+      actor.userId,
+      `${actor.userId}@dev-auth.local`,
+      `${actor.role} Dev User`
     ]
   );
 }

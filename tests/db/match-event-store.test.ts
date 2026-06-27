@@ -15,6 +15,26 @@ import { insertAuditLog, listAuditLogsForMatch } from "../../apps/api/src/matchE
 import { correctionEventTypes } from "../../packages/event-model/src";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
+const adminHeaders = {
+  "x-dev-user-role": "ADMIN",
+  "x-dev-user-id": "00000000-0000-4000-8000-0000000000aa"
+};
+
+function scorerHeaders(matchId: string, userId = "00000000-0000-4000-8000-0000000000bb") {
+  return {
+    "x-dev-user-role": "SCORER",
+    "x-dev-user-id": userId,
+    "x-dev-match-ids": matchId
+  };
+}
+
+function viewerHeaders(matchId: string) {
+  return {
+    "x-dev-user-role": "VIEWER",
+    "x-dev-user-id": "00000000-0000-4000-8000-0000000000cc",
+    "x-dev-match-ids": matchId
+  };
+}
 
 async function buildMigratedApp() {
   const pool = createDatabasePool();
@@ -125,6 +145,7 @@ describeDb("match event store MVP", () => {
       const createResponse = await app.inject({
         method: "POST",
         url: "/api/v1/matches",
+        headers: adminHeaders,
         payload: {
           matchCode: `M-${randomUUID()}`,
           ruleProfileId: "FIBA_2024"
@@ -148,7 +169,8 @@ describeDb("match event store MVP", () => {
 
       const stateResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/state`
+        url: `/api/v1/matches/${created.matchId}/state`,
+        headers: scorerHeaders(created.matchId)
       });
       expect(stateResponse.json()).toMatchObject({
         matchId: created.matchId,
@@ -162,6 +184,7 @@ describeDb("match event store MVP", () => {
       const firstScoreResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
         payload: firstCommand
       });
 
@@ -175,6 +198,7 @@ describeDb("match event store MVP", () => {
       const duplicateResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
         payload: firstCommand
       });
       expect(duplicateResponse.json()).toMatchObject({
@@ -189,6 +213,7 @@ describeDb("match event store MVP", () => {
       const secondScoreResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
         payload: secondCommand
       });
       expect(secondScoreResponse.json()).toMatchObject({
@@ -200,6 +225,7 @@ describeDb("match event store MVP", () => {
       const conflictResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
         payload: scoreCommand(created.matchId, 0)
       });
       expect(conflictResponse.json()).toMatchObject({
@@ -209,7 +235,8 @@ describeDb("match event store MVP", () => {
 
       const eventsResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/events`
+        url: `/api/v1/matches/${created.matchId}/events`,
+        headers: scorerHeaders(created.matchId)
       });
       const events = eventsResponse.json<Array<{ seqNo: number; eventType: string }>>();
       expect(events.map((event) => event.seqNo)).toEqual([1, 2]);
@@ -217,7 +244,8 @@ describeDb("match event store MVP", () => {
 
       const updatedStateResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/state`
+        url: `/api/v1/matches/${created.matchId}/state`,
+        headers: scorerHeaders(created.matchId)
       });
       expect(updatedStateResponse.json()).toMatchObject({
         homeScore: 2,
@@ -227,7 +255,8 @@ describeDb("match event store MVP", () => {
 
       const syncResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/sync?lastEventSeq=1`
+        url: `/api/v1/matches/${created.matchId}/sync?lastEventSeq=1`,
+        headers: scorerHeaders(created.matchId)
       });
       expect(syncResponse.json()).toMatchObject({
         matchId: created.matchId,
@@ -274,6 +303,7 @@ describeDb("match event store MVP", () => {
       const invalidCreateResponse = await app.inject({
         method: "POST",
         url: "/api/v1/matches",
+        headers: adminHeaders,
         payload: { matchCode: "" }
       });
       expect(invalidCreateResponse.statusCode).toBe(400);
@@ -289,6 +319,7 @@ describeDb("match event store MVP", () => {
       const createResponse = await app.inject({
         method: "POST",
         url: "/api/v1/matches",
+        headers: adminHeaders,
         payload: {
           matchCode,
           ruleProfileId: "FIBA_2024"
@@ -300,6 +331,7 @@ describeDb("match event store MVP", () => {
       const mismatchResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
         payload: mismatchCommand
       });
       expect(mismatchResponse.json()).toMatchObject({
@@ -310,6 +342,7 @@ describeDb("match event store MVP", () => {
       const duplicateMatchCodeResponse = await app.inject({
         method: "POST",
         url: "/api/v1/matches",
+        headers: adminHeaders,
         payload: {
           matchCode,
           ruleProfileId: "FIBA_2024"
@@ -360,6 +393,116 @@ describeDb("match event store MVP", () => {
     }
   });
 
+  it("enforces RBAC for score and correction commands without trusting command payload roles", async () => {
+    const { app, pool } = await buildMigratedApp();
+
+    try {
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        headers: adminHeaders,
+        payload: {
+          matchCode: `M-${randomUUID()}`,
+          ruleProfileId: "FIBA_2024"
+        }
+      });
+      const created = createResponse.json<{ matchId: string }>();
+      const command = {
+        ...scoreCommand(created.matchId, 0),
+        payload: {
+          ...scoreCommand(created.matchId, 0).payload,
+          role: "ADMIN"
+        }
+      };
+
+      const anonymousScoreResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        payload: command
+      });
+      expect(anonymousScoreResponse.statusCode).toBe(401);
+      expect(anonymousScoreResponse.json()).toMatchObject({
+        error: { reasonCode: "UNAUTHENTICATED" }
+      });
+
+      const viewerScoreResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: viewerHeaders(created.matchId),
+        payload: command
+      });
+      expect(viewerScoreResponse.statusCode).toBe(403);
+      expect(viewerScoreResponse.json()).toMatchObject({
+        error: { reasonCode: "INSUFFICIENT_PERMISSION" }
+      });
+
+      const unassignedScorerResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(randomUUID()),
+        payload: command
+      });
+      expect(unassignedScorerResponse.statusCode).toBe(403);
+      expect(unassignedScorerResponse.json()).toMatchObject({
+        error: { reasonCode: "MATCH_NOT_ASSIGNED" }
+      });
+
+      const assignedScoreResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
+        payload: command
+      });
+      expect(assignedScoreResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 1
+      });
+
+      const [eventRows] = await pool.query<RowDataPacket[]>(
+        "SELECT actor_role FROM match_events WHERE match_id = ? AND seq_no = 1",
+        [created.matchId]
+      );
+      expect(eventRows[0]!.actor_role).toBe("SCORER");
+
+      const correctionRequest = correctionRequestCommand(created.matchId, 1, 1);
+      const correctionRequestResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/corrections/request`,
+        headers: scorerHeaders(created.matchId),
+        payload: correctionRequest
+      });
+      expect(correctionRequestResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 2
+      });
+
+      const scorerApplyResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        headers: scorerHeaders(created.matchId),
+        payload: applyScoreCorrectionCommand(created.matchId, 2, 2, 1)
+      });
+      expect(scorerApplyResponse.statusCode).toBe(403);
+      expect(scorerApplyResponse.json()).toMatchObject({
+        error: { reasonCode: "INSUFFICIENT_PERMISSION" }
+      });
+
+      const adminApplyResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        headers: adminHeaders,
+        payload: applyScoreCorrectionCommand(created.matchId, 2, 2, 1)
+      });
+      expect(adminApplyResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 5
+      });
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
   it("requests, applies, lists, and rejects score corrections using append-only compensating events", async () => {
     const { app, pool } = await buildMigratedApp();
 
@@ -367,6 +510,7 @@ describeDb("match event store MVP", () => {
       const createResponse = await app.inject({
         method: "POST",
         url: "/api/v1/matches",
+        headers: adminHeaders,
         payload: {
           matchCode: `M-${randomUUID()}`,
           ruleProfileId: "FIBA_2024"
@@ -377,6 +521,7 @@ describeDb("match event store MVP", () => {
       const scoreResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: scorerHeaders(created.matchId),
         payload: scoreCommand(created.matchId, 0)
       });
       expect(scoreResponse.json()).toMatchObject({
@@ -389,6 +534,7 @@ describeDb("match event store MVP", () => {
       const missingReasonResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/request`,
+        headers: scorerHeaders(created.matchId),
         payload: missingReason
       });
       expect(missingReasonResponse.statusCode).toBe(400);
@@ -399,6 +545,7 @@ describeDb("match event store MVP", () => {
       const missingTargetResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/request`,
+        headers: scorerHeaders(created.matchId),
         payload: correctionRequestCommand(created.matchId, 1, 999)
       });
       expect(missingTargetResponse.json()).toMatchObject({
@@ -411,6 +558,7 @@ describeDb("match event store MVP", () => {
       const requestResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/request`,
+        headers: scorerHeaders(created.matchId),
         payload: requestCommand
       });
       expect(requestResponse.json()).toMatchObject({
@@ -422,6 +570,7 @@ describeDb("match event store MVP", () => {
       const duplicateRequestResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/request`,
+        headers: scorerHeaders(created.matchId),
         payload: requestCommand
       });
       expect(duplicateRequestResponse.json()).toMatchObject({
@@ -436,6 +585,7 @@ describeDb("match event store MVP", () => {
       const staleApplyResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        headers: adminHeaders,
         payload: applyScoreCorrectionCommand(created.matchId, 1, 2, 1)
       });
       expect(staleApplyResponse.json()).toMatchObject({
@@ -452,6 +602,7 @@ describeDb("match event store MVP", () => {
       const applyResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        headers: adminHeaders,
         payload: applyCommand
       });
       expect(applyResponse.json()).toMatchObject({
@@ -467,6 +618,7 @@ describeDb("match event store MVP", () => {
       const duplicateApplyResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        headers: adminHeaders,
         payload: applyCommand
       });
       expect(duplicateApplyResponse.json()).toMatchObject({
@@ -477,7 +629,8 @@ describeDb("match event store MVP", () => {
 
       const eventsResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/events`
+        url: `/api/v1/matches/${created.matchId}/events`,
+        headers: scorerHeaders(created.matchId)
       });
       const events = eventsResponse.json<
         Array<{
@@ -519,7 +672,8 @@ describeDb("match event store MVP", () => {
 
       const stateResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/state`
+        url: `/api/v1/matches/${created.matchId}/state`,
+        headers: scorerHeaders(created.matchId)
       });
       expect(stateResponse.json()).toMatchObject({
         homeScore: 0,
@@ -529,7 +683,8 @@ describeDb("match event store MVP", () => {
 
       const correctionsResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/corrections`
+        url: `/api/v1/matches/${created.matchId}/corrections`,
+        headers: scorerHeaders(created.matchId)
       });
       expect(correctionsResponse.json()).toEqual([
         expect.objectContaining({
@@ -570,6 +725,7 @@ describeDb("match event store MVP", () => {
       const rejectMatchResponse = await app.inject({
         method: "POST",
         url: "/api/v1/matches",
+        headers: adminHeaders,
         payload: {
           matchCode: `M-${randomUUID()}`,
           ruleProfileId: "FIBA_2024"
@@ -579,20 +735,24 @@ describeDb("match event store MVP", () => {
       await app.inject({
         method: "POST",
         url: `/api/v1/matches/${rejectMatch.matchId}/commands/score/add`,
+        headers: scorerHeaders(rejectMatch.matchId),
         payload: scoreCommand(rejectMatch.matchId, 0)
       });
       await app.inject({
         method: "POST",
         url: `/api/v1/matches/${rejectMatch.matchId}/commands/corrections/request`,
+        headers: scorerHeaders(rejectMatch.matchId),
         payload: correctionRequestCommand(rejectMatch.matchId, 1, 1)
       });
       const beforeRejectState = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${rejectMatch.matchId}/state`
+        url: `/api/v1/matches/${rejectMatch.matchId}/state`,
+        headers: scorerHeaders(rejectMatch.matchId)
       });
       const rejectResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${rejectMatch.matchId}/commands/corrections/reject`,
+        headers: adminHeaders,
         payload: rejectCorrectionCommand(rejectMatch.matchId, 2, 2)
       });
       expect(rejectResponse.json()).toMatchObject({
@@ -602,7 +762,8 @@ describeDb("match event store MVP", () => {
       });
       const afterRejectState = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${rejectMatch.matchId}/state`
+        url: `/api/v1/matches/${rejectMatch.matchId}/state`,
+        headers: scorerHeaders(rejectMatch.matchId)
       });
       expect(afterRejectState.json()).toMatchObject({
         homeScore: beforeRejectState.json<{ homeScore: number }>().homeScore,

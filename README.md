@@ -62,6 +62,18 @@ npm run migrate
 
 Migration commands require `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, and `DATABASE_PASSWORD`. They do not run automatically when the API server starts.
 
+## Auth And RBAC Status
+
+The API has a foundation-level auth/RBAC layer for protected MVP endpoints. Public scoreboard reads remain unauthenticated and read-only.
+
+Development and tests can use controlled headers:
+
+- `x-dev-user-role: ADMIN | SCORER | REFEREE | VIEWER`
+- `x-dev-user-id: <uuid>`
+- `x-dev-match-ids: <comma-separated match IDs>`
+
+Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep `DEV_AUTH_ENABLED=false` by default and do not enable it on a public server. The system is not match-day ready until real login/session or token auth is implemented.
+
 ## Local MariaDB Verification
 
 Create a local MariaDB database outside Git, then export the connection settings in your shell. Do not commit `.env` or secrets.
