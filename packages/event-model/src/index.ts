@@ -1,6 +1,37 @@
 export type TeamSide = "HOME" | "AWAY";
 
-export type MatchEventType = "SCORE_ADDED";
+export const correctionEventTypes = [
+  "CORRECTION_REQUESTED",
+  "CORRECTION_APPLIED",
+  "CORRECTION_REJECTED",
+  "SCORE_REMOVED_BY_CORRECTION"
+] as const;
+
+export type CorrectionEventType = (typeof correctionEventTypes)[number];
+
+export type MatchEventType = "SCORE_ADDED" | CorrectionEventType;
+
+export type CorrectionRequestedPayload = {
+  targetEventId: string;
+  reason: string;
+};
+
+export type CorrectionAppliedPayload = {
+  correctionRequestEventId: string;
+  reason: string;
+};
+
+export type CorrectionRejectedPayload = {
+  correctionRequestEventId: string;
+  reason: string;
+};
+
+export type ScoreRemovedByCorrectionPayload = {
+  originalScoreEventId: string;
+  teamSide: TeamSide;
+  points: 1 | 2 | 3;
+  reason: string;
+};
 
 export type ScoreAddedPayload = {
   teamSide: TeamSide;

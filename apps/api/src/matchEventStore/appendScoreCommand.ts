@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "mysql2/promise";
 import type { AddScoreCommand, CommandResult } from "@basket-scoreboard/api-contracts";
+import { reasonCodes } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/placeholderAuth";
+import { insertAuditLog } from "./auditRepository";
 import {
   ensurePlaceholderUser,
   findDuplicateCommand,
@@ -46,7 +48,7 @@ export async function appendScoreAddedCommand(options: {
 
     if (currentSeq === null) {
       await connection.rollback();
-      return rejected(options.command, "MATCH_NOT_FOUND", "Match stream was not found", 0);
+      return rejected(options.command, reasonCodes.MATCH_NOT_FOUND, "Match stream was not found", 0);
     }
 
     if (currentSeq !== options.command.expectedSeq) {
@@ -57,7 +59,7 @@ export async function appendScoreAddedCommand(options: {
         matchId: options.command.matchId,
         currentSeq,
         appendedEvents: [],
-        reasonCode: "EXPECTED_SEQ_MISMATCH",
+        reasonCode: reasonCodes.INVALID_EXPECTED_SEQ,
         message: `Expected seq ${options.command.expectedSeq}, current seq ${currentSeq}`
       };
     }
@@ -97,6 +99,20 @@ export async function appendScoreAddedCommand(options: {
 
     const updatedProjection = applyScoreAdded(projection, options.command.payload, nextSeq);
     await updateScoreboardProjection(connection, updatedProjection);
+    await insertAuditLog(connection, {
+      entityType: "match",
+      entityId: options.command.matchId,
+      action: "SCORE_ADDED",
+      actorUserId: options.user.userId,
+      actorRole: options.user.role,
+      deviceId: options.user.deviceId,
+      oldValue: projection,
+      newValue: updatedProjection,
+      reason: options.command.payload.note,
+      correlationId: options.command.correlationId,
+      causationId: eventId,
+      eventSeq: nextSeq
+    });
 
     const result: CommandResult = {
       status: "ACCEPTED",

@@ -3,6 +3,7 @@ import type { Pool } from "mysql2/promise";
 import {
   addScoreCommandSchema,
   createMatchSchema,
+  reasonCodes,
   syncQuerySchema
 } from "@basket-scoreboard/api-contracts";
 import { placeholderAuth, requireScorerOrAdmin } from "../auth/placeholderAuth";
@@ -86,7 +87,7 @@ export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
           matchId: command.matchId,
           currentSeq: 0,
           appendedEvents: [],
-          reasonCode: "MATCH_ID_MISMATCH",
+          reasonCode: reasonCodes.MATCH_NOT_FOUND,
           message: "Path matchId does not match command envelope matchId"
         });
       }
