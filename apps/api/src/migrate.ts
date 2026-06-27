@@ -1,4 +1,5 @@
 import { createDatabasePool } from "./db.js";
+import { loadServerEnv } from "./config/loadEnv.js";
 import {
   MariaDbMigrationConnection,
   buildDbCheckReport,
@@ -7,6 +8,8 @@ import {
   runMigrations
 } from "./migrations/index.js";
 import { getDatabaseConfig, hasDatabaseEnv } from "./config/env.js";
+
+loadServerEnv();
 
 const command = process.argv[2] ?? "run";
 

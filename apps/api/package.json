@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@basket-scoreboard/api-contracts": "file:../../packages/api-contracts",
+    "dotenv": "^17.4.2",
     "fastify": "^5.2.1",
     "mysql2": "^3.11.5",
     "tsx": "^4.19.2",

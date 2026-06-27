@@ -107,6 +107,9 @@ Plesk Node.js settings:
 - Application Root: project root
 - Document Root: `apps/web/dist`
 - Application Startup File: `app.js`
+- Preferred configuration: set database and secret values in Plesk Custom environment variables.
+- Alternative configuration: create a root `.env` file on the server only when Custom environment variables are not available.
+- Never commit `.env`.
 
 Before Restart App:
 
