@@ -1,9 +1,9 @@
 import Fastify from "fastify";
 import { healthResponseSchema } from "@basket-scoreboard/api-contracts";
 import type { Pool } from "mysql2/promise";
-import { createDatabasePool } from "./db";
-import { fastifyErrorHandler } from "./errors/apiErrors";
-import { registerMatchRoutes } from "./routes/matchRoutes";
+import { createDatabasePool } from "./db.js";
+import { fastifyErrorHandler } from "./errors/apiErrors.js";
+import { registerMatchRoutes } from "./routes/matchRoutes.js";
 
 export function buildApiApp(options: { pool?: Pool } = {}) {
   const app = Fastify({

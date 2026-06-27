@@ -9,17 +9,17 @@ import {
   rejectCorrectionCommandSchema,
   syncQuerySchema
 } from "@basket-scoreboard/api-contracts";
-import { placeholderAuth, requireScorerOrAdmin } from "../auth/placeholderAuth";
-import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand";
+import { placeholderAuth, requireScorerOrAdmin } from "../auth/placeholderAuth.js";
+import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand.js";
 import {
   applyScoreCorrection,
   listCorrectionsForMatch,
   rejectScoreCorrection,
   requestScoreCorrection
-} from "../matchEventStore/correctionCommands";
-import { createMatch } from "../matchEventStore/createMatch";
-import { getScoreboardProjection, listMatchEvents } from "../matchEventStore/repositories";
-import { getMatchSync } from "../matchEventStore/syncService";
+} from "../matchEventStore/correctionCommands.js";
+import { createMatch } from "../matchEventStore/createMatch.js";
+import { getScoreboardProjection, listMatchEvents } from "../matchEventStore/repositories.js";
+import { getMatchSync } from "../matchEventStore/syncService.js";
 
 export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
   app.post("/api/v1/matches", async (request, reply) => {

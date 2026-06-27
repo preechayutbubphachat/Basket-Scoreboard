@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
-import { parseJsonField } from "./json";
+import { parseJsonField } from "./json.js";
 
 export type AuditLogInput = {
   entityType: string;

@@ -11,7 +11,7 @@ export {
   type MigrationConnection,
   type MigrationFile,
   type MigrationRunResult
-} from "./migrationRunner";
-export { calculateSha256 } from "./checksum";
-export { getMigrationStatus, type MigrationStatus } from "./migrationStatus";
-export { buildDbCheckReport, type DbCheckReport } from "./dbVerification";
+} from "./migrationRunner.js";
+export { calculateSha256 } from "./checksum.js";
+export { getMigrationStatus, type MigrationStatus } from "./migrationStatus.js";
+export { buildDbCheckReport, type DbCheckReport } from "./dbVerification.js";

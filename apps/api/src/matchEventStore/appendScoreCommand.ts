@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "mysql2/promise";
 import type { AddScoreCommand, CommandResult } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
-import type { AuthenticatedUser } from "../auth/placeholderAuth";
-import { insertAuditLog } from "./auditRepository";
+import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
+import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,
   findDuplicateCommand,
@@ -11,8 +11,8 @@ import {
   insertCommandResult,
   lockMatchStream,
   updateScoreboardProjection
-} from "./repositories";
-import { applyScoreAdded } from "./projection";
+} from "./repositories.js";
+import { applyScoreAdded } from "./projection.js";
 
 function requestHash(command: AddScoreCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");

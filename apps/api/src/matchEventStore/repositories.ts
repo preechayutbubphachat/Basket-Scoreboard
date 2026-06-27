@@ -1,7 +1,7 @@
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import type { CommandResult, MatchEventType } from "@basket-scoreboard/api-contracts";
-import type { ScoreboardProjection } from "./projection";
-import { parseJsonField } from "./json";
+import type { ScoreboardProjection } from "./projection.js";
+import { parseJsonField } from "./json.js";
 
 type StreamRow = RowDataPacket & {
   last_seq_no: number;

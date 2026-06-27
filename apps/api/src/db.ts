@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import { getDatabaseConfig } from "./config/env";
+import { getDatabaseConfig } from "./config/env.js";
 
 export function createDatabasePool() {
   const config = getDatabaseConfig();
