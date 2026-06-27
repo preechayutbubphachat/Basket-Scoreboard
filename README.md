@@ -17,7 +17,7 @@ Production-grade basketball scoreboard and tournament management web application
 
 ## Current Scope
 
-This branch implements Phase 1 Foundation only:
+The repository currently includes Phase 1 Foundation and the Task 002 MariaDB migration foundation:
 
 - npm workspace monorepo
 - TypeScript base config
@@ -25,11 +25,12 @@ This branch implements Phase 1 Foundation only:
 - Vite React web skeleton
 - package skeletons for domain, event model, and API contracts
 - environment example
-- migration and tests folders
+- ordered MariaDB migration files for auth, competition, matches, event store, projections, and audit logs
 - API health check
 - placeholder API test
+- migration contract tests
 
-It intentionally does not implement dashboards, Socket.IO, match commands, projections, mutable scoreboard state, or basketball rules in UI.
+It intentionally does not implement dashboards, Socket.IO, match commands, mutable scoreboard state, or basketball rules in UI.
 
 ## Repository Layout
 
@@ -64,7 +65,7 @@ GET /api/v1/health
 
 ## Next Safe Step
 
-Phase 2 should add the MariaDB-backed match event store MVP:
+Phase 2 should wire the MariaDB-backed match event store MVP into the API:
 
 - `match_streams`
 - append-only `match_events`
