@@ -165,7 +165,7 @@ async function runCorrectionTransaction(
 
   try {
     await connection.beginTransaction();
-    await ensurePlaceholderUser(connection);
+    await ensurePlaceholderUser(connection, user);
 
     const duplicate = await findDuplicateCommand(connection, command.matchId, command.commandId);
 

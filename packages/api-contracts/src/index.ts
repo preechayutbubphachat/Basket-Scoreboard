@@ -10,7 +10,11 @@ export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export const reasonCodes = {
   VALIDATION_ERROR: "VALIDATION_ERROR",
   UNAUTHORIZED: "UNAUTHORIZED",
+  UNAUTHENTICATED: "UNAUTHENTICATED",
   FORBIDDEN: "FORBIDDEN",
+  MATCH_NOT_ASSIGNED: "MATCH_NOT_ASSIGNED",
+  INSUFFICIENT_PERMISSION: "INSUFFICIENT_PERMISSION",
+  DEV_AUTH_DISABLED: "DEV_AUTH_DISABLED",
   MATCH_NOT_FOUND: "MATCH_NOT_FOUND",
   INVALID_EXPECTED_SEQ: "INVALID_EXPECTED_SEQ",
   DUPLICATE_COMMAND: "DUPLICATE_COMMAND",
@@ -26,6 +30,37 @@ export type ApiErrorResponse = {
     message: string;
     details?: unknown;
   };
+};
+
+export type RoleCode = "ADMIN" | "SCORER" | "REFEREE" | "VIEWER";
+
+export type PermissionCode =
+  | "match.create"
+  | "match.read"
+  | "match.score.operate"
+  | "match.correction.request"
+  | "match.correction.apply"
+  | "match.correction.reject"
+  | "match.audit.read"
+  | "public.scoreboard.read";
+
+export type AuthenticatedUser = {
+  userId: string;
+  role: RoleCode;
+  permissions: PermissionCode[];
+  assignedMatchIds: string[];
+  deviceId: string;
+  authMode: "DEV_HEADER";
+};
+
+export type AuthContext = {
+  user: AuthenticatedUser | null;
+};
+
+export type AuthorizationDecision = {
+  allowed: boolean;
+  reasonCode?: ReasonCode;
+  message?: string;
 };
 
 export const createMatchSchema = z.object({

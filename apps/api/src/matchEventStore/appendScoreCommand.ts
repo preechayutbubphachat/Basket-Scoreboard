@@ -27,7 +27,7 @@ export async function appendScoreAddedCommand(options: {
 
   try {
     await connection.beginTransaction();
-    await ensurePlaceholderUser(connection);
+    await ensurePlaceholderUser(connection, options.user);
 
     const duplicate = await findDuplicateCommand(
       connection,

@@ -9,7 +9,11 @@ import {
   rejectCorrectionCommandSchema,
   syncQuerySchema
 } from "@basket-scoreboard/api-contracts";
-import { placeholderAuth, requireScorerOrAdmin } from "../auth/placeholderAuth.js";
+import {
+  requireAuth,
+  requireMatchPermission,
+  requirePermission
+} from "../auth/placeholderAuth.js";
 import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand.js";
 import {
   applyScoreCorrection,
@@ -22,35 +26,65 @@ import { getScoreboardProjection, listMatchEvents } from "../matchEventStore/rep
 import { getMatchSync } from "../matchEventStore/syncService.js";
 
 export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
-  app.post("/api/v1/matches", async (request, reply) => {
-    const input = createMatchSchema.parse(request.body);
-    const result = await createMatch({ pool, input });
+  app.post(
+    "/api/v1/matches",
+    {
+      preHandler: [requireAuth, requirePermission("match.create")]
+    },
+    async (request, reply) => {
+      const input = createMatchSchema.parse(request.body);
+      const result = await createMatch({ pool, input });
 
-    return reply.status(201).send(result);
-  });
-
-  app.get<{ Params: { matchId: string } }>("/api/v1/matches/:matchId/state", async (request) => {
-    const connection = await pool.getConnection();
-
-    try {
-      return await getScoreboardProjection(connection, request.params.matchId);
-    } finally {
-      connection.release();
+      return reply.status(201).send(result);
     }
-  });
+  );
 
-  app.get<{ Params: { matchId: string } }>("/api/v1/matches/:matchId/events", async (request) => {
-    const connection = await pool.getConnection();
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/state",
+    {
+      preHandler: [
+        requireAuth,
+        requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request) => {
+      const connection = await pool.getConnection();
 
-    try {
-      return await listMatchEvents(connection, request.params.matchId);
-    } finally {
-      connection.release();
+      try {
+        return await getScoreboardProjection(connection, request.params.matchId);
+      } finally {
+        connection.release();
+      }
     }
-  });
+  );
+
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/events",
+    {
+      preHandler: [
+        requireAuth,
+        requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request) => {
+      const connection = await pool.getConnection();
+
+      try {
+        return await listMatchEvents(connection, request.params.matchId);
+      } finally {
+        connection.release();
+      }
+    }
+  );
 
   app.get<{ Params: { matchId: string }; Querystring: { lastEventSeq?: string } }>(
     "/api/v1/matches/:matchId/sync",
+    {
+      preHandler: [
+        requireAuth,
+        requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
     async (request) => {
       const query = syncQuerySchema.parse(request.query);
 
@@ -84,7 +118,13 @@ export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/score/add",
     {
-      preHandler: [placeholderAuth, requireScorerOrAdmin]
+      preHandler: [
+        requireAuth,
+        requireMatchPermission(
+          "match.score.operate",
+          (request) => (request.params as { matchId: string }).matchId
+        )
+      ]
     },
     async (request, reply) => {
       const command = addScoreCommandSchema.parse(request.body);
@@ -114,7 +154,13 @@ export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/corrections/request",
     {
-      preHandler: [placeholderAuth, requireScorerOrAdmin]
+      preHandler: [
+        requireAuth,
+        requireMatchPermission(
+          "match.correction.request",
+          (request) => (request.params as { matchId: string }).matchId
+        )
+      ]
     },
     async (request, reply) => {
       const command = correctionRequestCommandSchema.parse(request.body);
@@ -144,7 +190,7 @@ export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/corrections/apply-score",
     {
-      preHandler: [placeholderAuth, requireScorerOrAdmin]
+      preHandler: [requireAuth, requirePermission("match.correction.apply")]
     },
     async (request, reply) => {
       const command = applyScoreCorrectionCommandSchema.parse(request.body);
@@ -174,7 +220,7 @@ export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/corrections/reject",
     {
-      preHandler: [placeholderAuth, requireScorerOrAdmin]
+      preHandler: [requireAuth, requirePermission("match.correction.reject")]
     },
     async (request, reply) => {
       const command = rejectCorrectionCommandSchema.parse(request.body);
@@ -204,7 +250,10 @@ export function registerMatchRoutes(app: FastifyInstance, pool: Pool) {
   app.get<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/corrections",
     {
-      preHandler: [placeholderAuth, requireScorerOrAdmin]
+      preHandler: [
+        requireAuth,
+        requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
     },
     async (request) => {
       return listCorrectionsForMatch(pool, request.params.matchId);

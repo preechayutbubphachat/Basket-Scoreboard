@@ -1,27 +1,183 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import {
+  reasonCodes,
+  type AuthenticatedUser,
+  type AuthorizationDecision,
+  type PermissionCode,
+  type RoleCode
+} from "@basket-scoreboard/api-contracts";
 import { apiError } from "../errors/apiErrors.js";
-import { reasonCodes } from "@basket-scoreboard/api-contracts";
 
-export type AuthenticatedUser = {
-  userId: string;
-  role: "ADMIN" | "SCORER";
-  deviceId: string;
+export type { AuthenticatedUser, AuthorizationDecision, PermissionCode, RoleCode };
+
+export const defaultDevUserId = "00000000-0000-4000-8000-000000000001";
+
+const rolePermissions: Record<RoleCode, PermissionCode[]> = {
+  ADMIN: [
+    "match.create",
+    "match.read",
+    "match.score.operate",
+    "match.correction.request",
+    "match.correction.apply",
+    "match.correction.reject",
+    "match.audit.read",
+    "public.scoreboard.read"
+  ],
+  SCORER: ["match.read", "match.score.operate", "match.correction.request", "public.scoreboard.read"],
+  REFEREE: ["match.read", "match.score.operate", "match.correction.request", "public.scoreboard.read"],
+  VIEWER: ["match.read", "public.scoreboard.read"]
 };
 
-export const placeholderUser: AuthenticatedUser = {
-  userId: "00000000-0000-4000-8000-000000000001",
-  role: "SCORER",
-  deviceId: "placeholder-device"
-};
+function devAuthEnabled() {
+  return process.env.NODE_ENV !== "production" || process.env.DEV_AUTH_ENABLED === "true";
+}
+
+function headerValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseRole(value: string | undefined): RoleCode | null {
+  if (value === "ADMIN" || value === "SCORER" || value === "REFEREE" || value === "VIEWER") {
+    return value;
+  }
+
+  return null;
+}
+
+function parseAssignedMatchIds(value: string | undefined) {
+  return value
+    ? value
+        .split(",")
+        .map((matchId) => matchId.trim())
+        .filter(Boolean)
+    : [];
+}
+
+export function resolveDevUser(request: FastifyRequest): AuthenticatedUser | null {
+  const roleHeader = headerValue(request.headers["x-dev-user-role"]);
+  const role = parseRole(roleHeader);
+
+  if (!role) {
+    return null;
+  }
+
+  if (!devAuthEnabled()) {
+    return null;
+  }
+
+  const userId = headerValue(request.headers["x-dev-user-id"]) ?? defaultDevUserId;
+  const assignedMatchIds = parseAssignedMatchIds(headerValue(request.headers["x-dev-match-ids"]));
+
+  return {
+    userId,
+    role,
+    permissions: rolePermissions[role],
+    assignedMatchIds,
+    deviceId: `dev-${role.toLowerCase()}-device`,
+    authMode: "DEV_HEADER"
+  };
+}
+
+export function getCurrentUser(request: FastifyRequest) {
+  return request.user ?? null;
+}
+
+export async function optionalAuth(request: FastifyRequest) {
+  const user = resolveDevUser(request);
+
+  if (user) {
+    request.user = user;
+    return;
+  }
+
+  delete request.user;
+}
+
+export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+  const attemptedDevAuth = Boolean(headerValue(request.headers["x-dev-user-role"]));
+  const user = resolveDevUser(request);
+
+  if (user) {
+    request.user = user;
+    return;
+  }
+
+  if (attemptedDevAuth && !devAuthEnabled()) {
+    return reply
+      .status(401)
+      .send(apiError(reasonCodes.DEV_AUTH_DISABLED, "Development auth headers are disabled"));
+  }
+
+  return reply.status(401).send(apiError(reasonCodes.UNAUTHENTICATED, "Authentication required"));
+}
+
+export function authorize(
+  user: AuthenticatedUser | null,
+  permission: PermissionCode,
+  resource: { matchId?: string } = {}
+): AuthorizationDecision {
+  if (!user) {
+    return {
+      allowed: false,
+      reasonCode: reasonCodes.UNAUTHENTICATED,
+      message: "Authentication required"
+    };
+  }
+
+  if (user.role === "ADMIN") {
+    return { allowed: true };
+  }
+
+  if (!user.permissions.includes(permission)) {
+    return {
+      allowed: false,
+      reasonCode: reasonCodes.INSUFFICIENT_PERMISSION,
+      message: `Permission ${permission} is required`
+    };
+  }
+
+  if (resource.matchId && !user.assignedMatchIds.includes(resource.matchId)) {
+    return {
+      allowed: false,
+      reasonCode: reasonCodes.MATCH_NOT_ASSIGNED,
+      message: "User is not assigned to this match"
+    };
+  }
+
+  return { allowed: true };
+}
+
+export function requirePermission(permission: PermissionCode) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const decision = authorize(getCurrentUser(request), permission);
+
+    if (!decision.allowed) {
+      return reply
+        .status(403)
+        .send(apiError(decision.reasonCode ?? reasonCodes.FORBIDDEN, decision.message ?? "Forbidden"));
+    }
+  };
+}
+
+export function requireMatchPermission(
+  permission: PermissionCode,
+  getMatchId: (request: FastifyRequest) => string
+) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const decision = authorize(getCurrentUser(request), permission, { matchId: getMatchId(request) });
+
+    if (!decision.allowed) {
+      return reply
+        .status(403)
+        .send(apiError(decision.reasonCode ?? reasonCodes.FORBIDDEN, decision.message ?? "Forbidden"));
+    }
+  };
+}
 
 export async function placeholderAuth(request: FastifyRequest) {
-  request.user = placeholderUser;
+  await requireAuth(request, {
+    status: () => ({ send: async () => undefined })
+  } as unknown as FastifyReply);
 }
 
-export async function requireScorerOrAdmin(request: FastifyRequest, reply: FastifyReply) {
-  if (!request.user || !["ADMIN", "SCORER"].includes(request.user.role)) {
-    await reply.status(403).send({
-      ...apiError(reasonCodes.FORBIDDEN, "Scorer or admin role required")
-    });
-  }
-}
+export const requireScorerOrAdmin = requirePermission("match.score.operate");
