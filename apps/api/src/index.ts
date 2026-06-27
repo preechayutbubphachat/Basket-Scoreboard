@@ -1,4 +1,7 @@
+import { loadServerEnv } from "./config/loadEnv.js";
 import { buildApiApp } from "./app.js";
+
+loadServerEnv();
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
