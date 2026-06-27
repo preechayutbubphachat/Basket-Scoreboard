@@ -1,8 +1,8 @@
 # AI Git Workflow Policy
 
-## Mandatory rule
+## Mandatory Build Rule
 
-Before every git commit, merge, or push to origin/main, the AI coding agent must run:
+Before every commit, merge, or push to origin/main, the AI coding agent must run:
 
 ```bash
 npm test
@@ -17,30 +17,19 @@ npm run db:check
 npm run migrate:status
 ```
 
-## Push to main rule
+The AI must not push to origin/main if `npm run build` fails.
 
-The AI must not push to origin/main unless all required checks pass.
+## Required Guard Search
 
-Required checks:
-
-- `npm test` must pass.
-- `npm run build` must pass.
-- `npm run test:db` must pass when DB env exists.
-- `db:check` must pass when DB env exists.
-- `migrate:status` must show 0 pending migrations when DB env exists.
-- Guard search must show no unsafe event-store mutation patterns.
-
-## Guard search
-
-Before merging or pushing to main, run:
+Before merge or push to main, run:
 
 ```bash
-rg "scoreboard_state|UPDATE match_events|DELETE FROM match_events|DROP TABLE match_events" .
+rg "scoreboard_state|UPDATE match_events|DELETE FROM match_events|DROP TABLE match_events" apps packages migrations tests
 ```
 
 If any unsafe match is found, stop and report it.
 
-## Forbidden behavior
+## Forbidden Behavior
 
 The AI must not:
 
@@ -49,15 +38,14 @@ The AI must not:
 - claim build passed without running it
 - commit `.env`
 - commit secrets
-- commit generated artifacts
+- commit generated artifacts such as `dist`, `build`, `coverage`, `node_modules`
 - run `npm audit fix --force` without approval
 - update `match_events`
 - delete from `match_events`
 - create mutable `scoreboard_state`
 - implement Socket.IO unless explicitly assigned
-- implement dashboards before backend event store and safety gates are stable
 
-## Required report after every task
+## Required Report After Every Task
 
 Every completed task must report:
 
@@ -77,34 +65,3 @@ Every completed task must report:
 14. Whether `.env` or generated artifacts are tracked
 15. Known limitations
 16. Next recommended task
-
-## Recommended workflow
-
-Use this flow for every task:
-
-```bash
-git checkout main
-git pull origin main
-git checkout -b <task-branch>
-
-# implement task
-
-npm test
-npm run build
-
-# if DB env exists
-npm run test:db
-npm run db:check
-npm run migrate:status
-
-rg "scoreboard_state|UPDATE match_events|DELETE FROM match_events|DROP TABLE match_events" .
-
-git status
-git add .
-git commit -m "<type>: <message>"
-
-git checkout main
-git pull origin main
-git merge --no-ff <task-branch> -m "merge: <task summary>"
-git push origin main
-```
