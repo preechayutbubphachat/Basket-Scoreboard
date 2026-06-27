@@ -87,6 +87,13 @@ Expected behavior:
 - Second `migrate` is idempotent and skips already-applied migrations with matching checksums.
 - `test:db` is skipped when DB env vars are absent; when DB env vars are present, it connects to MariaDB and verifies migration status, migration execution, idempotency, and checksum mismatch detection.
 
+## AI Git Workflow Policy
+
+Before every commit, merge, or push to origin/main, AI coding agents must run `npm test` and `npm run build`. If database environment variables are available, they must also run `npm run test:db`, `npm run db:check`, and `npm run migrate:status`.
+
+See:
+[docs/agent/AI_GIT_WORKFLOW_POLICY.md](docs/agent/AI_GIT_WORKFLOW_POLICY.md)
+
 API health endpoint:
 
 ```http
