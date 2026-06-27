@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import { calculateSha256 } from "./checksum";
@@ -71,8 +72,28 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `;
 
+export function resolveMigrationsDir(startDir = process.cwd()) {
+  let currentDir = resolve(startDir);
+
+  while (true) {
+    const candidate = join(currentDir, "migrations");
+
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+
+    const parentDir = resolve(currentDir, "..");
+
+    if (parentDir === currentDir) {
+      return candidate;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
 export function getDefaultMigrationsDir() {
-  return resolve(process.cwd(), "migrations");
+  return resolveMigrationsDir();
 }
 
 export async function discoverMigrationFiles(migrationsDir = getDefaultMigrationsDir()) {
