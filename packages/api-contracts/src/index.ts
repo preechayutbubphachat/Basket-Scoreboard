@@ -47,6 +47,26 @@ export const scoreAddedPayloadSchema = z.object({
   note: z.string().max(500).nullable()
 });
 
+export const correctionRequestPayloadSchema = z.object({
+  targetSeq: z.number().int().positive(),
+  correctionType: z.literal("SCORE_CORRECTION"),
+  reason: z.string().trim().min(1).max(500),
+  note: z.string().max(500).nullable()
+});
+
+export const applyScoreCorrectionPayloadSchema = z.object({
+  correctionRequestSeq: z.number().int().positive(),
+  targetSeq: z.number().int().positive(),
+  reason: z.string().trim().min(1).max(500),
+  removeOriginalScore: z.boolean(),
+  replacement: scoreAddedPayloadSchema.nullable()
+});
+
+export const rejectCorrectionPayloadSchema = z.object({
+  correctionRequestSeq: z.number().int().positive(),
+  reason: z.string().trim().min(1).max(500)
+});
+
 export const addScoreCommandSchema = z.object({
   commandId: z.string().uuid(),
   matchId: z.string().uuid(),
@@ -54,6 +74,26 @@ export const addScoreCommandSchema = z.object({
   correlationId: z.string().uuid(),
   clientTimestamp: z.string().datetime(),
   payload: scoreAddedPayloadSchema
+});
+
+const commandEnvelopeBaseSchema = z.object({
+  commandId: z.string().uuid(),
+  matchId: z.string().uuid(),
+  expectedSeq: z.number().int().min(0),
+  correlationId: z.string().uuid(),
+  clientTimestamp: z.string().datetime()
+});
+
+export const correctionRequestCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: correctionRequestPayloadSchema
+});
+
+export const applyScoreCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: applyScoreCorrectionPayloadSchema
+});
+
+export const rejectCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: rejectCorrectionPayloadSchema
 });
 
 export const syncQuerySchema = z.object({
@@ -70,7 +110,20 @@ export const commandResultStatusSchema = z.enum([
 export type CreateMatchRequest = z.infer<typeof createMatchSchema>;
 export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
 export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
+export type CorrectionRequestPayload = z.infer<typeof correctionRequestPayloadSchema>;
+export type ApplyScoreCorrectionPayload = z.infer<typeof applyScoreCorrectionPayloadSchema>;
+export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSchema>;
+export type CorrectionRequestCommand = z.infer<typeof correctionRequestCommandSchema>;
+export type ApplyScoreCorrectionCommand = z.infer<typeof applyScoreCorrectionCommandSchema>;
+export type RejectCorrectionCommand = z.infer<typeof rejectCorrectionCommandSchema>;
 export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
+
+export type MatchEventType =
+  | "SCORE_ADDED"
+  | "CORRECTION_REQUESTED"
+  | "SCORE_REMOVED_BY_CORRECTION"
+  | "CORRECTION_APPLIED"
+  | "CORRECTION_REJECTED";
 
 export type CommandResult = {
   status: CommandResultStatus;
@@ -80,7 +133,7 @@ export type CommandResult = {
   appendedEvents: Array<{
     eventId: string;
     seqNo: number;
-    eventType: "SCORE_ADDED";
+    eventType: MatchEventType;
   }>;
   reasonCode: string | null;
   message: string | null;

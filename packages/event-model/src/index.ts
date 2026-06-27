@@ -12,22 +12,32 @@ export type CorrectionEventType = (typeof correctionEventTypes)[number];
 export type MatchEventType = "SCORE_ADDED" | CorrectionEventType;
 
 export type CorrectionRequestedPayload = {
+  targetSeq: number;
   targetEventId: string;
+  correctionType: "SCORE_CORRECTION";
   reason: string;
+  note: string | null;
 };
 
 export type CorrectionAppliedPayload = {
+  correctionRequestSeq: number;
   correctionRequestEventId: string;
+  targetSeq: number;
   reason: string;
+  removedOriginalScore: boolean;
+  replacementEventId: string | null;
 };
 
 export type CorrectionRejectedPayload = {
+  correctionRequestSeq: number;
   correctionRequestEventId: string;
   reason: string;
 };
 
 export type ScoreRemovedByCorrectionPayload = {
+  correctionRequestSeq: number;
   originalScoreEventId: string;
+  originalScoreSeq: number;
   teamSide: TeamSide;
   points: 1 | 2 | 3;
   reason: string;

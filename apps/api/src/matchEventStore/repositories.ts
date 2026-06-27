@@ -1,5 +1,5 @@
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
-import type { CommandResult, ScoreAddedPayload } from "@basket-scoreboard/api-contracts";
+import type { CommandResult, MatchEventType } from "@basket-scoreboard/api-contracts";
 import type { ScoreboardProjection } from "./projection";
 import { parseJsonField } from "./json";
 
@@ -16,7 +16,7 @@ type EventRow = RowDataPacket & {
   event_id: string;
   match_id: string;
   seq_no: number;
-  event_type: "SCORE_ADDED";
+  event_type: MatchEventType;
   payload: unknown;
   actor_user_id: string;
   actor_role: string;
@@ -39,8 +39,8 @@ export type MatchEventRecord = {
   eventId: string;
   matchId: string;
   seqNo: number;
-  eventType: "SCORE_ADDED";
-  payload: ScoreAddedPayload;
+  eventType: MatchEventType;
+  payload: unknown;
   actorUserId: string;
   actorRole: string;
   deviceId: string;
@@ -150,13 +150,26 @@ export async function listMatchEvents(
   return rows.map(toEventRecord);
 }
 
+export async function getMatchEventBySeq(
+  connection: PoolConnection,
+  matchId: string,
+  seqNo: number
+) {
+  const [rows] = await connection.query<EventRow[]>(
+    "SELECT event_id, match_id, seq_no, event_type, payload, actor_user_id, actor_role, device_id, occurred_at, recorded_at, command_id, expected_seq, correlation_id, causation_id, reason, rule_profile_id FROM match_events WHERE match_id = ? AND seq_no = ?",
+    [matchId, seqNo]
+  );
+
+  return rows[0] ? toEventRecord(rows[0]) : null;
+}
+
 function toEventRecord(row: EventRow): MatchEventRecord {
   return {
     eventId: row.event_id,
     matchId: row.match_id,
     seqNo: row.seq_no,
     eventType: row.event_type,
-    payload: parseJsonField<ScoreAddedPayload>(row.payload),
+    payload: parseJsonField<unknown>(row.payload),
     actorUserId: row.actor_user_id,
     actorRole: row.actor_role,
     deviceId: row.device_id,
