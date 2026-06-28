@@ -63,6 +63,20 @@ export type MatchAssignment = {
   revokedAt: string | null;
 };
 
+export type OperatorMatchSummary = {
+  matchId: string;
+  matchCode: string | null;
+  homeTeamId: string | null;
+  homeTeamName: string | null;
+  awayTeamId: string | null;
+  awayTeamName: string | null;
+  status: string;
+  scheduledAt: string | null;
+  venueName: string | null;
+  assignedRoleCodes: MatchOfficialRoleCode[];
+  currentSeq: number;
+};
+
 export type PermissionCode =
   | "match.create"
   | "match.read"

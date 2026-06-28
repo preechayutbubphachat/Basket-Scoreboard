@@ -7,6 +7,7 @@ import { fastifyErrorHandler } from "./errors/apiErrors.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
+import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
 
 export function buildApiApp(options: { pool?: Pool } = {}) {
   const app = Fastify({
@@ -27,6 +28,7 @@ export function buildApiApp(options: { pool?: Pool } = {}) {
   registerAuthRoutes(app, pool, auth);
   registerMatchRoutes(app, pool, auth);
   registerMatchOfficialRoutes(app, pool, auth);
+  registerOperatorRoutes(app, pool, auth);
 
   if (!options.pool) {
     app.addHook("onClose", async () => {

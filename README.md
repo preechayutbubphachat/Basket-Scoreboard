@@ -118,12 +118,25 @@ Supported assignment role codes are `REFEREE`, `SCORER`, `ASSISTANT_SCORER`, `TI
 The frontend admin assignment UI is available at:
 
 ```text
+/admin/matches
 /admin/matches/:matchId/officials
 ```
 
-Only authenticated ADMIN users should use this screen. The page loads assignments through `GET /api/v1/matches/:matchId/officials`, creates assignments with `POST /api/v1/matches/:matchId/officials`, and revokes assignments with `DELETE /api/v1/matches/:matchId/officials/:assignmentId`. The UI hides the assignment form from non-admin users, but the backend remains the authority for authorization and must reject forbidden requests.
+Only authenticated ADMIN users should use these screens. `/admin/matches` loads the current MVP match list from `GET /api/v1/admin/matches` and links each match to its officials page. The officials page loads assignments through `GET /api/v1/matches/:matchId/officials`, creates assignments with `POST /api/v1/matches/:matchId/officials`, and revokes assignments with `DELETE /api/v1/matches/:matchId/officials/:assignmentId`. The UI hides admin controls from non-admin users, but the backend remains the authority for authorization and must reject forbidden requests.
 
-Current limitation: there is no live operator score UI yet. Create users/roles with the bootstrap scripts, create matches through the API, then assign officials/operators through the admin assignment UI or API.
+## Operator Match Landing
+
+Authenticated scorer/referee/operator users can open:
+
+```text
+/operator/matches
+```
+
+This page calls `GET /api/v1/operator/matches`. ADMIN users may see all current MVP matches for testing/navigation. SCORER and REFEREE users see only matches where they have an active `match_officials` assignment; revoked assignments are excluded. VIEWER users are denied for this operator route.
+
+The operator landing page is read-only. Match cards show the teams or fallback IDs, status, scheduled time, venue, active assignment roles, and current event sequence when available. Score Control and Public Scoreboard buttons are placeholders marked as coming next. This task does not add score, foul, clock, timeout, public scoreboard polling, or Socket.IO UI.
+
+Current limitation: there is no live operator score UI yet. Create users/roles with the bootstrap scripts, create matches through the API, assign officials/operators through the admin assignment UI or API, then use `/operator/matches` only as the safe landing/navigation flow.
 
 ## Local MariaDB Verification
 
