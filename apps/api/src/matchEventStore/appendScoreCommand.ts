@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "mysql2/promise";
 import type { AddScoreCommand, CommandResult } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
-import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
+import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,

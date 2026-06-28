@@ -2,8 +2,9 @@ import Fastify from "fastify";
 import { healthResponseSchema } from "@basket-scoreboard/api-contracts";
 import type { Pool } from "mysql2/promise";
 import { createDatabasePool } from "./db.js";
-import { getCurrentUser, requireAuth } from "./auth/placeholderAuth.js";
+import { createAuthHandlers } from "./auth/sessionAuth.js";
 import { fastifyErrorHandler } from "./errors/apiErrors.js";
+import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 
 export function buildApiApp(options: { pool?: Pool } = {}) {
@@ -11,6 +12,7 @@ export function buildApiApp(options: { pool?: Pool } = {}) {
     logger: false
   });
   const pool = options.pool ?? createDatabasePool();
+  const auth = createAuthHandlers(pool);
 
   app.setErrorHandler(fastifyErrorHandler);
 
@@ -21,17 +23,8 @@ export function buildApiApp(options: { pool?: Pool } = {}) {
     });
   });
 
-  app.get(
-    "/api/v1/auth/me",
-    {
-      preHandler: [requireAuth]
-    },
-    async (request) => {
-      return { user: getCurrentUser(request) };
-    }
-  );
-
-  registerMatchRoutes(app, pool);
+  registerAuthRoutes(app, pool, auth);
+  registerMatchRoutes(app, pool, auth);
 
   if (!options.pool) {
     app.addHook("onClose", async () => {

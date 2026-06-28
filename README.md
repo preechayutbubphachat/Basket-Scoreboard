@@ -62,9 +62,30 @@ npm run migrate
 
 Migration commands require `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, and `DATABASE_PASSWORD`. They do not run automatically when the API server starts.
 
-## Auth And RBAC Status
+## Production Session Auth And RBAC
 
-The API has a foundation-level auth/RBAC layer for protected MVP endpoints. Public scoreboard reads remain unauthenticated and read-only.
+The API uses server-side session authentication backed by MariaDB. Users log in with email and password, the server stores only SHA-256 hashes of random session and CSRF tokens, and the browser receives an HttpOnly session cookie. Login responses return a CSRF token for private write requests.
+
+Production setup:
+
+```bash
+npm run migrate
+npm run auth:seed
+AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
+```
+
+After creating the admin, remove `AUTH_BOOTSTRAP_ENABLED`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_DISPLAY_NAME` from the server environment. Do not commit those values.
+
+Plesk production environment variables:
+
+- `AUTH_COOKIE_NAME=basket_session`
+- `AUTH_SESSION_TTL_MINUTES=480`
+- `AUTH_COOKIE_SECURE=true`
+- `AUTH_COOKIE_SAME_SITE=Lax`
+- `DEV_AUTH_ENABLED=false`
+- `AUTH_BOOTSTRAP_ENABLED=false`
+
+Protected browser write requests must send `x-csrf-token`. Public scoreboard reads remain unauthenticated and read-only.
 
 Development and tests can use controlled headers:
 
@@ -72,7 +93,9 @@ Development and tests can use controlled headers:
 - `x-dev-user-id: <uuid>`
 - `x-dev-match-ids: <comma-separated match IDs>`
 
-Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep `DEV_AUTH_ENABLED=false` by default and do not enable it on a public server. The system is not match-day ready until real login/session or token auth is implemented.
+Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep `DEV_AUTH_ENABLED=false` by default and do not enable it on a public server.
+
+The system is still not full match-day ready until UI login/session flows and complete match assignment workflows exist. Until a `match_officials` or equivalent user-assignment schema is added, SCORER and REFEREE production sessions fail closed for match-scoped operations; ADMIN can perform current MVP operations.
 
 ## Local MariaDB Verification
 

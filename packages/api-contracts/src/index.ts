@@ -12,6 +12,12 @@ export const reasonCodes = {
   UNAUTHORIZED: "UNAUTHORIZED",
   UNAUTHENTICATED: "UNAUTHENTICATED",
   FORBIDDEN: "FORBIDDEN",
+  INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  USER_INACTIVE: "USER_INACTIVE",
+  SESSION_EXPIRED: "SESSION_EXPIRED",
+  SESSION_REVOKED: "SESSION_REVOKED",
+  CSRF_REQUIRED: "CSRF_REQUIRED",
+  CSRF_INVALID: "CSRF_INVALID",
   MATCH_NOT_ASSIGNED: "MATCH_NOT_ASSIGNED",
   INSUFFICIENT_PERMISSION: "INSUFFICIENT_PERMISSION",
   DEV_AUTH_DISABLED: "DEV_AUTH_DISABLED",
@@ -46,11 +52,16 @@ export type PermissionCode =
 
 export type AuthenticatedUser = {
   userId: string;
+  email?: string;
+  displayName?: string;
   role: RoleCode;
+  roles?: RoleCode[];
   permissions: PermissionCode[];
   assignedMatchIds: string[];
   deviceId: string;
-  authMode: "DEV_HEADER";
+  authMode: "DEV_HEADER" | "SESSION";
+  sessionId?: string;
+  csrfToken?: string;
 };
 
 export type AuthContext = {

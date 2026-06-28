@@ -20,7 +20,8 @@ describe("MariaDB migration foundation", () => {
       "003_create_match_tables.sql",
       "004_create_event_store_tables.sql",
       "005_create_projection_tables.sql",
-      "006_create_audit_tables.sql"
+      "006_create_audit_tables.sql",
+      "007_create_user_sessions_table.sql"
     ]);
   });
 
@@ -37,6 +38,7 @@ describe("MariaDB migration foundation", () => {
       "roles",
       "permissions",
       "user_roles",
+      "user_sessions",
       "tournaments",
       "teams",
       "players",
@@ -54,6 +56,21 @@ describe("MariaDB migration foundation", () => {
     expect(allSql).toContain("default charset=utf8mb4");
     expect(allSql).not.toContain("serial");
     expect(allSql).not.toContain("jsonb");
+  });
+
+  it("adds production session storage without raw tokens", () => {
+    const sessionSql = compact(readMigration("007_create_user_sessions_table.sql"));
+
+    expect(sessionSql).toContain("create table if not exists user_sessions");
+    expect(sessionSql).toContain("session_token_hash varchar(128) not null");
+    expect(sessionSql).toContain("csrf_token_hash varchar(128) not null");
+    expect(sessionSql).toContain("unique key uq_user_sessions_token_hash");
+    expect(sessionSql).toContain("key idx_user_sessions_user_id");
+    expect(sessionSql).toContain("key idx_user_sessions_expires_at");
+    expect(sessionSql).toContain("key idx_user_sessions_status");
+    expect(sessionSql).toContain("engine=innodb");
+    expect(sessionSql).not.toContain("session_token varchar");
+    expect(sessionSql).not.toContain("csrf_token varchar");
   });
 
   it("defines the critical append-only event store columns and constraints", () => {

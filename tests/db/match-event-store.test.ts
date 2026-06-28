@@ -37,6 +37,7 @@ function viewerHeaders(matchId: string) {
 }
 
 async function buildMigratedApp() {
+  process.env.AUTH_TEST_DISABLE_CSRF = "true";
   const pool = createDatabasePool();
   const connection = await pool.getConnection();
 
