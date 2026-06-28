@@ -10,7 +10,8 @@
     "migrate": "tsx src/migrate.ts run",
     "migrate:status": "tsx src/migrate.ts status",
     "auth:seed": "tsx src/auth/seedAuthCli.ts",
-    "auth:create-admin": "tsx src/auth/createAdminCli.ts"
+    "auth:create-admin": "tsx src/auth/createAdminCli.ts",
+    "smoke:create-match": "tsx src/smoke/createSmokeMatchCli.ts"
   },
   "dependencies": {
     "@basket-scoreboard/api-contracts": "file:../../packages/api-contracts",

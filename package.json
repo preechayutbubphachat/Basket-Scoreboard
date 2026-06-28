@@ -19,7 +19,8 @@
     "migrate": "npm run migrate --workspace @basket-scoreboard/api",
     "migrate:status": "npm run migrate:status --workspace @basket-scoreboard/api",
     "auth:seed": "npm run auth:seed --workspace @basket-scoreboard/api",
-    "auth:create-admin": "npm run auth:create-admin --workspace @basket-scoreboard/api"
+    "auth:create-admin": "npm run auth:create-admin --workspace @basket-scoreboard/api",
+    "smoke:create-match": "npm run smoke:create-match --workspace @basket-scoreboard/api"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
