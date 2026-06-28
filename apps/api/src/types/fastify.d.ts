@@ -1,4 +1,4 @@
-import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
+import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 
 declare module "fastify" {
   interface FastifyRequest {

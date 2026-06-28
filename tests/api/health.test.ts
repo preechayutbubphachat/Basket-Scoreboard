@@ -20,6 +20,8 @@ describe("health endpoint", () => {
 
 describe("correction command routes", () => {
   it("rejects malformed correction requests with the safe validation error shape", async () => {
+    const previousDisableCsrf = process.env.AUTH_TEST_DISABLE_CSRF;
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
     const app = buildApiApp({ pool: {} as never });
 
     try {
@@ -42,6 +44,11 @@ describe("correction command routes", () => {
       });
     } finally {
       await app.close();
+      if (previousDisableCsrf === undefined) {
+        delete process.env.AUTH_TEST_DISABLE_CSRF;
+      } else {
+        process.env.AUTH_TEST_DISABLE_CSRF = previousDisableCsrf;
+      }
     }
   });
 });
@@ -63,11 +70,14 @@ describe("auth foundation", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
-        user: {
-          userId: "00000000-0000-4000-8000-000000000011",
-          role: "SCORER",
-          assignedMatchIds: ["00000000-0000-4000-8000-000000000012"],
-          authMode: "DEV_HEADER"
+        ok: true,
+        data: {
+          user: {
+            userId: "00000000-0000-4000-8000-000000000011",
+            role: "SCORER",
+            assignedMatchIds: ["00000000-0000-4000-8000-000000000012"],
+            authMode: "DEV_HEADER"
+          }
         }
       });
     } finally {

@@ -9,7 +9,7 @@ import type {
   ScoreAddedPayload
 } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
-import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
+import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,

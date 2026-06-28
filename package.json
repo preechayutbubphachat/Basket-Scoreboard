@@ -17,7 +17,9 @@
     "lint": "tsc -b --pretty false",
     "db:check": "npm run db:check --workspace @basket-scoreboard/api",
     "migrate": "npm run migrate --workspace @basket-scoreboard/api",
-    "migrate:status": "npm run migrate:status --workspace @basket-scoreboard/api"
+    "migrate:status": "npm run migrate:status --workspace @basket-scoreboard/api",
+    "auth:seed": "npm run auth:seed --workspace @basket-scoreboard/api",
+    "auth:create-admin": "npm run auth:create-admin --workspace @basket-scoreboard/api"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -25,5 +27,8 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.6",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3"
   }
 }

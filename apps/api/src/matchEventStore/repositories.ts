@@ -1,6 +1,6 @@
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import type { CommandResult, MatchEventType } from "@basket-scoreboard/api-contracts";
-import type { AuthenticatedUser } from "../auth/placeholderAuth.js";
+import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import type { ScoreboardProjection } from "./projection.js";
 import { parseJsonField } from "./json.js";
 
