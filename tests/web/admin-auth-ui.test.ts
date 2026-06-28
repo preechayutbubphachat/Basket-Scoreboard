@@ -8,6 +8,12 @@ import {
   submitAssignmentForm,
   validateRevokeReason
 } from "../../apps/web/src/lib/adminAssignments";
+import {
+  buildAdminMatchLink,
+  buildOperatorMatchCard,
+  canAccessOperatorMatches,
+  createEmptyOperatorMatchesMessage
+} from "../../apps/web/src/lib/operatorMatches";
 import type { AuthenticatedUser } from "../../packages/api-contracts/src";
 
 const memoryStorage = () => {
@@ -114,6 +120,28 @@ describe("web API client", () => {
 
     expect(fetchMock).toHaveBeenLastCalledWith("/api/v1/auth/csrf", expect.objectContaining({ credentials: "include" }));
   });
+
+  test("loads operator and admin matches with credentials", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { matches: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { matches: [] } }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.getOperatorMatches();
+    await client.getAdminMatches();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/operator/matches",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/admin/matches",
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
 });
 
 describe("auth state", () => {
@@ -187,5 +215,49 @@ describe("admin assignment UI policy", () => {
       message: "Revocation reason is required"
     });
     expect(validateRevokeReason("wrong court assignment")).toEqual({ ok: true });
+  });
+});
+
+describe("operator match landing UI policy", () => {
+  test("unauthenticated operator route redirects to login", () => {
+    expect(getProtectedRouteDecision(null)).toEqual({ action: "REDIRECT", to: "/login" });
+  });
+
+  test("scorer can access operator matches and viewer cannot", () => {
+    const scorerUser: AuthenticatedUser = {
+      ...viewerUser,
+      role: "SCORER",
+      roles: ["SCORER"],
+      permissions: ["match.read", "match.score.operate", "public.scoreboard.read"]
+    };
+
+    expect(canAccessOperatorMatches(scorerUser)).toBe(true);
+    expect(canAccessOperatorMatches(viewerUser)).toBe(false);
+  });
+
+  test("scorer match card shows assigned match with disabled score control", () => {
+    const card = buildOperatorMatchCard({
+      matchId: "match-1",
+      homeTeamId: "home-1",
+      awayTeamId: "away-1",
+      status: "SCHEDULED",
+      scheduledAt: "2026-07-01T10:00:00.000Z",
+      venueName: "Court A",
+      assignedRoleCodes: ["SCORER"],
+      currentSeq: 0
+    });
+
+    expect(card.title).toBe("home-1 vs away-1");
+    expect(card.assignedRolesLabel).toBe("SCORER");
+    expect(card.scoreControl).toEqual({ enabled: false, label: "Score Control: coming next" });
+    expect(card.currentSeqLabel).toBe("Seq 0");
+  });
+
+  test("empty operator match state is explicit", () => {
+    expect(createEmptyOperatorMatchesMessage()).toBe("No active match assignments found for this account.");
+  });
+
+  test("admin match list links to officials page", () => {
+    expect(buildAdminMatchLink("match-1")).toBe("/admin/matches/match-1/officials");
   });
 });

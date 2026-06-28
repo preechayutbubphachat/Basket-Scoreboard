@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
-import type { MatchOfficialRoleCode } from "@basket-scoreboard/api-contracts";
+import type { MatchOfficialRoleCode, OperatorMatchSummary } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { ApiClientError, type AssignmentRecord } from "./lib/apiClient";
 import {
@@ -10,12 +10,21 @@ import {
   validateRevokeReason,
   type AssignmentFormState
 } from "./lib/adminAssignments";
+import {
+  buildAdminMatchLink,
+  buildOperatorMatchCard,
+  canAccessOperatorMatches,
+  createEmptyOperatorMatchesMessage,
+  getTeamLabel
+} from "./lib/operatorMatches";
 
 type Route =
   | { name: "home" }
   | { name: "login" }
   | { name: "admin" }
+  | { name: "admin-matches" }
   | { name: "admin-officials"; matchId: string }
+  | { name: "operator-matches" }
   | { name: "unauthorized" };
 
 function parseRoute(pathname: string): Route {
@@ -26,6 +35,8 @@ function parseRoute(pathname: string): Route {
   }
   if (pathname === "/login") return { name: "login" };
   if (pathname === "/admin") return { name: "admin" };
+  if (pathname === "/admin/matches") return { name: "admin-matches" };
+  if (pathname === "/operator/matches") return { name: "operator-matches" };
   if (pathname === "/unauthorized") return { name: "unauthorized" };
   return { name: "home" };
 }
@@ -49,10 +60,12 @@ function useRoute() {
 
 function ProtectedRoute({
   children,
-  requireAdmin = false
+  requireAdmin = false,
+  requireOperator = false
 }: {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requireOperator?: boolean;
 }) {
   const { currentUser, state } = useCurrentUser();
 
@@ -61,8 +74,12 @@ function ProtectedRoute({
     const decision = getProtectedRouteDecision(currentUser, requireAdmin ? { requireRole: "ADMIN" } : {});
     if (decision.action === "REDIRECT") {
       navigate(decision.to);
+      return;
     }
-  }, [currentUser, requireAdmin, state.loading]);
+    if (requireOperator && !canAccessOperatorMatches(currentUser)) {
+      navigate("/unauthorized");
+    }
+  }, [currentUser, requireAdmin, requireOperator, state.loading]);
 
   if (state.loading) {
     return <StatusPanel title="Loading session" message="Checking current browser session." />;
@@ -71,6 +88,10 @@ function ProtectedRoute({
   const decision = getProtectedRouteDecision(currentUser, requireAdmin ? { requireRole: "ADMIN" } : {});
   if (decision.action !== "ALLOW") {
     return <StatusPanel title="Redirecting" message="Checking access for this page." />;
+  }
+
+  if (requireOperator && !canAccessOperatorMatches(currentUser)) {
+    return <StatusPanel title="Redirecting" message="Checking operator access for this page." />;
   }
 
   return <>{children}</>;
@@ -92,9 +113,16 @@ function Shell({ children }: { children: React.ReactNode }) {
           Basketball Scoreboard
         </a>
         <nav aria-label="Main navigation">
-          <a href="/admin" onClick={(event) => { event.preventDefault(); navigate("/admin"); }}>
-            Admin
-          </a>
+          {currentUser && canManageAssignments(currentUser) ? (
+            <a href="/admin" onClick={(event) => { event.preventDefault(); navigate("/admin"); }}>
+              Admin
+            </a>
+          ) : null}
+          {currentUser && canAccessOperatorMatches(currentUser) ? (
+            <a href="/operator/matches" onClick={(event) => { event.preventDefault(); navigate("/operator/matches"); }}>
+              Operator Matches
+            </a>
+          ) : null}
           {currentUser ? (
             <a href="/login" onClick={onLogout}>
               Logout
@@ -177,6 +205,11 @@ function AdminHome() {
     <section className="panel">
       <h1>Admin</h1>
       <p>Manage match official assignments through the production API.</p>
+      <p>
+        <a href="/admin/matches" onClick={(event) => { event.preventDefault(); navigate("/admin/matches"); }}>
+          Browse matches
+        </a>
+      </p>
       <form className="inline-form" onSubmit={openMatch}>
         <label>
           Match ID
@@ -185,6 +218,145 @@ function AdminHome() {
         <button type="submit">Open officials</button>
       </form>
     </section>
+  );
+}
+
+function AdminMatchesPage() {
+  const { api } = useCurrentUser();
+  const [matches, setMatches] = useState<OperatorMatchSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        setMatches(await api.getAdminMatches());
+      } catch (error) {
+        setMessage(toUiMessage(error));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void load();
+  }, [api]);
+
+  return (
+    <section className="panel">
+      <h1>Admin Matches</h1>
+      <p className="muted">Open a match to manage official assignments.</p>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading matches...</p> : null}
+      {!loading && matches.length === 0 ? <p className="muted">No matches found.</p> : null}
+      {matches.length > 0 ? <MatchTable matches={matches} mode="admin" /> : null}
+    </section>
+  );
+}
+
+function OperatorMatchesPage() {
+  const { api } = useCurrentUser();
+  const [matches, setMatches] = useState<OperatorMatchSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        setMatches(await api.getOperatorMatches());
+      } catch (error) {
+        setMessage(toUiMessage(error));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void load();
+  }, [api]);
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Operator Matches</h1>
+        <p className="muted">Only active match assignments returned by the backend are shown here.</p>
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading assigned matches...</p></section> : null}
+      {!loading && matches.length === 0 ? (
+        <section className="panel"><p className="muted">{createEmptyOperatorMatchesMessage()}</p></section>
+      ) : null}
+      {!loading && matches.length > 0 ? (
+        <section className="match-grid">
+          {matches.map((match) => {
+            const card = buildOperatorMatchCard(match);
+            return (
+              <article className="match-card" key={match.matchId}>
+                <h2>{card.title}</h2>
+                <dl>
+                  <div><dt>Status</dt><dd>{card.statusLabel}</dd></div>
+                  <div><dt>Scheduled</dt><dd>{card.scheduledLabel}</dd></div>
+                  <div><dt>Venue</dt><dd>{card.venueLabel}</dd></div>
+                  <div><dt>Roles</dt><dd>{card.assignedRolesLabel}</dd></div>
+                  <div><dt>Current Seq</dt><dd>{card.currentSeqLabel}</dd></div>
+                </dl>
+                <div className="button-row">
+                  <button type="button" disabled>{card.scoreControl.label}</button>
+                  <button type="button" disabled>{card.publicScoreboard.label}</button>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: "admin" | "operator" }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Match</th>
+            <th>Status</th>
+            <th>Scheduled</th>
+            <th>Venue</th>
+            <th>Seq</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matches.map((match) => (
+            <tr key={match.matchId}>
+              <td>{getTeamLabel(match)}</td>
+              <td>{match.status}</td>
+              <td>{formatDate(match.scheduledAt)}</td>
+              <td>{match.venueName ?? "-"}</td>
+              <td>{match.currentSeq}</td>
+              <td>
+                {mode === "admin" ? (
+                  <a
+                    href={buildAdminMatchLink(match.matchId)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(buildAdminMatchLink(match.matchId));
+                    }}
+                  >
+                    Officials
+                  </a>
+                ) : (
+                  <span className="muted">Read-only landing</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -399,10 +571,22 @@ function RoutedApp() {
             <AdminHome />
           </ProtectedRoute>
         );
+      case "admin-matches":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminMatchesPage />
+          </ProtectedRoute>
+        );
       case "admin-officials":
         return (
           <ProtectedRoute requireAdmin>
             <AdminOfficialsPage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-matches":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorMatchesPage />
           </ProtectedRoute>
         );
       case "unauthorized":

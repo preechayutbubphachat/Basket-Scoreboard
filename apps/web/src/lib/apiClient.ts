@@ -2,6 +2,7 @@ import type {
   AuthenticatedUser,
   MatchAssignment,
   MatchOfficialRoleCode,
+  OperatorMatchSummary,
   ReasonCode
 } from "@basket-scoreboard/api-contracts";
 
@@ -140,6 +141,14 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async listOfficials(matchId: string) {
       const data = await request<{ officials: AssignmentRecord[] }>(`/matches/${encodeURIComponent(matchId)}/officials`);
       return data.officials;
+    },
+    async getOperatorMatches() {
+      const data = await request<{ matches: OperatorMatchSummary[] }>("/operator/matches");
+      return data.matches;
+    },
+    async getAdminMatches() {
+      const data = await request<{ matches: OperatorMatchSummary[] }>("/admin/matches");
+      return data.matches;
     },
     async assignOfficial(matchId: string, input: { userId: string; roleCode: MatchOfficialRoleCode }) {
       const data = await request<{ assignment: AssignmentRecord }>(`/matches/${encodeURIComponent(matchId)}/officials`, {
