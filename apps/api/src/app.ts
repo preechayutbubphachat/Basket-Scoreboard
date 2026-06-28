@@ -5,6 +5,7 @@ import { createDatabasePool } from "./db.js";
 import { createAuthHandlers } from "./auth/sessionAuth.js";
 import { fastifyErrorHandler } from "./errors/apiErrors.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
+import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 
 export function buildApiApp(options: { pool?: Pool } = {}) {
@@ -25,6 +26,7 @@ export function buildApiApp(options: { pool?: Pool } = {}) {
 
   registerAuthRoutes(app, pool, auth);
   registerMatchRoutes(app, pool, auth);
+  registerMatchOfficialRoutes(app, pool, auth);
 
   if (!options.pool) {
     app.addHook("onClose", async () => {

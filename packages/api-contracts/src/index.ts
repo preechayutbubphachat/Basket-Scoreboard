@@ -19,6 +19,11 @@ export const reasonCodes = {
   CSRF_REQUIRED: "CSRF_REQUIRED",
   CSRF_INVALID: "CSRF_INVALID",
   MATCH_NOT_ASSIGNED: "MATCH_NOT_ASSIGNED",
+  USER_NOT_FOUND: "USER_NOT_FOUND",
+  ASSIGNMENT_NOT_FOUND: "ASSIGNMENT_NOT_FOUND",
+  ASSIGNMENT_INACTIVE: "ASSIGNMENT_INACTIVE",
+  DUPLICATE_ASSIGNMENT: "DUPLICATE_ASSIGNMENT",
+  REASON_REQUIRED: "REASON_REQUIRED",
   INSUFFICIENT_PERMISSION: "INSUFFICIENT_PERMISSION",
   DEV_AUTH_DISABLED: "DEV_AUTH_DISABLED",
   MATCH_NOT_FOUND: "MATCH_NOT_FOUND",
@@ -40,6 +45,24 @@ export type ApiErrorResponse = {
 
 export type RoleCode = "ADMIN" | "SCORER" | "REFEREE" | "VIEWER";
 
+export type MatchOfficialRoleCode =
+  | "REFEREE"
+  | "SCORER"
+  | "ASSISTANT_SCORER"
+  | "TIMER"
+  | "SHOT_CLOCK_OPERATOR"
+  | "MATCH_OPERATOR";
+
+export type MatchAssignment = {
+  id: string;
+  matchId: string;
+  userId: string;
+  roleCode: MatchOfficialRoleCode;
+  assignmentStatus: "ACTIVE" | "REVOKED" | string;
+  assignedAt: string;
+  revokedAt: string | null;
+};
+
 export type PermissionCode =
   | "match.create"
   | "match.read"
@@ -58,6 +81,7 @@ export type AuthenticatedUser = {
   roles?: RoleCode[];
   permissions: PermissionCode[];
   assignedMatchIds: string[];
+  matchAssignments?: MatchAssignment[];
   deviceId: string;
   authMode: "DEV_HEADER" | "SESSION";
   sessionId?: string;
