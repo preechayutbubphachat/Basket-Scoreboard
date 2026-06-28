@@ -95,7 +95,25 @@ Development and tests can use controlled headers:
 
 Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep `DEV_AUTH_ENABLED=false` by default and do not enable it on a public server.
 
-The system is still not full match-day ready until UI login/session flows and complete match assignment workflows exist. Until a `match_officials` or equivalent user-assignment schema is added, SCORER and REFEREE production sessions fail closed for match-scoped operations; ADMIN can perform current MVP operations.
+The system is still not full match-day ready until UI login/session flows and complete match-day operator workflows exist.
+
+## Match Official Assignments
+
+Production SCORER and REFEREE sessions require an active `match_officials` assignment for the match before they can use match-scoped endpoints. Assignment is a scope check, not a permission grant: the user must still have the required role permission from `roles` / `permissions`.
+
+ADMIN users can manage assignments through authenticated API endpoints:
+
+```http
+POST /api/v1/matches/:matchId/officials
+GET /api/v1/matches/:matchId/officials
+DELETE /api/v1/matches/:matchId/officials/:assignmentId
+```
+
+Supported assignment role codes are `REFEREE`, `SCORER`, `ASSISTANT_SCORER`, `TIMER`, `SHOT_CLOCK_OPERATOR`, and `MATCH_OPERATOR`. Score operation is allowed only for assigned scorer-style roles when the user also has `match.score.operate`. Viewer users remain read-only even if an assignment row is created accidentally.
+
+`GET /api/v1/auth/me` returns `matchAssignments` for the authenticated user. Assignment changes are recorded in `audit_logs`; they do not append basketball `match_events`.
+
+Current limitation: there is no full admin UI yet. Create users/roles with the bootstrap scripts, create matches through the API, then assign officials/operators through the API.
 
 ## Local MariaDB Verification
 

@@ -26,13 +26,15 @@ export function registerMatchRoutes(
   auth: {
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     requirePermission: (
-      permission: "match.create" | "match.correction.apply" | "match.correction.reject"
+      permission: "match.create"
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     requireMatchPermission: (
       permission:
         | "match.read"
         | "match.score.operate"
-        | "match.correction.request",
+        | "match.correction.request"
+        | "match.correction.apply"
+        | "match.correction.reject",
       getMatchId: (request: FastifyRequest) => string
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     requireCsrf: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -204,7 +206,14 @@ export function registerMatchRoutes(
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/corrections/apply-score",
     {
-      preHandler: [auth.requireAuth, auth.requirePermission("match.correction.apply"), auth.requireCsrf]
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission(
+          "match.correction.apply",
+          (request) => (request.params as { matchId: string }).matchId
+        ),
+        auth.requireCsrf
+      ]
     },
     async (request, reply) => {
       const command = applyScoreCorrectionCommandSchema.parse(request.body);
@@ -234,7 +243,14 @@ export function registerMatchRoutes(
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/corrections/reject",
     {
-      preHandler: [auth.requireAuth, auth.requirePermission("match.correction.reject"), auth.requireCsrf]
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission(
+          "match.correction.reject",
+          (request) => (request.params as { matchId: string }).matchId
+        ),
+        auth.requireCsrf
+      ]
     },
     async (request, reply) => {
       const command = rejectCorrectionCommandSchema.parse(request.body);

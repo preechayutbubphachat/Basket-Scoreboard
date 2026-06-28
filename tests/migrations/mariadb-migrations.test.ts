@@ -21,7 +21,8 @@ describe("MariaDB migration foundation", () => {
       "004_create_event_store_tables.sql",
       "005_create_projection_tables.sql",
       "006_create_audit_tables.sql",
-      "007_create_user_sessions_table.sql"
+      "007_create_user_sessions_table.sql",
+      "008_create_match_officials_table.sql"
     ]);
   });
 
@@ -39,6 +40,7 @@ describe("MariaDB migration foundation", () => {
       "permissions",
       "user_roles",
       "user_sessions",
+      "match_officials",
       "tournaments",
       "teams",
       "players",
@@ -71,6 +73,24 @@ describe("MariaDB migration foundation", () => {
     expect(sessionSql).toContain("engine=innodb");
     expect(sessionSql).not.toContain("session_token varchar");
     expect(sessionSql).not.toContain("csrf_token varchar");
+  });
+
+  it("adds explicit match official assignments", () => {
+    const assignmentSql = compact(readMigration("008_create_match_officials_table.sql"));
+
+    expect(assignmentSql).toContain("create table if not exists match_officials");
+    expect(assignmentSql).toContain("match_id char(36) not null");
+    expect(assignmentSql).toContain("user_id char(36) not null");
+    expect(assignmentSql).toContain("role_code varchar(40) not null");
+    expect(assignmentSql).toContain("assignment_status varchar(40) not null default 'active'");
+    expect(assignmentSql).toContain("assigned_by_user_id char(36) null");
+    expect(assignmentSql).toContain("revoked_by_user_id char(36) null");
+    expect(assignmentSql).toContain("unique key uq_match_officials_match_user_role");
+    expect(assignmentSql).toContain("key idx_match_officials_match_id");
+    expect(assignmentSql).toContain("key idx_match_officials_user_id");
+    expect(assignmentSql).toContain("key idx_match_officials_role_code");
+    expect(assignmentSql).toContain("key idx_match_officials_assignment_status");
+    expect(assignmentSql).toContain("engine=innodb");
   });
 
   it("defines the critical append-only event store columns and constraints", () => {

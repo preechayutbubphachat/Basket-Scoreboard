@@ -6,11 +6,13 @@ import {
   reasonCodes,
   type AuthenticatedUser,
   type AuthorizationDecision,
+  type MatchAssignment,
   type PermissionCode,
   type ReasonCode,
   type RoleCode
 } from "@basket-scoreboard/api-contracts";
 import { apiError } from "../errors/apiErrors.js";
+import { getUserMatchAssignments, isUserAssignedToMatch } from "../matchOfficials/matchOfficialService.js";
 
 export type { AuthenticatedUser, AuthorizationDecision, PermissionCode, RoleCode };
 
@@ -215,6 +217,7 @@ function publicUser(
   row: UserRow,
   roles: RoleCode[],
   permissions: PermissionCode[],
+  matchAssignments: MatchAssignment[] = [],
   session?: SessionRow
 ): AuthenticatedUser {
   const primaryRole = roles[0] ?? "VIEWER";
@@ -225,7 +228,8 @@ function publicUser(
     role: primaryRole,
     roles,
     permissions,
-    assignedMatchIds: [] as string[],
+    assignedMatchIds: matchAssignments.map((assignment) => assignment.matchId),
+    matchAssignments,
     deviceId: `session-${row.user_id}`,
     authMode: "SESSION" as const
   };
@@ -246,6 +250,7 @@ export function serializeUser(user: AuthenticatedUser) {
     roles: user.roles ?? [user.role],
     permissions: user.permissions,
     assignedMatchIds: user.assignedMatchIds,
+    matchAssignments: user.matchAssignments ?? [],
     authMode: user.authMode
   };
 }
@@ -324,10 +329,11 @@ export function createAuthHandlers(pool: Pool) {
       }
 
       const { roles, permissions } = await loadRolesAndPermissions(connection, userRow.user_id);
+      const matchAssignments = await getUserMatchAssignments(connection, userRow.user_id);
       await connection.query("UPDATE user_sessions SET last_seen_at = NOW(3) WHERE id = ?", [
         session.id
       ]);
-      const user = publicUser(userRow, roles, permissions, session);
+      const user = publicUser(userRow, roles, permissions, matchAssignments, session);
       const csrfToken = headerValue(request.headers["x-csrf-token"]);
 
       if (csrfToken) {
@@ -389,11 +395,11 @@ export function createAuthHandlers(pool: Pool) {
     return reply.status(401).send(apiError(reasonCodes.UNAUTHENTICATED, "Authentication required"));
   }
 
-  function authorize(
+  async function authorize(
     user: AuthenticatedUser | null,
     permission: PermissionCode,
     resource: { matchId?: string } = {}
-  ): AuthorizationDecision {
+  ): Promise<AuthorizationDecision> {
     if (!user) {
       return {
         allowed: false,
@@ -414,11 +420,42 @@ export function createAuthHandlers(pool: Pool) {
       };
     }
 
-    if (resource.matchId && !user.assignedMatchIds.includes(resource.matchId)) {
+    if (resource.matchId) {
+      const assigned =
+        user.authMode === "DEV_HEADER"
+          ? user.assignedMatchIds.includes(resource.matchId)
+          : await isUserAssignedToMatch(pool, user.userId, resource.matchId, permission);
+
+      if (!assigned) {
+        return {
+          allowed: false,
+          reasonCode: reasonCodes.MATCH_NOT_ASSIGNED,
+          message: "User is not assigned to this match"
+        };
+      }
+    }
+
+    return { allowed: true };
+  }
+
+  async function authorizeGlobal(user: AuthenticatedUser | null, permission: PermissionCode) {
+    if (!user) {
       return {
         allowed: false,
-        reasonCode: reasonCodes.MATCH_NOT_ASSIGNED,
-        message: "User is not assigned to this match"
+        reasonCode: reasonCodes.UNAUTHENTICATED,
+        message: "Authentication required"
+      };
+    }
+
+    if (user.role === "ADMIN") {
+      return { allowed: true };
+    }
+
+    if (!user.permissions.includes(permission)) {
+      return {
+        allowed: false,
+        reasonCode: reasonCodes.FORBIDDEN,
+        message: `Permission ${permission} is required`
       };
     }
 
@@ -427,7 +464,7 @@ export function createAuthHandlers(pool: Pool) {
 
   function requirePermission(permission: PermissionCode) {
     return async (request: FastifyRequest, reply: FastifyReply) => {
-      const decision = authorize(request.user ?? null, permission);
+      const decision = await authorizeGlobal(request.user ?? null, permission);
 
       if (!decision.allowed) {
         return reply
@@ -442,7 +479,7 @@ export function createAuthHandlers(pool: Pool) {
     getMatchId: (request: FastifyRequest) => string
   ) {
     return async (request: FastifyRequest, reply: FastifyReply) => {
-      const decision = authorize(request.user ?? null, permission, { matchId: getMatchId(request) });
+      const decision = await authorize(request.user ?? null, permission, { matchId: getMatchId(request) });
 
       if (!decision.allowed) {
         return reply
@@ -518,6 +555,7 @@ export async function loginWithPassword(pool: Pool, input: { email: string; pass
     }
 
     const { roles, permissions } = await loadRolesAndPermissions(connection, userRow.user_id);
+    const matchAssignments = await getUserMatchAssignments(connection, userRow.user_id);
     const sessionToken = randomToken();
     const csrfToken = randomToken();
     const sessionId = randomUUID();
@@ -545,7 +583,7 @@ export async function loginWithPassword(pool: Pool, input: { email: string; pass
       sessionToken,
       csrfToken,
       cookie: sessionCookie(sessionToken, getSessionTtlMinutes() * 60),
-      user: publicUser(userRow, roles, permissions, {
+      user: publicUser(userRow, roles, permissions, matchAssignments, {
         id: sessionId,
         user_id: userRow.user_id,
         session_token_hash: "",
