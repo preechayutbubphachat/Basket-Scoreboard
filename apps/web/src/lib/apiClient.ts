@@ -1,9 +1,13 @@
 import type {
   AuthenticatedUser,
+  CommandResult,
   MatchAssignment,
   MatchOfficialRoleCode,
+  MatchSyncResponse,
   OperatorMatchSummary,
-  ReasonCode
+  ReasonCode,
+  ScoreAddedPayload,
+  ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -14,12 +18,14 @@ type ApiSuccess<T> = {
 };
 
 type ApiErrorEnvelope = {
-  error?: {
-    reasonCode?: ReasonCode | string;
-    code?: ReasonCode | string;
-    message?: string;
-    details?: unknown;
-  };
+  error?:
+    | string
+    | {
+        reasonCode?: ReasonCode | string;
+        code?: ReasonCode | string;
+        message?: string;
+        details?: unknown;
+      };
 };
 
 export type AssignmentRecord = MatchAssignment & {
@@ -62,7 +68,18 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
   const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
   let csrfToken: string | null = null;
 
-  async function request<T>(path: string, init: RequestInit = {}, retryingCsrf = false): Promise<T> {
+  function createCommandId() {
+    return globalThis.crypto?.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (digit) =>
+      (Number(digit) ^ (Math.random() * 16) >> (Number(digit) / 4)).toString(16)
+    );
+  }
+
+  async function request<T>(
+    path: string,
+    init: RequestInit = {},
+    retryingCsrf = false,
+    options: { acceptRawSuccess?: boolean } = {}
+  ): Promise<T> {
     const method = (init.method ?? "GET").toUpperCase();
     const isWrite = !["GET", "HEAD", "OPTIONS"].includes(method);
     const existingHeaders = init.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init.headers;
@@ -85,9 +102,15 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     });
     const payload = (await response.json().catch(() => ({}))) as ApiSuccess<T> | ApiErrorEnvelope;
 
-    if (!response.ok || !("ok" in payload && payload.ok === true)) {
+    const isEnvelopeSuccess = "ok" in payload && payload.ok === true;
+    if (response.ok && !isEnvelopeSuccess && options.acceptRawSuccess) {
+      return payload as T;
+    }
+
+    if (!response.ok || !isEnvelopeSuccess) {
       const error = "error" in payload ? payload.error : undefined;
-      const reasonCode = error?.reasonCode ?? error?.code ?? `HTTP_${response.status}`;
+      const reasonCode =
+        typeof error === "string" ? error : error?.reasonCode ?? error?.code ?? `HTTP_${response.status}`;
       const recoverable = reasonCode === "CSRF_REQUIRED" || reasonCode === "CSRF_INVALID";
 
       if (recoverable && !retryingCsrf) {
@@ -97,9 +120,9 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
 
       throw new ApiClientError({
         reasonCode,
-        message: error?.message ?? "Request failed",
+        message: typeof error === "string" ? error : error?.message ?? "Request failed",
         status: response.status,
-        details: error?.details,
+        details: typeof error === "string" ? undefined : error?.details,
         recoverable
       });
     }
@@ -149,6 +172,48 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async getAdminMatches() {
       const data = await request<{ matches: OperatorMatchSummary[] }>("/admin/matches");
       return data.matches;
+    },
+    async getMatchState(matchId: string) {
+      return request<ScoreboardProjection | null>(
+        `/matches/${encodeURIComponent(matchId)}/state`,
+        {},
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async syncMatch(matchId: string, lastEventSeq: number) {
+      return request<MatchSyncResponse>(
+        `/matches/${encodeURIComponent(matchId)}/sync?lastEventSeq=${encodeURIComponent(String(lastEventSeq))}`,
+        {},
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async addScore(matchId: string, input: { expectedSeq: number; payload: ScoreAddedPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/score/add`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            commandId: createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: createCommandId(),
+            clientTimestamp: new Date().toISOString(),
+            payload: input.payload
+          })
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async getPublicScoreboard(matchId: string) {
+      return request<ScoreboardProjection>(
+        `/public/matches/${encodeURIComponent(matchId)}/scoreboard`,
+        {},
+        false,
+        { acceptRawSuccess: true }
+      );
     },
     async assignOfficial(matchId: string, input: { userId: string; roleCode: MatchOfficialRoleCode }) {
       const data = await request<{ assignment: AssignmentRecord }>(`/matches/${encodeURIComponent(matchId)}/officials`, {

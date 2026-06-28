@@ -10,11 +10,13 @@ import {
 } from "../../apps/web/src/lib/adminAssignments";
 import {
   buildAdminMatchLink,
+  buildOperatorMatchScoreLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
+  canOperateScore,
   createEmptyOperatorMatchesMessage
 } from "../../apps/web/src/lib/operatorMatches";
-import type { AuthenticatedUser } from "../../packages/api-contracts/src";
+import type { AuthenticatedUser, ScoreAddedPayload, ScoreboardProjection } from "../../packages/api-contracts/src";
 
 const memoryStorage = () => {
   const values = new Map<string, string>();
@@ -59,6 +61,27 @@ const viewerUser: AuthenticatedUser = {
   matchAssignments: [],
   deviceId: "browser",
   authMode: "SESSION"
+};
+
+const scoreboardProjection: ScoreboardProjection = {
+  matchId: "11111111-1111-4111-8111-111111111111",
+  homeScore: 10,
+  awayScore: 8,
+  periodNumber: 1,
+  gameClockRemainingMs: 512000,
+  shotClockRemainingMs: null,
+  status: "LIVE",
+  currentSeq: 3,
+  projectionVersion: "scoreboard-v1"
+};
+
+const scorePayload: ScoreAddedPayload = {
+  teamSide: "HOME",
+  points: 2,
+  playerId: null,
+  periodNumber: 1,
+  gameClockRemainingMs: 512000,
+  note: null
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -139,6 +162,94 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/v1/admin/matches",
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  test("loads private match state and syncs missed events with credentials", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse(scoreboardProjection))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          lastEventSeq: 3,
+          missedEvents: [],
+          projection: { ...scoreboardProjection, currentSeq: 4 },
+          fullStateSyncRequired: false,
+          serverTime: "2026-07-01T10:00:00.000Z",
+          projectionVersion: "scoreboard-v1",
+          connectionStatus: "ONLINE"
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getMatchState(scoreboardProjection.matchId)).resolves.toMatchObject({ currentSeq: 3 });
+    await expect(client.syncMatch(scoreboardProjection.matchId, 3)).resolves.toMatchObject({ currentSeq: 4 });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/v1/matches/${scoreboardProjection.matchId}/state`,
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/v1/matches/${scoreboardProjection.matchId}/sync?lastEventSeq=3`,
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  test("posts score commands with CSRF, expectedSeq, and no client-owned totals", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [{ eventId: "33333333-3333-4333-8333-333333333333", seqNo: 4, eventType: "SCORE_ADDED" }],
+          reasonCode: null,
+          message: null
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.addScore(scoreboardProjection.matchId, { expectedSeq: 3, payload: scorePayload });
+
+    const [, init] = fetchMock.mock.calls[1]!;
+    const body = JSON.parse(String(init?.body));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/score/add`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(body).toMatchObject({
+      matchId: scoreboardProjection.matchId,
+      expectedSeq: 3,
+      payload: scorePayload
+    });
+    expect(body.commandId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(body.clientTimestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.homeScore).toBeUndefined();
+    expect(body.awayScore).toBeUndefined();
+    expect(body["final" + "Score"]).toBeUndefined();
+  });
+
+  test("loads public scoreboard projection without requiring an auth envelope", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(scoreboardProjection));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getPublicScoreboard(scoreboardProjection.matchId)).resolves.toEqual(scoreboardProjection);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/public/matches/${scoreboardProjection.matchId}/scoreboard`,
       expect.objectContaining({ credentials: "include" })
     );
   });
@@ -235,7 +346,7 @@ describe("operator match landing UI policy", () => {
     expect(canAccessOperatorMatches(viewerUser)).toBe(false);
   });
 
-  test("scorer match card shows assigned match with disabled score control", () => {
+  test("scorer match card links assigned match to score control and public scoreboard", () => {
     const card = buildOperatorMatchCard({
       matchId: "match-1",
       homeTeamId: "home-1",
@@ -249,8 +360,30 @@ describe("operator match landing UI policy", () => {
 
     expect(card.title).toBe("home-1 vs away-1");
     expect(card.assignedRolesLabel).toBe("SCORER");
-    expect(card.scoreControl).toEqual({ enabled: false, label: "Score Control: coming next" });
+    expect(card.scoreControl).toEqual({
+      enabled: true,
+      href: "/operator/matches/match-1/score",
+      label: "Open Score Control"
+    });
+    expect(card.publicScoreboard).toEqual({
+      enabled: true,
+      href: "/public/scoreboard/match-1",
+      label: "Public Scoreboard"
+    });
     expect(card.currentSeqLabel).toBe("Seq 0");
+  });
+
+  test("score control requires score operation permission", () => {
+    const scorerUser: AuthenticatedUser = {
+      ...viewerUser,
+      role: "SCORER",
+      roles: ["SCORER"],
+      permissions: ["match.read", "match.score.operate", "public.scoreboard.read"]
+    };
+
+    expect(canOperateScore(scorerUser)).toBe(true);
+    expect(canOperateScore(viewerUser)).toBe(false);
+    expect(buildOperatorMatchScoreLink("match 1")).toBe("/operator/matches/match%201/score");
   });
 
   test("empty operator match state is explicit", () => {

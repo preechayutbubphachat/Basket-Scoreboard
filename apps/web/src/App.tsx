@@ -1,5 +1,10 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
-import type { MatchOfficialRoleCode, OperatorMatchSummary } from "@basket-scoreboard/api-contracts";
+import type {
+  MatchOfficialRoleCode,
+  OperatorMatchSummary,
+  ScoreAddedPayload,
+  ScoreboardProjection
+} from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { ApiClientError, type AssignmentRecord } from "./lib/apiClient";
 import {
@@ -12,8 +17,11 @@ import {
 } from "./lib/adminAssignments";
 import {
   buildAdminMatchLink,
+  buildOperatorMatchScoreLink,
+  buildPublicScoreboardLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
+  canOperateScore,
   createEmptyOperatorMatchesMessage,
   getTeamLabel
 } from "./lib/operatorMatches";
@@ -25,6 +33,8 @@ type Route =
   | { name: "admin-matches" }
   | { name: "admin-officials"; matchId: string }
   | { name: "operator-matches" }
+  | { name: "operator-score"; matchId: string }
+  | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
 function parseRoute(pathname: string): Route {
@@ -32,6 +42,16 @@ function parseRoute(pathname: string): Route {
   const matchId = officialMatch?.[1];
   if (matchId) {
     return { name: "admin-officials", matchId: decodeURIComponent(matchId) };
+  }
+  const operatorScoreMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/score$/);
+  const operatorMatchId = operatorScoreMatch?.[1];
+  if (operatorMatchId) {
+    return { name: "operator-score", matchId: decodeURIComponent(operatorMatchId) };
+  }
+  const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
+  const publicMatchId = publicScoreboardMatch?.[1];
+  if (publicMatchId) {
+    return { name: "public-scoreboard", matchId: decodeURIComponent(publicMatchId) };
   }
   if (pathname === "/login") return { name: "login" };
   if (pathname === "/admin") return { name: "admin" };
@@ -303,14 +323,229 @@ function OperatorMatchesPage() {
                   <div><dt>Current Seq</dt><dd>{card.currentSeqLabel}</dd></div>
                 </dl>
                 <div className="button-row">
-                  <button type="button" disabled>{card.scoreControl.label}</button>
-                  <button type="button" disabled>{card.publicScoreboard.label}</button>
+                  <a
+                    className="button-link"
+                    href={card.scoreControl.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.scoreControl.href);
+                    }}
+                  >
+                    {card.scoreControl.label}
+                  </a>
+                  <a
+                    className="button-link secondary"
+                    href={card.publicScoreboard.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.publicScoreboard.href);
+                    }}
+                  >
+                    {card.publicScoreboard.label}
+                  </a>
                 </div>
               </article>
             );
           })}
         </section>
       ) : null}
+    </section>
+  );
+}
+
+function OperatorScorePage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const canSubmitScore = canOperateScore(currentUser);
+
+  async function loadState() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setProjection(await api.getMatchState(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadState();
+  }, [matchId]);
+
+  async function refreshAfterCommand(lastSeq: number) {
+    const sync = await api.syncMatch(matchId, lastSeq);
+    if (sync.projection) {
+      setProjection(sync.projection);
+      return;
+    }
+    setProjection(await api.getMatchState(matchId));
+  }
+
+  async function addScore(teamSide: ScoreAddedPayload["teamSide"], points: ScoreAddedPayload["points"]) {
+    if (!projection || !canSubmitScore) return;
+    const key = `${teamSide}-${points}`;
+    setPendingKey(key);
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+
+    try {
+      const result = await api.addScore(matchId, {
+        expectedSeq: previousSeq,
+        payload: {
+          teamSide,
+          points,
+          playerId: null,
+          periodNumber: projection.periodNumber,
+          gameClockRemainingMs: projection.gameClockRemainingMs,
+          note: null
+        }
+      });
+
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage({ tone: "error", code: "INVALID_EXPECTED_SEQ", text: "State changed, please retry." });
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage({ tone: "success", text: `Score accepted. Current seq ${result.currentSeq}.` });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Score Control</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!canSubmitScore ? <ErrorMessage code="FORBIDDEN" message="Score operation permission is required." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
+      {!loading && !projection ? (
+        <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
+      ) : null}
+      {projection ? (
+        <section className="panel score-control">
+          <div className="score-display" aria-label="Current score">
+            <div>
+              <span>Home</span>
+              <strong>{projection.homeScore}</strong>
+            </div>
+            <div>
+              <span>Away</span>
+              <strong>{projection.awayScore}</strong>
+            </div>
+          </div>
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{projection.status}</dd></div>
+            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
+            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+          </dl>
+          <div className="score-actions">
+            {(["HOME", "AWAY"] as const).map((teamSide) => (
+              <div key={teamSide}>
+                <h2>{teamSide === "HOME" ? "Home" : "Away"}</h2>
+                <div className="button-row">
+                  {([1, 2, 3] as const).map((points) => {
+                    const key = `${teamSide}-${points}`;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={!canSubmitScore || Boolean(pendingKey)}
+                        onClick={() => void addScore(teamSide, points)}
+                      >
+                        {pendingKey === key ? "Submitting..." : `+${points}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="button-row">
+            <a
+              className="button-link secondary"
+              href={buildPublicScoreboardLink(matchId)}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate(buildPublicScoreboardLink(matchId));
+              }}
+            >
+              Public Scoreboard
+            </a>
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function PublicScoreboardPage({ matchId }: { matchId: string }) {
+  const { api } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const next = await api.getPublicScoreboard(matchId);
+        if (!cancelled) {
+          setProjection(next);
+          setMessage(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(toUiMessage(error));
+        }
+      }
+    }
+
+    void load();
+    const timer = window.setInterval(() => void load(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [api, matchId]);
+
+  return (
+    <section className="panel public-scoreboard">
+      <h1>Public Scoreboard</h1>
+      <p className="muted">Match ID: {matchId}</p>
+      {message ? <Notice {...message} /> : null}
+      {projection ? (
+        <>
+          <div className="score-display large" aria-label="Public score">
+            <div>
+              <span>Home</span>
+              <strong>{projection.homeScore}</strong>
+            </div>
+            <div>
+              <span>Away</span>
+              <strong>{projection.awayScore}</strong>
+            </div>
+          </div>
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{projection.status}</dd></div>
+            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
+            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+          </dl>
+        </>
+      ) : (
+        <p>Loading scoreboard...</p>
+      )}
     </section>
   );
 }
@@ -349,7 +584,15 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                     Officials
                   </a>
                 ) : (
-                  <span className="muted">Read-only landing</span>
+                  <a
+                    href={buildOperatorMatchScoreLink(match.matchId)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(buildOperatorMatchScoreLink(match.matchId));
+                    }}
+                  >
+                    Score
+                  </a>
                 )}
               </td>
             </tr>
@@ -589,6 +832,14 @@ function RoutedApp() {
             <OperatorMatchesPage />
           </ProtectedRoute>
         );
+      case "operator-score":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorScorePage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "public-scoreboard":
+        return <PublicScoreboardPage matchId={route.matchId} />;
       case "unauthorized":
         return <UnauthorizedPage />;
       case "home":

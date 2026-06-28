@@ -222,3 +222,27 @@ export type CommandResult = {
   reasonCode: string | null;
   message: string | null;
 };
+
+export type ScoreboardProjection = {
+  matchId: string;
+  homeScore: number;
+  awayScore: number;
+  periodNumber: number;
+  gameClockRemainingMs: number;
+  shotClockRemainingMs: number | null;
+  status: "READY" | "LIVE" | "FINAL" | string;
+  currentSeq: number;
+  projectionVersion: "scoreboard-v1";
+};
+
+export type MatchSyncResponse = {
+  matchId: string;
+  currentSeq: number;
+  lastEventSeq: number;
+  projection: ScoreboardProjection | null;
+  missedEvents: unknown[];
+  fullStateSyncRequired: boolean;
+  serverTime: string;
+  projectionVersion: "scoreboard-v1";
+  connectionStatus: "ONLINE" | "OFFLINE" | string;
+};
