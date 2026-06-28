@@ -134,9 +134,47 @@ Authenticated scorer/referee/operator users can open:
 
 This page calls `GET /api/v1/operator/matches`. ADMIN users may see all current MVP matches for testing/navigation. SCORER and REFEREE users see only matches where they have an active `match_officials` assignment; revoked assignments are excluded. VIEWER users are denied for this operator route.
 
-The operator landing page is read-only. Match cards show the teams or fallback IDs, status, scheduled time, venue, active assignment roles, and current event sequence when available. Score Control and Public Scoreboard buttons are placeholders marked as coming next. This task does not add score, foul, clock, timeout, public scoreboard polling, or Socket.IO UI.
+The operator landing page shows the teams or fallback IDs, status, scheduled time, venue, active assignment roles, and current event sequence when available. Score Control and Public Scoreboard buttons open the minimal score-control and public polling screens. This task does not add foul, clock, timeout, correction UI, or Socket.IO UI.
 
-Current limitation: there is no live operator score UI yet. Create users/roles with the bootstrap scripts, create matches through the API, assign officials/operators through the admin assignment UI or API, then use `/operator/matches` only as the safe landing/navigation flow.
+Current limitation: the live operator score UI only supports HOME/AWAY +1/+2/+3 score events. Create users/roles with the bootstrap scripts, create or locate matches through the API or smoke helper, then assign officials/operators through the admin assignment UI or API.
+
+## Production Browser Smoke Test
+
+Use this checklist on Plesk to verify the deployed app with a real MariaDB-backed match. The smoke helper is disabled unless `SMOKE_TEST_ENABLED=true` is set for that command.
+
+```bash
+git pull origin main
+npm install
+npm run build
+npm run migrate
+npm run auth:seed
+AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
+SMOKE_TEST_ENABLED=true SMOKE_TEST_HOME_NAME="HOME" SMOKE_TEST_AWAY_NAME="AWAY" npm run smoke:create-match
+```
+
+The smoke match command creates or reuses the match code `Smoke Test Match`, creates or reuses the HOME/AWAY demo teams, ensures `match_streams` and scoreboard projection rows exist, and prints only:
+
+```text
+matchId=<id>
+publicScoreboardPath=/public/scoreboard/<id>
+operatorScorePath=/operator/matches/<id>/score
+created=true|false
+```
+
+Browser checklist:
+
+1. Login as admin.
+2. Open `/admin/matches`.
+3. Assign a scorer to the smoke match.
+4. Login as the scorer.
+5. Open `/operator/matches`.
+6. Open score control for the smoke match.
+7. Click `HOME +2`.
+8. Open `/public/scoreboard/:matchId`.
+9. Verify the public score updates.
+10. Verify no private audit, session, password, token, or internal user data is visible.
+
+The optional scorer-account helper is intentionally not included in this task. Create scorer users through the existing production bootstrap/admin workflow or direct controlled database operations, then assign the scorer through the admin assignment UI.
 
 ## Local MariaDB Verification
 
