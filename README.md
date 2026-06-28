@@ -95,7 +95,9 @@ Development and tests can use controlled headers:
 
 Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep `DEV_AUTH_ENABLED=false` by default and do not enable it on a public server.
 
-The system is still not full match-day ready until UI login/session flows and complete match-day operator workflows exist.
+The frontend includes a minimal production session auth UI at `/login`. It hydrates the browser session from `GET /api/v1/auth/me`, uses the HttpOnly session cookie with `credentials: include`, and keeps the CSRF token only in memory for private write requests. The browser must not store a raw session token in `localStorage` or `sessionStorage`.
+
+The system is still not full match-day ready until complete match-day operator workflows exist.
 
 ## Match Official Assignments
 
@@ -113,7 +115,15 @@ Supported assignment role codes are `REFEREE`, `SCORER`, `ASSISTANT_SCORER`, `TI
 
 `GET /api/v1/auth/me` returns `matchAssignments` for the authenticated user. Assignment changes are recorded in `audit_logs`; they do not append basketball `match_events`.
 
-Current limitation: there is no full admin UI yet. Create users/roles with the bootstrap scripts, create matches through the API, then assign officials/operators through the API.
+The frontend admin assignment UI is available at:
+
+```text
+/admin/matches/:matchId/officials
+```
+
+Only authenticated ADMIN users should use this screen. The page loads assignments through `GET /api/v1/matches/:matchId/officials`, creates assignments with `POST /api/v1/matches/:matchId/officials`, and revokes assignments with `DELETE /api/v1/matches/:matchId/officials/:assignmentId`. The UI hides the assignment form from non-admin users, but the backend remains the authority for authorization and must reject forbidden requests.
+
+Current limitation: there is no live operator score UI yet. Create users/roles with the bootstrap scripts, create matches through the API, then assign officials/operators through the admin assignment UI or API.
 
 ## Local MariaDB Verification
 
@@ -183,7 +193,12 @@ Before Restart App:
 ```bash
 npm install
 npm run build
+npm run migrate
+npm run auth:seed
+AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
 ```
+
+For the Vite frontend, set `VITE_API_BASE_URL=/api/v1` when the API is served from the same origin. Keep `DEV_AUTH_ENABLED=false` on public production deployments.
 
 Health check:
 
