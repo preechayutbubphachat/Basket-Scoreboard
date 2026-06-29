@@ -239,11 +239,17 @@ GET /api/v1/health
 
 ## Plesk Deployment
 
+Recommended production mode is a single Node.js Fastify app on `https://scoreboard.ob-gate.com`. Fastify serves API routes under `/api/v1/*` and serves the React/Vite build from `apps/web/dist` for browser routes.
+
 Plesk Node.js settings:
 
 - Application Root: project root
-- Document Root: `apps/web/dist`
+- Document Root: project root
 - Application Startup File: `app.js`
+- Application Mode: `production`
+- Proxy mode: ON
+- Smart static files processing: OFF
+- Serve static files directly by nginx: OFF
 - Preferred configuration: set database and secret values in Plesk Custom environment variables.
 - Alternative configuration: create a root `.env` file on the server only when Custom environment variables are not available.
 - Never commit `.env`.
@@ -252,54 +258,33 @@ Before Restart App:
 
 ```bash
 npm install
-npm run build
+npm run build:single
 npm run migrate
 npm run auth:seed
 AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
 ```
 
-For same-origin deployments, set `VITE_API_BASE_URL=/api/v1`. Keep `DEV_AUTH_ENABLED=false` on public production deployments.
-
-### Split Frontend/API Subdomain Deployment
-
-Use split mode when Plesk/Apache blocks frontend-domain `POST /api/*` requests before they reach Node.js.
-
-Frontend domain:
-
-```text
-https://scoreboard.ob-gate.com
-```
-
-API domain:
-
-```text
-https://api.scoreboard.ob-gate.com/api/v1
-```
-
-Frontend build environment:
+Frontend production API base:
 
 ```bash
-VITE_API_BASE_URL=https://api.scoreboard.ob-gate.com/api/v1
+VITE_API_BASE_URL=
 ```
 
-API environment:
+This keeps browser calls same-origin, for example:
 
-```bash
-API_ALLOWED_ORIGINS=https://scoreboard.ob-gate.com
-API_CORS_CREDENTIALS=true
-AUTH_COOKIE_SECURE=true
-AUTH_COOKIE_SAME_SITE=Lax
-AUTH_COOKIE_DOMAIN=
+```text
+https://scoreboard.ob-gate.com/api/v1/auth/login
 ```
 
-The API subdomain must be the Plesk Node.js app. The main domain can remain the static Vite frontend. When `AUTH_COOKIE_DOMAIN` is empty, the session cookie is host-only for `api.scoreboard.ob-gate.com`, which works because the frontend calls the API subdomain with `credentials: include`. Keep `HttpOnly` and `Secure` cookies enabled in production. Do not enable `DEV_AUTH_ENABLED`, and do not change login, score, correction, or assignment writes to `GET`.
+Do not point the browser at a separate API subdomain for production login. Keep `DEV_AUTH_ENABLED=false`, leave `AUTH_COOKIE_DOMAIN` empty for a host-only cookie, and do not change login, score, correction, or assignment writes to `GET`.
+
+See [docs/deployment/SINGLE_NODE_APP_PLESK.md](docs/deployment/SINGLE_NODE_APP_PLESK.md) for the complete single-app Plesk configuration and environment example.
 
 Plesk SPA route troubleshooting:
 
 - Direct browser routes such as `/login`, `/admin/matches`, `/operator/matches`, and `/public/scoreboard/:matchId` must fall back to `apps/web/dist/index.html`.
 - If `/login` returns Fastify JSON such as `Route GET:/login not found`, the request is reaching the Node app without an SPA fallback or Plesk document routing is not serving the Vite build.
-- Document Root should remain `apps/web/dist` when Apache serves frontend files directly.
-- The Node startup also provides a safe fallback for Plesk proxy behavior: `/api/*` remains API JSON, `/assets/*` serves built frontend assets from `apps/web/dist/assets`, and browser routes serve the Vite index shell.
+- In single-app mode, Fastify handles `/assets/*`, `/api/*`, and browser route fallback. API misses stay JSON and browser routes serve the Vite index shell.
 
 Health check:
 

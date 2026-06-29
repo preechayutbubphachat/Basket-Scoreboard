@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import fastifyStatic from "@fastify/static";
 
 const assetContentTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -29,6 +30,20 @@ export function registerSpaFallback(
   const indexPath = frontendDistDir ? join(frontendDistDir, "index.html") : null;
   const canServeSpa = Boolean(indexPath && existsSync(indexPath));
 
+  if (process.env.NODE_ENV === "production" && !canServeSpa) {
+    throw new Error(
+      `Frontend build output not found. Expected index.html at ${indexPath ?? "apps/web/dist/index.html"}. Run "npm install" and "npm run build" from the project root before starting the app.`
+    );
+  }
+
+  if (frontendDistDir && existsSync(join(frontendDistDir, "assets"))) {
+    app.register(fastifyStatic, {
+      root: join(frontendDistDir, "assets"),
+      prefix: "/assets/",
+      decorateReply: false
+    });
+  }
+
   app.setNotFoundHandler(async (request, reply) => {
     const path = getUrlPath(request);
 
@@ -53,6 +68,11 @@ export function registerSpaFallback(
 }
 
 function findFrontendDistDir() {
+  const configuredDistDir = process.env.WEB_DIST_DIR?.trim();
+  if (configuredDistDir) {
+    return resolve(process.cwd(), configuredDistDir);
+  }
+
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const starts = [process.cwd(), moduleDir];
 

@@ -1,5 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import { createApiClient, type FetchLike } from "../../apps/web/src/lib/apiClient";
+import {
+  buildApiUrl,
+  createApiClient,
+  createApiRequestHeaders,
+  getDefaultApiBaseUrl,
+  type FetchLike
+} from "../../apps/web/src/lib/apiClient";
 import { createInitialAuthState, reduceAuthState } from "../../apps/web/src/lib/authState";
 import {
   canManageAssignments,
@@ -93,6 +99,26 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 describe("web API client", () => {
+  test("uses a relative same-origin API base when VITE_API_BASE_URL is empty", () => {
+    expect(getDefaultApiBaseUrl()).toBe("/api/v1");
+    expect(buildApiUrl("", "/api/v1/auth/login")).toBe("/api/v1/auth/login");
+    expect(buildApiUrl("/api/v1/", "/auth/login")).toBe("/api/v1/auth/login");
+    expect(buildApiUrl("/api/v1", "auth/login")).toBe("/api/v1/auth/login");
+  });
+
+  test("adds JSON content type only when a body exists and preserves explicit content type", () => {
+    expect(createApiRequestHeaders({ body: JSON.stringify({ ok: true }) })).toMatchObject({
+      "content-type": "application/json"
+    });
+    expect(createApiRequestHeaders({})).not.toHaveProperty("content-type");
+    expect(
+      createApiRequestHeaders({
+        body: JSON.stringify({ ok: true }),
+        headers: { "Content-Type": "application/vnd.api+json" }
+      })
+    ).toMatchObject({ "content-type": "application/vnd.api+json" });
+  });
+
   test("defaults to same-origin api base when VITE_API_BASE_URL is not set", async () => {
     const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse({ ok: true, data: { user: adminUser } }));
     const client = createApiClient({ fetchImpl: fetchMock });
