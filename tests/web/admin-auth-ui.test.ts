@@ -93,6 +93,90 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 describe("web API client", () => {
+  test("login does not call csrf before session login and stores returned csrf in memory only", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        data: {
+          user: adminUser,
+          csrfToken: "login-csrf-token"
+        }
+      })
+    );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.login({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({
+      user: adminUser,
+      csrfToken: "login-csrf-token"
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/login",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.not.objectContaining({ "x-csrf-token": expect.any(String) })
+      })
+    );
+    expect(client.csrfToken).toBe("login-csrf-token");
+    expect(localStorage.getItem("csrf-token")).toBeNull();
+    expect(sessionStorage.getItem("csrf-token")).toBeNull();
+    expect(localStorage.getItem("sessionToken")).toBeNull();
+    expect(sessionStorage.getItem("sessionToken")).toBeNull();
+  });
+
+  test("login fetches csrf only after session login when login response omits csrf", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { user: adminUser } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "post-login-csrf" } }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.login({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({
+      user: adminUser,
+      csrfToken: "post-login-csrf"
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/auth/login",
+      expect.objectContaining({ credentials: "include", method: "POST" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/auth/csrf",
+      expect.objectContaining({ credentials: "include", method: "GET" })
+    );
+    expect(client.csrfToken).toBe("post-login-csrf");
+  });
+
+  test("unauthenticated csrf failure does not block a later login request", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(
+        jsonResponse({ error: { reasonCode: "UNAUTHENTICATED", message: "Authentication required" } }, { status: 401 })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          data: {
+            user: adminUser,
+            csrfToken: "login-csrf-token"
+          }
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.ensureCsrfToken()).rejects.toMatchObject({ reasonCode: "UNAUTHENTICATED" });
+    await expect(client.login({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({
+      csrfToken: "login-csrf-token"
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/v1/auth/csrf", expect.any(Object));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/v1/auth/login", expect.any(Object));
+  });
+
   test("attaches credentials to every request", async () => {
     const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse({ ok: true, data: { user: adminUser } }));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
@@ -256,6 +340,17 @@ describe("web API client", () => {
 });
 
 describe("auth state", () => {
+  test("initial auth me 401 is represented as signed out without a login error", () => {
+    const state = reduceAuthState(createInitialAuthState(), {
+      type: "USER_LOADED",
+      user: null
+    });
+
+    expect(state.user).toBeNull();
+    expect(state.error).toBeNull();
+    expect(state.loading).toBe(false);
+  });
+
   test("login success stores user and csrf in memory without storing a session token", () => {
     const state = reduceAuthState(createInitialAuthState(), {
       type: "LOGIN_SUCCEEDED",

@@ -78,7 +78,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     path: string,
     init: RequestInit = {},
     retryingCsrf = false,
-    options: { acceptRawSuccess?: boolean } = {}
+    options: { acceptRawSuccess?: boolean; skipCsrf?: boolean } = {}
   ): Promise<T> {
     const method = (init.method ?? "GET").toUpperCase();
     const isWrite = !["GET", "HEAD", "OPTIONS"].includes(method);
@@ -87,7 +87,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
 
     if (isWrite) {
       headers["content-type"] = headers["content-type"] ?? "application/json";
-      if (!csrfToken) {
+      if (!csrfToken && !options.skipCsrf) {
         await ensureCsrfToken();
       }
       if (csrfToken) {
@@ -144,12 +144,17 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       return csrfToken;
     },
     async login(input: { email: string; password: string }) {
-      const data = await request<{ user: AuthenticatedUser; csrfToken: string }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify(input)
-      });
-      csrfToken = data.csrfToken;
-      return data;
+      const data = await request<{ user: AuthenticatedUser; csrfToken?: string }>(
+        "/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify(input)
+        },
+        false,
+        { skipCsrf: true }
+      );
+      csrfToken = data.csrfToken ?? (await ensureCsrfToken(true));
+      return { ...data, csrfToken };
     },
     async getCurrentUser() {
       const data = await request<{ user: AuthenticatedUser }>("/auth/me");
