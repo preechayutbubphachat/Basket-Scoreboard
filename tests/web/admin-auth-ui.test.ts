@@ -241,6 +241,18 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  test("uses backend error.code instead of a generic HTTP status when present", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(
+      jsonResponse({ code: "INVALID_CREDENTIALS", message: "Invalid credentials" }, { status: 401 })
+    );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.login({ email: "admin@example.com", password: "bad-password" })).rejects.toMatchObject({
+      reasonCode: "INVALID_CREDENTIALS",
+      message: "Invalid credentials"
+    });
+  });
+
   test("loads operator and admin matches with credentials", async () => {
     const fetchMock = vi
       .fn<FetchLike>()

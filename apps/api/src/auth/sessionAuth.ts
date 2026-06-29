@@ -64,6 +64,11 @@ function headerValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function isPreLoginRoute(request: FastifyRequest) {
+  const path = request.url.split("?")[0];
+  return request.method === "POST" && path === "/api/v1/auth/login";
+}
+
 function parseRole(value: string | undefined): RoleCode | null {
   if (value === "ADMIN" || value === "SCORER" || value === "REFEREE" || value === "VIEWER") {
     return value;
@@ -365,6 +370,10 @@ export function createAuthHandlers(pool: Pool) {
   }
 
   async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+    if (isPreLoginRoute(request)) {
+      return;
+    }
+
     const attemptedDevAuth = Boolean(headerValue(request.headers["x-dev-user-role"]));
     const sessionResult = await resolveSessionUser(request);
 
@@ -490,6 +499,10 @@ export function createAuthHandlers(pool: Pool) {
   }
 
   async function requireCsrf(request: FastifyRequest, reply: FastifyReply) {
+    if (isPreLoginRoute(request)) {
+      return;
+    }
+
     if (process.env.NODE_ENV === "test" && process.env.AUTH_TEST_DISABLE_CSRF === "true") {
       return;
     }
