@@ -28,6 +28,11 @@ export function registerAuthRoutes(
   app.post(
     "/api/v1/auth/login",
     {
+      config: {
+        authRequired: false,
+        csrfRequired: false,
+        publicRoute: true
+      },
       preHandler: []
     },
     async (request, reply) => {

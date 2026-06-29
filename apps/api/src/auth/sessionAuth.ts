@@ -64,9 +64,29 @@ function headerValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function isPreLoginRoute(request: FastifyRequest) {
+type AuthRouteConfig = {
+  authRequired?: boolean;
+  csrfRequired?: boolean;
+  publicRoute?: boolean;
+};
+
+function getAuthRouteConfig(request: FastifyRequest) {
+  return request.routeOptions?.config as AuthRouteConfig | undefined;
+}
+
+function isPreLoginPath(request: FastifyRequest) {
   const path = request.url.split("?")[0];
   return request.method === "POST" && path === "/api/v1/auth/login";
+}
+
+function isAuthExempt(request: FastifyRequest) {
+  const config = getAuthRouteConfig(request);
+  return config?.publicRoute === true || config?.authRequired === false || isPreLoginPath(request);
+}
+
+function isCsrfExempt(request: FastifyRequest) {
+  const config = getAuthRouteConfig(request);
+  return config?.publicRoute === true || config?.csrfRequired === false || isPreLoginPath(request);
 }
 
 function parseRole(value: string | undefined): RoleCode | null {
@@ -370,7 +390,7 @@ export function createAuthHandlers(pool: Pool) {
   }
 
   async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
-    if (isPreLoginRoute(request)) {
+    if (isAuthExempt(request)) {
       return;
     }
 
@@ -499,7 +519,7 @@ export function createAuthHandlers(pool: Pool) {
   }
 
   async function requireCsrf(request: FastifyRequest, reply: FastifyReply) {
-    if (isPreLoginRoute(request)) {
+    if (isCsrfExempt(request)) {
       return;
     }
 
