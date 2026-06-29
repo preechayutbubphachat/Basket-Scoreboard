@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import bcrypt from "bcryptjs";
+import Fastify from "fastify";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { buildApiApp } from "../../apps/api/src/app";
+import { createAuthHandlers } from "../../apps/api/src/auth/sessionAuth";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
 import {
@@ -105,6 +107,32 @@ function scoreCommand(matchId: string, expectedSeq: number) {
 }
 
 describe("production auth safety", () => {
+  it("exempts login from broad auth and csrf write guards", async () => {
+    const app = Fastify({ logger: false });
+    const auth = createAuthHandlers({} as never);
+
+    app.post(
+      "/api/v1/auth/login",
+      {
+        preHandler: [auth.requireAuth, auth.requireCsrf]
+      },
+      async () => ({ reachedCredentialValidation: true })
+    );
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "admin@example.com", password: "wrong-password" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ reachedCredentialValidation: true });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects dev headers in production unless DEV_AUTH_ENABLED is true", async () => {
     const previousNodeEnv = process.env.NODE_ENV;
     const previousDevAuthEnabled = process.env.DEV_AUTH_ENABLED;
