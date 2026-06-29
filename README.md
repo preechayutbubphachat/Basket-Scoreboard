@@ -257,6 +257,13 @@ AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replac
 
 For the Vite frontend, set `VITE_API_BASE_URL=/api/v1` when the API is served from the same origin. Keep `DEV_AUTH_ENABLED=false` on public production deployments.
 
+Plesk SPA route troubleshooting:
+
+- Direct browser routes such as `/login`, `/admin/matches`, `/operator/matches`, and `/public/scoreboard/:matchId` must fall back to `apps/web/dist/index.html`.
+- If `/login` returns Fastify JSON such as `Route GET:/login not found`, the request is reaching the Node app without an SPA fallback or Plesk document routing is not serving the Vite build.
+- Document Root should remain `apps/web/dist` when Apache serves frontend files directly.
+- The Node startup also provides a safe fallback for Plesk proxy behavior: `/api/*` remains API JSON, `/assets/*` serves built frontend assets from `apps/web/dist/assets`, and browser routes serve the Vite index shell.
+
 Health check:
 
 ```text

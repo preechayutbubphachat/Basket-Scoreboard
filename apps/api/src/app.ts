@@ -4,12 +4,13 @@ import type { Pool } from "mysql2/promise";
 import { createDatabasePool } from "./db.js";
 import { createAuthHandlers } from "./auth/sessionAuth.js";
 import { fastifyErrorHandler } from "./errors/apiErrors.js";
+import { registerSpaFallback } from "./frontend/spaFallback.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
 
-export function buildApiApp(options: { pool?: Pool } = {}) {
+export function buildApiApp(options: { pool?: Pool; frontendDistDir?: string | null } = {}) {
   const app = Fastify({
     logger: false
   });
@@ -29,6 +30,10 @@ export function buildApiApp(options: { pool?: Pool } = {}) {
   registerMatchRoutes(app, pool, auth);
   registerMatchOfficialRoutes(app, pool, auth);
   registerOperatorRoutes(app, pool, auth);
+  registerSpaFallback(
+    app,
+    options.frontendDistDir ? { frontendDistDir: options.frontendDistDir } : {}
+  );
 
   if (!options.pool) {
     app.addHook("onClose", async () => {
