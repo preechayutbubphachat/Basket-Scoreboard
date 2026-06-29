@@ -195,8 +195,15 @@ describe("production auth safety", () => {
 describeDb("production session authentication", () => {
   it("logs in, returns /me roles and permissions, protects writes with CSRF, and logs out", async () => {
     const previousNodeEnv = process.env.NODE_ENV;
+    const previousCookieSecure = process.env.AUTH_COOKIE_SECURE;
+    const previousCookieDomain = process.env.AUTH_COOKIE_DOMAIN;
+    const previousAllowedOrigins = process.env.API_ALLOWED_ORIGINS;
+    const previousCorsCredentials = process.env.API_CORS_CREDENTIALS;
     process.env.NODE_ENV = "production";
     process.env.AUTH_COOKIE_SECURE = "false";
+    delete process.env.AUTH_COOKIE_DOMAIN;
+    process.env.API_ALLOWED_ORIGINS = "https://scoreboard.ob-gate.com";
+    process.env.API_CORS_CREDENTIALS = "true";
     const { app, pool } = await buildMigratedApp();
 
     try {
@@ -213,22 +220,33 @@ describeDb("production session authentication", () => {
       const invalidPassword = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
+        headers: {
+          origin: "https://scoreboard.ob-gate.com"
+        },
         payload: { email: admin.email, password: "wrong-password" }
       });
       expect(invalidPassword.statusCode).toBe(401);
       expect(invalidPassword.json()).toMatchObject({
         error: { reasonCode: "INVALID_CREDENTIALS" }
       });
+      expect(invalidPassword.headers["access-control-allow-origin"]).toBe("https://scoreboard.ob-gate.com");
+      expect(invalidPassword.headers["access-control-allow-credentials"]).toBe("true");
       expect(JSON.stringify(invalidPassword.json())).not.toContain("CSRF_REQUIRED");
 
       const loginResponse = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
+        headers: {
+          origin: "https://scoreboard.ob-gate.com"
+        },
         payload: { email: admin.email, password: admin.password }
       });
 
       expect(loginResponse.statusCode).toBe(200);
       expect(loginResponse.headers["set-cookie"]).toContain("HttpOnly");
+      expect(loginResponse.headers["set-cookie"]).not.toContain("Domain=");
+      expect(loginResponse.headers["access-control-allow-origin"]).toBe("https://scoreboard.ob-gate.com");
+      expect(loginResponse.headers["access-control-allow-credentials"]).toBe("true");
       expect(loginResponse.json()).toMatchObject({
         ok: true,
         data: {
@@ -333,6 +351,14 @@ describeDb("production session authentication", () => {
       await pool.end();
       if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = previousNodeEnv;
+      if (previousCookieSecure === undefined) delete process.env.AUTH_COOKIE_SECURE;
+      else process.env.AUTH_COOKIE_SECURE = previousCookieSecure;
+      if (previousCookieDomain === undefined) delete process.env.AUTH_COOKIE_DOMAIN;
+      else process.env.AUTH_COOKIE_DOMAIN = previousCookieDomain;
+      if (previousAllowedOrigins === undefined) delete process.env.API_ALLOWED_ORIGINS;
+      else process.env.API_ALLOWED_ORIGINS = previousAllowedOrigins;
+      if (previousCorsCredentials === undefined) delete process.env.API_CORS_CREDENTIALS;
+      else process.env.API_CORS_CREDENTIALS = previousCorsCredentials;
     }
   });
 

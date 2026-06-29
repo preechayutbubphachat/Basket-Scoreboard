@@ -93,6 +93,18 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 describe("web API client", () => {
+  test("defaults to same-origin api base when VITE_API_BASE_URL is not set", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse({ ok: true, data: { user: adminUser } }));
+    const client = createApiClient({ fetchImpl: fetchMock });
+
+    await client.getCurrentUser();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/me",
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
   test("login does not call csrf before session login and stores returned csrf in memory only", async () => {
     const fetchMock = vi.fn<FetchLike>().mockResolvedValue(
       jsonResponse({

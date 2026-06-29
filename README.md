@@ -258,7 +258,41 @@ npm run auth:seed
 AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
 ```
 
-For the Vite frontend, set `VITE_API_BASE_URL=/api/v1` when the API is served from the same origin. Keep `DEV_AUTH_ENABLED=false` on public production deployments.
+For same-origin deployments, set `VITE_API_BASE_URL=/api/v1`. Keep `DEV_AUTH_ENABLED=false` on public production deployments.
+
+### Split Frontend/API Subdomain Deployment
+
+Use split mode when Plesk/Apache blocks frontend-domain `POST /api/*` requests before they reach Node.js.
+
+Frontend domain:
+
+```text
+https://scoreboard.ob-gate.com
+```
+
+API domain:
+
+```text
+https://api.scoreboard.ob-gate.com/api/v1
+```
+
+Frontend build environment:
+
+```bash
+VITE_API_BASE_URL=https://api.scoreboard.ob-gate.com/api/v1
+```
+
+API environment:
+
+```bash
+API_ALLOWED_ORIGINS=https://scoreboard.ob-gate.com
+API_CORS_CREDENTIALS=true
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAME_SITE=Lax
+AUTH_COOKIE_DOMAIN=
+```
+
+The API subdomain must be the Plesk Node.js app. The main domain can remain the static Vite frontend. When `AUTH_COOKIE_DOMAIN` is empty, the session cookie is host-only for `api.scoreboard.ob-gate.com`, which works because the frontend calls the API subdomain with `credentials: include`. Keep `HttpOnly` and `Secure` cookies enabled in production. Do not enable `DEV_AUTH_ENABLED`, and do not change login, score, correction, or assignment writes to `GET`.
 
 Plesk SPA route troubleshooting:
 

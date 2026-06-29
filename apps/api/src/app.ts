@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { healthResponseSchema } from "@basket-scoreboard/api-contracts";
 import type { Pool } from "mysql2/promise";
+import { registerCors } from "./cors.js";
 import { createDatabasePool } from "./db.js";
 import { createAuthHandlers } from "./auth/sessionAuth.js";
 import { fastifyErrorHandler } from "./errors/apiErrors.js";
@@ -18,6 +19,7 @@ export function buildApiApp(options: { pool?: Pool; frontendDistDir?: string | n
   const auth = createAuthHandlers(pool);
 
   app.setErrorHandler(fastifyErrorHandler);
+  registerCors(app);
 
   app.get("/api/v1/health", async () => {
     return healthResponseSchema.parse({
