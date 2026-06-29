@@ -25,26 +25,32 @@ export function registerAuthRoutes(
     requireCsrf: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
   }
 ) {
-  app.post("/api/v1/auth/login", async (request, reply) => {
-    const input = loginSchema.parse(request.body);
-    const result = await loginWithPassword(pool, input);
+  app.post(
+    "/api/v1/auth/login",
+    {
+      preHandler: []
+    },
+    async (request, reply) => {
+      const input = loginSchema.parse(request.body);
+      const result = await loginWithPassword(pool, input);
 
-    if (!result.ok) {
-      const message =
-        result.error === reasonCodes.USER_INACTIVE ? "User is inactive" : "Invalid credentials";
-      return reply.status(result.status).send(apiError(result.error, message));
+      if (!result.ok) {
+        const message =
+          result.error === reasonCodes.USER_INACTIVE ? "User is inactive" : "Invalid credentials";
+        return reply.status(result.status).send(apiError(result.error, message));
+      }
+
+      return reply
+        .header("set-cookie", result.cookie)
+        .send({
+          ok: true,
+          data: {
+            user: serializeUser(result.user),
+            csrfToken: result.csrfToken
+          }
+        });
     }
-
-    return reply
-      .header("set-cookie", result.cookie)
-      .send({
-        ok: true,
-        data: {
-          user: serializeUser(result.user),
-          csrfToken: result.csrfToken
-        }
-      });
-  });
+  );
 
   app.get(
     "/api/v1/auth/me",

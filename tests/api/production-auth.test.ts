@@ -142,6 +142,26 @@ describeDb("production session authentication", () => {
 
     try {
       const admin = await seedUser(pool, { roleKey: "ADMIN" });
+      const unauthenticatedMe = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/me"
+      });
+      expect(unauthenticatedMe.statusCode).toBe(401);
+      expect(unauthenticatedMe.json()).toMatchObject({
+        error: { reasonCode: "UNAUTHENTICATED" }
+      });
+
+      const invalidPassword = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: admin.email, password: "wrong-password" }
+      });
+      expect(invalidPassword.statusCode).toBe(401);
+      expect(invalidPassword.json()).toMatchObject({
+        error: { reasonCode: "INVALID_CREDENTIALS" }
+      });
+      expect(JSON.stringify(invalidPassword.json())).not.toContain("CSRF_REQUIRED");
+
       const loginResponse = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
@@ -202,6 +222,15 @@ describeDb("production session authentication", () => {
       expect(createWithCsrf.statusCode).toBe(201);
       const created = createWithCsrf.json<{ matchId: string }>();
 
+      const scoreWithoutCsrf = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/score/add`,
+        headers: { cookie },
+        payload: scoreCommand(created.matchId, 0)
+      });
+      expect(scoreWithoutCsrf.statusCode).toBe(403);
+      expect(scoreWithoutCsrf.json()).toMatchObject({ error: { reasonCode: "CSRF_REQUIRED" } });
+
       const scoreResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/score/add`,
@@ -217,6 +246,14 @@ describeDb("production session authentication", () => {
       );
       expect(eventRows[0]!.actor_user_id).toBe(admin.userId);
       expect(eventRows[0]!.actor_role).toBe("ADMIN");
+
+      const logoutWithoutCsrf = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/logout",
+        headers: { cookie }
+      });
+      expect(logoutWithoutCsrf.statusCode).toBe(403);
+      expect(logoutWithoutCsrf.json()).toMatchObject({ error: { reasonCode: "CSRF_REQUIRED" } });
 
       const logoutResponse = await app.inject({
         method: "POST",

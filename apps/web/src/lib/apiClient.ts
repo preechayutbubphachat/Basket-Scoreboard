@@ -26,6 +26,10 @@ type ApiErrorEnvelope = {
         message?: string;
         details?: unknown;
       };
+  reasonCode?: ReasonCode | string;
+  code?: ReasonCode | string;
+  message?: string;
+  details?: unknown;
 };
 
 export type AssignmentRecord = MatchAssignment & {
@@ -108,9 +112,13 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     }
 
     if (!response.ok || !isEnvelopeSuccess) {
-      const error = "error" in payload ? payload.error : undefined;
+      const errorPayload = payload as ApiErrorEnvelope;
+      const error = errorPayload.error;
+      const fallbackReasonCode = errorPayload.reasonCode ?? errorPayload.code ?? `HTTP_${response.status}`;
       const reasonCode =
-        typeof error === "string" ? error : error?.reasonCode ?? error?.code ?? `HTTP_${response.status}`;
+        typeof error === "string"
+          ? errorPayload.reasonCode ?? errorPayload.code ?? error
+          : error?.reasonCode ?? error?.code ?? fallbackReasonCode;
       const recoverable = reasonCode === "CSRF_REQUIRED" || reasonCode === "CSRF_INVALID";
 
       if (recoverable && !retryingCsrf) {
@@ -120,9 +128,12 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
 
       throw new ApiClientError({
         reasonCode,
-        message: typeof error === "string" ? error : error?.message ?? "Request failed",
+        message:
+          typeof error === "string"
+            ? errorPayload.message ?? error
+            : error?.message ?? errorPayload.message ?? "Request failed",
         status: response.status,
-        details: typeof error === "string" ? undefined : error?.details,
+        details: typeof error === "string" ? errorPayload.details : error?.details ?? errorPayload.details,
         recoverable
       });
     }

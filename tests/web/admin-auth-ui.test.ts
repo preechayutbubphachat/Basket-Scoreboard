@@ -228,6 +228,19 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenLastCalledWith("/api/v1/auth/csrf", expect.objectContaining({ credentials: "include" }));
   });
 
+  test("uses API error reasonCode instead of a generic HTTP status for login failures", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(
+      jsonResponse({ reasonCode: "INVALID_CREDENTIALS", message: "Invalid credentials" }, { status: 401 })
+    );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.login({ email: "admin@example.com", password: "bad-password" })).rejects.toMatchObject({
+      reasonCode: "INVALID_CREDENTIALS",
+      message: "Invalid credentials"
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("loads operator and admin matches with credentials", async () => {
     const fetchMock = vi
       .fn<FetchLike>()

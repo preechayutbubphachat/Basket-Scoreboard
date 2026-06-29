@@ -162,6 +162,15 @@ describeDb("match official assignment workflow", () => {
       expect(unassignedScore.statusCode).toBe(403);
       expect(unassignedScore.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_ASSIGNED" } });
 
+      const assignWithoutCsrf = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchA}/officials`,
+        headers: { cookie: adminSession.cookie },
+        payload: { userId: scorer.userId, roleCode: "SCORER" }
+      });
+      expect(assignWithoutCsrf.statusCode).toBe(403);
+      expect(assignWithoutCsrf.json()).toMatchObject({ error: { reasonCode: "CSRF_REQUIRED" } });
+
       const assignResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${matchA}/officials`,
