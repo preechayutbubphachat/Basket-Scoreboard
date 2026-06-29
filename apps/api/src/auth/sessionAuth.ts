@@ -140,6 +140,10 @@ function getCookieSameSite() {
   return value === "Strict" || value === "None" ? value : "Lax";
 }
 
+function getCookieDomain() {
+  return process.env.AUTH_COOKIE_DOMAIN?.trim() || null;
+}
+
 function parseCookies(cookieHeader: string | undefined) {
   const cookies = new Map<string, string>();
 
@@ -164,6 +168,11 @@ function sessionCookie(token: string, maxAgeSeconds?: number) {
 
   if (getCookieSecure()) {
     parts.push("Secure");
+  }
+
+  const domain = getCookieDomain();
+  if (domain) {
+    parts.push(`Domain=${domain}`);
   }
 
   if (maxAgeSeconds !== undefined) {
