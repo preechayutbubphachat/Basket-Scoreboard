@@ -434,7 +434,7 @@ describeDb("match event store MVP", () => {
       });
       expect(viewerScoreResponse.statusCode).toBe(403);
       expect(viewerScoreResponse.json()).toMatchObject({
-        error: { reasonCode: "INSUFFICIENT_PERMISSION" }
+        error: { reasonCode: "FORBIDDEN" }
       });
 
       const unassignedScorerResponse = await app.inject({
@@ -485,7 +485,7 @@ describeDb("match event store MVP", () => {
       });
       expect(scorerApplyResponse.statusCode).toBe(403);
       expect(scorerApplyResponse.json()).toMatchObject({
-        error: { reasonCode: "INSUFFICIENT_PERMISSION" }
+        error: { reasonCode: "FORBIDDEN" }
       });
 
       const adminApplyResponse = await app.inject({

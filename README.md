@@ -97,6 +97,12 @@ Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep
 
 The frontend includes a minimal production session auth UI at `/login`. It hydrates the browser session from `GET /api/v1/auth/me`, uses the HttpOnly session cookie with `credentials: include`, and keeps the CSRF token only in memory for private write requests. The browser must not store a raw session token in `localStorage` or `sessionStorage`.
 
+Login troubleshooting:
+
+- `GET /api/v1/auth/me` returning `401` before login is normal and means the browser is not signed in yet.
+- `POST /api/v1/auth/login` creates the session and must not require a pre-login CSRF token.
+- `GET /api/v1/auth/csrf` should be called only after a session cookie exists, either after login or when refreshing CSRF for an authenticated private write.
+
 The system is still not full match-day ready until complete match-day operator workflows exist.
 
 ## Match Official Assignments
