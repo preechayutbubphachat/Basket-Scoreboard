@@ -104,6 +104,7 @@ Login troubleshooting:
 - `GET /api/v1/auth/csrf` should be called only after a session cookie exists, either after login or when refreshing CSRF for an authenticated private write.
 - `POST /api/v1/auth/login` returning `403` usually means CSRF middleware is applied too broadly. Login must validate credentials first, then create the session cookie and return a CSRF token.
 - Backend auth and CSRF guards must explicitly exempt only `POST /api/v1/auth/login`; all private writes after login still require the session cookie and `x-csrf-token`.
+- If `POST /api/v1/auth/login` returns `403` on Plesk, run `npm run auth:probe-login-route`. For the built-in bad-password probe, the expected result is `INVALID_CREDENTIALS`; any `403`, `CSRF_REQUIRED`, or `UNAUTHENTICATED` means the login route did not reach credential validation.
 
 The system is still not full match-day ready until complete match-day operator workflows exist.
 

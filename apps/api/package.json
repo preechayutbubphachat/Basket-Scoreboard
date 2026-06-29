@@ -11,6 +11,7 @@
     "migrate:status": "tsx src/migrate.ts status",
     "auth:seed": "tsx src/auth/seedAuthCli.ts",
     "auth:create-admin": "tsx src/auth/createAdminCli.ts",
+    "auth:probe-login-route": "tsx src/auth/probeLoginRouteCli.ts",
     "smoke:create-match": "tsx src/smoke/createSmokeMatchCli.ts"
   },
   "dependencies": {

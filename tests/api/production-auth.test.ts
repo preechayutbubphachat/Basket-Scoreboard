@@ -107,7 +107,38 @@ function scoreCommand(matchId: string, expectedSeq: number) {
 }
 
 describe("production auth safety", () => {
-  it("exempts login from broad auth and csrf write guards", async () => {
+  it("exempts routes from broad auth and csrf write guards through route metadata", async () => {
+    const app = Fastify({ logger: false });
+    const auth = createAuthHandlers({} as never);
+
+    app.post(
+      "/metadata-public-login-probe",
+      {
+        config: {
+          authRequired: false,
+          csrfRequired: false,
+          publicRoute: true
+        },
+        preHandler: [auth.requireAuth, auth.requireCsrf]
+      },
+      async () => ({ reachedCredentialValidation: true })
+    );
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/metadata-public-login-probe",
+        payload: { email: "admin@example.com", password: "wrong-password" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ reachedCredentialValidation: true });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps exact login path as a defensive fallback for broad auth and csrf write guards", async () => {
     const app = Fastify({ logger: false });
     const auth = createAuthHandlers({} as never);
 
