@@ -7,6 +7,7 @@ import { createAuthHandlers } from "./auth/sessionAuth.js";
 import { fastifyErrorHandler } from "./errors/apiErrors.js";
 import { registerSpaFallback } from "./frontend/spaFallback.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
+import { registerDeployDiagnosticsRoutes } from "./routes/deployDiagnosticsRoutes.js";
 import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
@@ -28,6 +29,7 @@ export function buildApiApp(options: { pool?: Pool; frontendDistDir?: string | n
     });
   });
 
+  registerDeployDiagnosticsRoutes(app);
   registerAuthRoutes(app, pool, auth);
   registerMatchRoutes(app, pool, auth);
   registerMatchOfficialRoutes(app, pool, auth);
