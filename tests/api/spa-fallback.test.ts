@@ -88,6 +88,24 @@ describe("Plesk SPA fallback", () => {
     }
   });
 
+  it("keeps POST API misses as JSON instead of serving HTML", async () => {
+    const app = buildApiApp({ pool: {} as never, frontendDistDir });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/health",
+        headers: { accept: "text/html" }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.headers["content-type"]).toContain("application/json");
+      expect(response.body).not.toContain("<!doctype html>");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("serves built assets with content types when Node handles frontend assets", async () => {
     const app = buildApiApp({ pool: {} as never, frontendDistDir });
 
@@ -98,7 +116,7 @@ describe("Plesk SPA fallback", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.headers["content-type"]).toContain("text/javascript");
+      expect(response.headers["content-type"]).toMatch(/javascript/);
       expect(response.body).toBe("console.log('spa');");
     } finally {
       await app.close();
@@ -119,6 +137,21 @@ describe("Plesk SPA fallback", () => {
       expect(response.body).not.toContain('<div id="root"></div>');
     } finally {
       await app.close();
+    }
+  });
+
+  it("fails loudly in production when the frontend build is missing", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const missingDistDir = mkdtempSync(join(tmpdir(), "basket-missing-spa-dist-"));
+    process.env.NODE_ENV = "production";
+
+    try {
+      expect(() => buildApiApp({ pool: {} as never, frontendDistDir: missingDistDir })).toThrow(
+        /Frontend build output not found/
+      );
+    } finally {
+      process.env.NODE_ENV = previousNodeEnv;
+      rmSync(missingDistDir, { force: true, recursive: true });
     }
   });
 });

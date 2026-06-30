@@ -64,11 +64,36 @@ export class ApiClientError extends Error {
 export type ApiClient = ReturnType<typeof createApiClient>;
 
 export function getDefaultApiBaseUrl() {
-  return import.meta.env.VITE_API_BASE_URL || "/api/v1";
+  const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  return rawBaseUrl ? rawBaseUrl : "/api/v1";
+}
+
+export function buildApiUrl(baseUrl: string, path: string) {
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBaseUrl}${normalizedPath}`;
+}
+
+export function createApiRequestHeaders(input: {
+  headers?: HeadersInit | undefined;
+  body?: BodyInit | null | undefined;
+  csrfToken?: string | null | undefined;
+}) {
+  const headers = new Headers(input.headers);
+
+  if (input.body !== undefined && input.body !== null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (input.csrfToken) {
+    headers.set("x-csrf-token", input.csrfToken);
+  }
+
+  return Object.fromEntries(headers.entries());
 }
 
 export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLike } = {}) {
-  const baseUrl = (options.baseUrl ?? getDefaultApiBaseUrl()).replace(/\/$/, "");
+  const baseUrl = options.baseUrl ?? getDefaultApiBaseUrl();
   const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
   let csrfToken: string | null = null;
 
@@ -86,20 +111,16 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
   ): Promise<T> {
     const method = (init.method ?? "GET").toUpperCase();
     const isWrite = !["GET", "HEAD", "OPTIONS"].includes(method);
-    const existingHeaders = init.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init.headers;
-    const headers: Record<string, string> = { ...(existingHeaders as Record<string, string> | undefined) };
-
-    if (isWrite) {
-      headers["content-type"] = headers["content-type"] ?? "application/json";
-      if (!csrfToken && !options.skipCsrf) {
-        await ensureCsrfToken();
-      }
-      if (csrfToken) {
-        headers["x-csrf-token"] = csrfToken;
-      }
+    if (isWrite && !csrfToken && !options.skipCsrf) {
+      await ensureCsrfToken();
     }
+    const headers = createApiRequestHeaders({
+      headers: init.headers,
+      body: init.body,
+      csrfToken
+    });
 
-    const response = await fetchImpl(`${baseUrl}${path}`, {
+    const response = await fetchImpl(buildApiUrl(baseUrl, path), {
       ...init,
       credentials: "include",
       headers
