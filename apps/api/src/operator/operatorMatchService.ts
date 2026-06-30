@@ -12,6 +12,8 @@ type MatchRow = RowDataPacket & {
   scheduled_at: Date | string | null;
   venue_name: string | null;
   current_seq: number | string | null;
+  home_score: number | string | null;
+  away_score: number | string | null;
   assigned_role_codes: string | null;
 };
 
@@ -39,7 +41,9 @@ function serializeMatch(row: MatchRow): OperatorMatchSummary {
     assignedRoleCodes: row.assigned_role_codes
       ? (row.assigned_role_codes.split(",").filter(Boolean) as MatchOfficialRoleCode[])
       : [],
-    currentSeq: Number(row.current_seq ?? 0)
+    currentSeq: Number(row.current_seq ?? 0),
+    homeScore: row.home_score === null ? null : Number(row.home_score),
+    awayScore: row.away_score === null ? null : Number(row.away_score)
   };
 }
 
@@ -61,12 +65,16 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
       m.scheduled_at,
       m.venue_name,
       COALESCE(ms.last_seq_no, 0) AS current_seq,
+      CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.homeScore')) AS UNSIGNED) AS home_score,
+      CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.awayScore')) AS UNSIGNED) AS away_score,
       GROUP_CONCAT(DISTINCT mo.role_code ORDER BY mo.role_code SEPARATOR ',') AS assigned_role_codes
     FROM match_officials mo
     INNER JOIN matches m ON m.match_id = mo.match_id
     LEFT JOIN teams home ON home.team_id = m.home_team_id
     LEFT JOIN teams away ON away.team_id = m.away_team_id
     LEFT JOIN match_streams ms ON ms.match_id = m.match_id
+    LEFT JOIN match_projections mp ON mp.match_id = m.match_id
+      AND mp.projection_type = 'scoreboard'
     WHERE mo.user_id = ?
       AND mo.assignment_status = 'ACTIVE'
     GROUP BY
@@ -79,7 +87,8 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
       m.status,
       m.scheduled_at,
       m.venue_name,
-      ms.last_seq_no
+      ms.last_seq_no,
+      mp.projection_data
     ORDER BY m.scheduled_at IS NULL, m.scheduled_at ASC, m.created_at DESC
     `,
     [user.userId]
@@ -101,11 +110,15 @@ export async function listAdminMatches(pool: Pool) {
       m.scheduled_at,
       m.venue_name,
       COALESCE(ms.last_seq_no, 0) AS current_seq,
+      CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.homeScore')) AS UNSIGNED) AS home_score,
+      CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.awayScore')) AS UNSIGNED) AS away_score,
       GROUP_CONCAT(DISTINCT mo.role_code ORDER BY mo.role_code SEPARATOR ',') AS assigned_role_codes
     FROM matches m
     LEFT JOIN teams home ON home.team_id = m.home_team_id
     LEFT JOIN teams away ON away.team_id = m.away_team_id
     LEFT JOIN match_streams ms ON ms.match_id = m.match_id
+    LEFT JOIN match_projections mp ON mp.match_id = m.match_id
+      AND mp.projection_type = 'scoreboard'
     LEFT JOIN match_officials mo ON mo.match_id = m.match_id
       AND mo.assignment_status = 'ACTIVE'
     GROUP BY
@@ -118,7 +131,8 @@ export async function listAdminMatches(pool: Pool) {
       m.status,
       m.scheduled_at,
       m.venue_name,
-      ms.last_seq_no
+      ms.last_seq_no,
+      mp.projection_data
     ORDER BY m.scheduled_at IS NULL, m.scheduled_at ASC, m.created_at DESC
   `);
 

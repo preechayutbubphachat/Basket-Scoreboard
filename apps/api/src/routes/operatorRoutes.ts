@@ -13,6 +13,27 @@ export function registerOperatorRoutes(
   }
 ) {
   app.get(
+    "/api/v1/matches",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      const user = request.user as AuthenticatedUser;
+
+      if (!canAccessOperatorMatches(user)) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Match list access is required"));
+      }
+
+      return {
+        ok: true,
+        data: {
+          matches: await listOperatorMatches(pool, user)
+        }
+      };
+    }
+  );
+
+  app.get(
     "/api/v1/operator/matches",
     {
       preHandler: [auth.requireAuth]
