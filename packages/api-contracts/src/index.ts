@@ -240,6 +240,7 @@ export type ScoreboardProjection = {
   awayTeamName?: string | null;
   homeScore: number;
   awayScore: number;
+  period?: number;
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number | null;
