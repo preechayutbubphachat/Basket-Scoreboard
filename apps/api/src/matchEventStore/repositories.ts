@@ -1,5 +1,9 @@
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
-import type { CommandResult, MatchEventType } from "@basket-scoreboard/api-contracts";
+import type {
+  CommandResult,
+  MatchEventType,
+  ScoreboardProjection as ApiScoreboardProjection
+} from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import type { ScoreboardProjection } from "./projection.js";
 import { parseJsonField } from "./json.js";
@@ -11,6 +15,14 @@ type StreamRow = RowDataPacket & {
 type ProjectionRow = RowDataPacket & {
   projection_data: unknown;
   last_event_seq: number;
+};
+
+type ProjectionViewRow = ProjectionRow & {
+  home_team_id: string | null;
+  home_team_name: string | null;
+  away_team_id: string | null;
+  away_team_name: string | null;
+  updated_at: Date | string | null;
 };
 
 type EventRow = RowDataPacket & {
@@ -131,6 +143,48 @@ export async function getScoreboardProjection(connection: PoolConnection, matchI
   );
 
   return rows[0] ? parseJsonField<ScoreboardProjection>(rows[0].projection_data) : null;
+}
+
+export async function getScoreboardProjectionView(connection: PoolConnection, matchId: string) {
+  const [rows] = await connection.query<ProjectionViewRow[]>(
+    `SELECT
+      mp.projection_data,
+      mp.last_event_seq,
+      mp.updated_at,
+      m.home_team_id,
+      home.team_name AS home_team_name,
+      m.away_team_id,
+      away.team_name AS away_team_name
+    FROM match_projections mp
+    INNER JOIN matches m ON m.match_id = mp.match_id
+    LEFT JOIN teams home ON home.team_id = m.home_team_id
+    LEFT JOIN teams away ON away.team_id = m.away_team_id
+    WHERE mp.match_id = ? AND mp.projection_type = 'scoreboard'`,
+    [matchId]
+  );
+  const row = rows[0];
+
+  if (!row) {
+    return null;
+  }
+
+  const projection = parseJsonField<ScoreboardProjection>(row.projection_data);
+  const updatedAt =
+    row.updated_at instanceof Date
+      ? row.updated_at.toISOString()
+      : row.updated_at
+        ? String(row.updated_at)
+        : null;
+
+  return {
+    ...projection,
+    homeTeamId: row.home_team_id,
+    homeTeamName: row.home_team_name,
+    awayTeamId: row.away_team_id,
+    awayTeamName: row.away_team_name,
+    lastEventSeq: Number(row.last_event_seq ?? projection.currentSeq),
+    updatedAt
+  } satisfies ApiScoreboardProjection;
 }
 
 export async function updateScoreboardProjection(

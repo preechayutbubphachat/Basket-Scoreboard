@@ -264,6 +264,12 @@ label {
   line-height: 1;
 }
 
+.score-display small {
+  color: #475467;
+  font-weight: 700;
+  min-height: 20px;
+}
+
 .score-display.large strong {
   font-size: 72px;
 }
@@ -301,6 +307,12 @@ label {
 .score-actions h2 {
   font-size: 18px;
   margin: 0 0 10px;
+}
+
+.score-button {
+  font-size: 22px;
+  min-height: 64px;
+  min-width: 86px;
 }
 
 table {
