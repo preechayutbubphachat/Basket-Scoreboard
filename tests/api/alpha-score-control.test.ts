@@ -21,6 +21,9 @@ function createProjectionFakePool(options: { found?: boolean } = {}) {
                     matchId,
                     homeScore: 12,
                     awayScore: 9,
+                    teamFouls: { home: 2, away: 1 },
+                    teamFoulsByPeriod: { "2": { home: 2, away: 1 } },
+                    playerFouls: [],
                     periodNumber: 2,
                     gameClockRemainingMs: 430000,
                     shotClockRemainingMs: 18000,
@@ -123,6 +126,8 @@ describe("alpha score control routes", () => {
         awayTeamName: "Chiang Mai AWAY",
         homeScore: 12,
         awayScore: 9,
+        teamFouls: { home: 2, away: 1 },
+        playerFouls: [],
         periodNumber: 2,
         status: "LIVE",
         currentSeq: 7,
@@ -152,6 +157,7 @@ describe("alpha score control routes", () => {
         awayTeamName: "Chiang Mai AWAY",
         homeScore: 12,
         awayScore: 9,
+        teamFouls: { home: 2, away: 1 },
         lastEventSeq: 7
       });
       expect(JSON.stringify(body)).not.toContain("actor");
@@ -204,6 +210,8 @@ describe("alpha score control routes", () => {
         awayTeamName: "AWAY",
         homeScore: 0,
         awayScore: 0,
+        teamFouls: { home: 0, away: 0 },
+        playerFouls: [],
         periodNumber: 1,
         status: "SCHEDULED",
         currentSeq: 0,
@@ -232,6 +240,8 @@ describe("alpha score control routes", () => {
         awayTeamName: "AWAY",
         homeScore: 0,
         awayScore: 0,
+        teamFouls: { home: 0, away: 0 },
+        playerFouls: [],
         status: "SCHEDULED",
         lastEventSeq: 0
       });
@@ -316,6 +326,70 @@ describe("alpha score control routes", () => {
             periodNumber: 1,
             gameClockRemainingMs: 600000,
             note: null
+          }
+        }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_ASSIGNED" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects invalid team foul payloads before appending an event", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const app = buildApiApp({ pool: {} as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/foul/team/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId,
+          expectedSeq: 0,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {
+            teamSide: "CENTER",
+            foulType: "PERSONAL",
+            reason: null
+          }
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: { reasonCode: "VALIDATION_ERROR" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("denies unassigned scorers for team foul writes", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const app = buildApiApp({ pool: {} as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/foul/team/add`,
+        headers: {
+          "x-dev-user-role": "SCORER",
+          "x-dev-user-id": "00000000-0000-4000-8000-0000000000bb",
+          "x-dev-match-ids": "99999999-9999-4999-8999-999999999999"
+        },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId,
+          expectedSeq: 0,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {
+            teamSide: "HOME",
+            foulType: "PERSONAL",
+            reason: null
           }
         }
       });

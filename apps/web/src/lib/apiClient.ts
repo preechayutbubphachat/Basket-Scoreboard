@@ -8,6 +8,7 @@ import type {
   ReasonCode,
   ScoreAddedPayload,
   ScoreboardProjection,
+  TeamFoulAddedPayload,
   SmokeMatchResponse
 } from "@basket-scoreboard/api-contracts";
 
@@ -242,6 +243,24 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async addScore(matchId: string, input: { expectedSeq: number; payload: ScoreAddedPayload }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/score/add`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            commandId: createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: createCommandId(),
+            clientTimestamp: new Date().toISOString(),
+            payload: input.payload
+          })
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async addTeamFoul(matchId: string, input: { expectedSeq: number; payload: TeamFoulAddedPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/foul/team/add`,
         {
           method: "POST",
           body: JSON.stringify({

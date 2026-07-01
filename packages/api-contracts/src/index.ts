@@ -140,6 +140,24 @@ export const scoreAddedPayloadSchema = z.object({
   note: z.string().max(500).nullable()
 });
 
+export const foulTypeSchema = z.enum([
+  "PERSONAL",
+  "TECHNICAL",
+  "UNSPORTSMANLIKE",
+  "DISQUALIFYING",
+  "OTHER"
+]);
+
+export const teamFoulAddedPayloadSchema = z.object({
+  teamSide: z.enum(["HOME", "AWAY"]),
+  foulType: foulTypeSchema,
+  reason: z.string().max(500).nullable()
+});
+
+export const playerFoulAddedPayloadSchema = teamFoulAddedPayloadSchema.extend({
+  playerId: z.string().uuid()
+});
+
 export const correctionRequestPayloadSchema = z.object({
   targetSeq: z.number().int().positive(),
   correctionType: z.literal("SCORE_CORRECTION"),
@@ -181,6 +199,14 @@ export const correctionRequestCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: correctionRequestPayloadSchema
 });
 
+export const addTeamFoulCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: teamFoulAddedPayloadSchema
+});
+
+export const addPlayerFoulCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: playerFoulAddedPayloadSchema
+});
+
 export const applyScoreCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: applyScoreCorrectionPayloadSchema
 });
@@ -202,7 +228,12 @@ export const commandResultStatusSchema = z.enum([
 
 export type CreateMatchRequest = z.infer<typeof createMatchSchema>;
 export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
+export type FoulType = z.infer<typeof foulTypeSchema>;
+export type TeamFoulAddedPayload = z.infer<typeof teamFoulAddedPayloadSchema>;
+export type PlayerFoulAddedPayload = z.infer<typeof playerFoulAddedPayloadSchema>;
 export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
+export type AddTeamFoulCommand = z.infer<typeof addTeamFoulCommandSchema>;
+export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
 export type CorrectionRequestPayload = z.infer<typeof correctionRequestPayloadSchema>;
 export type ApplyScoreCorrectionPayload = z.infer<typeof applyScoreCorrectionPayloadSchema>;
 export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSchema>;
@@ -213,6 +244,8 @@ export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
 
 export type MatchEventType =
   | "SCORE_ADDED"
+  | "TEAM_FOUL_ADDED"
+  | "PLAYER_FOUL_ADDED"
   | "CORRECTION_REQUESTED"
   | "SCORE_REMOVED_BY_CORRECTION"
   | "CORRECTION_APPLIED"
@@ -240,6 +273,18 @@ export type ScoreboardProjection = {
   awayTeamName?: string | null;
   homeScore: number;
   awayScore: number;
+  teamFouls: {
+    home: number;
+    away: number;
+  };
+  teamFoulsByPeriod?: Record<string, { home: number; away: number }>;
+  playerFouls: Array<{
+    playerId: string;
+    teamSide: "HOME" | "AWAY";
+    playerName: string | null;
+    jerseyNumber: string | null;
+    fouls: number;
+  }>;
   period?: number;
   periodNumber: number;
   gameClockRemainingMs: number;
