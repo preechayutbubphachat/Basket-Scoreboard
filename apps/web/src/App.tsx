@@ -16,6 +16,7 @@ import {
   type AssignmentFormState
 } from "./lib/adminAssignments";
 import {
+  buildAdminMatchActions,
   buildAdminMatchLink,
   buildOperatorMatchScoreLink,
   buildPublicScoreboardLink,
@@ -242,31 +243,60 @@ function AdminHome() {
 }
 
 function AdminMatchesPage() {
-  const { api } = useCurrentUser();
+  const { api, currentUser } = useCurrentUser();
   const [matches, setMatches] = useState<OperatorMatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creatingDemo, setCreatingDemo] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const isAdmin = canManageAssignments(currentUser);
+
+  async function loadMatches(options: { clearMessage?: boolean } = {}) {
+    setLoading(true);
+    if (options.clearMessage ?? true) {
+      setMessage(null);
+    }
+    try {
+      setMatches(await api.getAdminMatches());
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setMessage(null);
-      try {
-        setMatches(await api.getAdminMatches());
-      } catch (error) {
-        setMessage(toUiMessage(error));
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    void load();
+    void loadMatches();
   }, [api]);
+
+  async function createDemoMatch() {
+    if (!isAdmin) return;
+    setCreatingDemo(true);
+    setMessage(null);
+    try {
+      const result = await api.createSmokeMatch();
+      setMessage({
+        tone: "success",
+        text: result.created ? "Demo match created." : "Demo match reused."
+      });
+      await loadMatches({ clearMessage: false });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setCreatingDemo(false);
+    }
+  }
 
   return (
     <section className="panel">
       <h1>Admin Matches</h1>
-      <p className="muted">Open a match to manage official assignments.</p>
+      <p className="muted">Browse matches, assign officials, open score control, or launch the public scoreboard.</p>
+      {isAdmin ? (
+        <div className="button-row">
+          <button type="button" disabled={creatingDemo} onClick={() => void createDemoMatch()}>
+            {creatingDemo ? "Creating demo match..." : "Create demo match"}
+          </button>
+        </div>
+      ) : null}
       {message ? <Notice {...message} /> : null}
       {loading ? <p>Loading matches...</p> : null}
       {!loading && matches.length === 0 ? <p className="muted">No matches found.</p> : null}
@@ -574,15 +604,20 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
               <td>{match.currentSeq}</td>
               <td>
                 {mode === "admin" ? (
-                  <a
-                    href={buildAdminMatchLink(match.matchId)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      navigate(buildAdminMatchLink(match.matchId));
-                    }}
-                  >
-                    Officials
-                  </a>
+                  <span className="inline-actions">
+                    {Object.values(buildAdminMatchActions(match.matchId)).map((action) => (
+                      <a
+                        key={action.href}
+                        href={action.href}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigate(action.href);
+                        }}
+                      >
+                        {action.label}
+                      </a>
+                    ))}
+                  </span>
                 ) : (
                   <a
                     href={buildOperatorMatchScoreLink(match.matchId)}

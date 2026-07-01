@@ -9,11 +9,28 @@ export function canOperateScore(user: AuthenticatedUser | null) {
 }
 
 export function createEmptyOperatorMatchesMessage() {
-  return "No active match assignments found for this account.";
+  return "No assigned matches.";
 }
 
 export function buildAdminMatchLink(matchId: string) {
   return `/admin/matches/${encodeURIComponent(matchId)}/officials`;
+}
+
+export function buildAdminMatchActions(matchId: string) {
+  return {
+    officials: {
+      href: buildAdminMatchLink(matchId),
+      label: "Officials"
+    },
+    operator: {
+      href: buildOperatorMatchScoreLink(matchId),
+      label: "Operator"
+    },
+    publicScoreboard: {
+      href: buildPublicScoreboardLink(matchId),
+      label: "Public scoreboard"
+    }
+  };
 }
 
 export function buildOperatorMatchScoreLink(matchId: string) {

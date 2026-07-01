@@ -19,6 +19,9 @@ import {
 import { createMatch } from "../matchEventStore/createMatch.js";
 import { getScoreboardProjection, listMatchEvents } from "../matchEventStore/repositories.js";
 import { getMatchSync } from "../matchEventStore/syncService.js";
+import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
+import type { AuthenticatedUser } from "../auth/sessionAuth.js";
+import { apiError } from "../errors/apiErrors.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -50,6 +53,33 @@ export function registerMatchRoutes(
       const result = await createMatch({ pool, input });
 
       return reply.status(201).send(result);
+    }
+  );
+
+  app.post(
+    "/api/v1/matches/smoke",
+    {
+      preHandler: [auth.requireAuth, auth.requirePermission("match.create"), auth.requireCsrf]
+    },
+    async (request, reply) => {
+      const user = request.user as AuthenticatedUser;
+
+      if (user.role !== "ADMIN") {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+
+      if (process.env.SMOKE_TEST_ENABLED !== "true") {
+        return reply
+          .status(403)
+          .send(apiError(reasonCodes.FORBIDDEN, "Smoke match creation is disabled"));
+      }
+
+      const result = await createOrReuseSmokeMatch({ pool });
+
+      return {
+        ok: true,
+        data: result
+      };
     }
   );
 

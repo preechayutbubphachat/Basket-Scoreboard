@@ -7,7 +7,8 @@ import type {
   OperatorMatchSummary,
   ReasonCode,
   ScoreAddedPayload,
-  ScoreboardProjection
+  ScoreboardProjection,
+  SmokeMatchResponse
 } from "@basket-scoreboard/api-contracts";
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -207,8 +208,12 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       return data.matches;
     },
     async getAdminMatches() {
-      const data = await request<{ matches: OperatorMatchSummary[] }>("/admin/matches");
+      const data = await request<{ matches: OperatorMatchSummary[] }>("/matches");
       return data.matches;
+    },
+    async createSmokeMatch() {
+      const data = await request<SmokeMatchResponse>("/matches/smoke", { method: "POST" });
+      return data;
     },
     async getMatchState(matchId: string) {
       return request<ScoreboardProjection | null>(

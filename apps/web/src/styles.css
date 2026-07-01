@@ -224,6 +224,12 @@ label {
   gap: 10px;
 }
 
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
 .score-control,
 .public-scoreboard {
   display: grid;

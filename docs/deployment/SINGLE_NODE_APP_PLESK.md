@@ -111,4 +111,11 @@ Expected login diagnostics:
 - `POST /api/v1/auth/login` with a wrong password reaches Fastify and returns JSON `401 INVALID_CREDENTIALS`.
 - `POST /api/v1/auth/login` with a correct password returns `200`, sets the `basket_session` HttpOnly cookie, and returns a CSRF token.
 
+Optional POST routing diagnostic:
+
+- Keep `DEPLOY_DIAGNOSTICS=false` for normal production use.
+- When temporarily set to `true`, `POST /api/v1/_diag/post-probe` returns JSON from Fastify if POST routing reaches the app.
+- If the POST probe returns an nginx or Plesk HTML `403`, the request was blocked before Fastify.
+- If diagnostics are disabled, a Fastify JSON `404` for the probe is expected and still proves the request reached the app.
+
 Do not convert write requests to `GET`. Keep CSRF, RBAC, secure cookies, server-side sessions, and event-store append-only rules enabled.

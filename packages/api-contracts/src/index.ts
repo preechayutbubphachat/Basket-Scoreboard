@@ -75,6 +75,15 @@ export type OperatorMatchSummary = {
   venueName: string | null;
   assignedRoleCodes: MatchOfficialRoleCode[];
   currentSeq: number;
+  homeScore: number | null;
+  awayScore: number | null;
+};
+
+export type SmokeMatchResponse = {
+  matchId: string;
+  created: boolean;
+  publicScoreboardPath: string;
+  operatorScorePath: string;
 };
 
 export type PermissionCode =

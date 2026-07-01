@@ -15,6 +15,7 @@ import {
   validateRevokeReason
 } from "../../apps/web/src/lib/adminAssignments";
 import {
+  buildAdminMatchActions,
   buildAdminMatchLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchCard,
@@ -320,8 +321,46 @@ describe("web API client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/v1/admin/matches",
+      "/api/v1/matches",
       expect.objectContaining({ credentials: "include" })
+    );
+  });
+
+  test("creates smoke match through CSRF-protected API client flow", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          data: {
+            matchId: "smoke-match-1",
+            created: false,
+            publicScoreboardPath: "/public/scoreboard/smoke-match-1",
+            operatorScorePath: "/operator/matches/smoke-match-1/score"
+          }
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.createSmokeMatch()).resolves.toMatchObject({
+      matchId: "smoke-match-1",
+      created: false
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/auth/csrf",
+      expect.objectContaining({ credentials: "include", method: "GET" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/matches/smoke",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
     );
   });
 
@@ -557,10 +596,15 @@ describe("operator match landing UI policy", () => {
   });
 
   test("empty operator match state is explicit", () => {
-    expect(createEmptyOperatorMatchesMessage()).toBe("No active match assignments found for this account.");
+    expect(createEmptyOperatorMatchesMessage()).toBe("No assigned matches.");
   });
 
-  test("admin match list links to officials page", () => {
+  test("admin match list exposes officials, operator, and public scoreboard actions", () => {
     expect(buildAdminMatchLink("match-1")).toBe("/admin/matches/match-1/officials");
+    expect(buildAdminMatchActions("match-1")).toEqual({
+      officials: { href: "/admin/matches/match-1/officials", label: "Officials" },
+      operator: { href: "/operator/matches/match-1/score", label: "Operator" },
+      publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
+    });
   });
 });
