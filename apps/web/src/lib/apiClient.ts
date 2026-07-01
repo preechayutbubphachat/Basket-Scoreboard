@@ -8,6 +8,9 @@ import type {
   ReasonCode,
   ScoreAddedPayload,
   ScoreboardProjection,
+  GameClockSetPayload,
+  ShotClockResetPayload,
+  ShotClockSetPayload,
   TeamFoulAddedPayload,
   SmokeMatchResponse
 } from "@basket-scoreboard/api-contracts";
@@ -276,6 +279,61 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
+    async startGameClock(matchId: string, input: { expectedSeq: number }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/clock/game/start`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, {}))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async stopGameClock(matchId: string, input: { expectedSeq: number }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/clock/game/stop`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, {}))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async setGameClock(matchId: string, input: { expectedSeq: number; payload: GameClockSetPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/clock/game/set`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async resetShotClock(matchId: string, input: { expectedSeq: number; payload: ShotClockResetPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/clock/shot/reset`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async setShotClock(matchId: string, input: { expectedSeq: number; payload: ShotClockSetPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/clock/shot/set`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
     async getPublicScoreboard(matchId: string) {
       return request<ScoreboardProjection>(
         `/public/matches/${encodeURIComponent(matchId)}/scoreboard`,
@@ -302,4 +360,15 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       return data.assignment;
     }
   };
+
+  function createCommandEnvelope(matchId: string, expectedSeq: number, payload: unknown) {
+    return {
+      commandId: createCommandId(),
+      matchId,
+      expectedSeq,
+      correlationId: createCommandId(),
+      clientTimestamp: new Date().toISOString(),
+      payload
+    };
+  }
 }

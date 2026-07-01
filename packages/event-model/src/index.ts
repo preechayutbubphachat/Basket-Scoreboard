@@ -13,7 +13,17 @@ export const foulEventTypes = ["TEAM_FOUL_ADDED", "PLAYER_FOUL_ADDED"] as const;
 
 export type FoulEventType = (typeof foulEventTypes)[number];
 
-export type MatchEventType = "SCORE_ADDED" | FoulEventType | CorrectionEventType;
+export const clockEventTypes = [
+  "GAME_CLOCK_STARTED",
+  "GAME_CLOCK_STOPPED",
+  "GAME_CLOCK_SET",
+  "SHOT_CLOCK_RESET",
+  "SHOT_CLOCK_SET"
+] as const;
+
+export type ClockEventType = (typeof clockEventTypes)[number];
+
+export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType;
 
 export type CorrectionRequestedPayload = {
   targetSeq: number;
@@ -69,6 +79,31 @@ export type PlayerFoulAddedPayload = TeamFoulAddedPayload & {
   playerId: string;
 };
 
+export type GameClockStartedPayload = {
+  startedAt: string;
+  remainingMsBeforeStart: number;
+};
+
+export type GameClockStoppedPayload = {
+  stoppedAt: string;
+  remainingMsAfterStop: number;
+};
+
+export type GameClockSetPayload = {
+  remainingMs: number;
+  reason: string | null;
+};
+
+export type ShotClockResetPayload = {
+  resetToMs: 24000 | 14000;
+  reason: string | null;
+};
+
+export type ShotClockSetPayload = {
+  remainingMs: number;
+  reason: string | null;
+};
+
 export type ScoreboardProjection = {
   matchId: string;
   homeScore: number;
@@ -88,6 +123,17 @@ export type ScoreboardProjection = {
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number;
+  gameClock: {
+    remainingMs: number;
+    running: boolean;
+    lastStartedAt: string | null;
+  };
+  shotClock: {
+    remainingMs: number;
+    running: boolean;
+    lastStartedAt: string | null;
+  };
+  clockUpdatedAt: string | null;
   status: "READY" | "LIVE" | "FINAL";
   currentSeq: number;
   projectionVersion: "scoreboard-v1";

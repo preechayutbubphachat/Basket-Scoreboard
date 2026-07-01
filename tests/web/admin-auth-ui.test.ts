@@ -17,6 +17,7 @@ import {
 import {
   buildAdminMatchActions,
   buildAdminMatchLink,
+  buildOperatorMatchClockLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchCard,
@@ -37,6 +38,13 @@ import {
   buildTeamFoulCommandPayload,
   getFoulControlFeedback
 } from "../../apps/web/src/lib/foulControl";
+import {
+  buildClockControlState,
+  buildGameClockSetPayload,
+  buildShotClockResetPayload,
+  buildShotClockSetPayload,
+  getClockControlFeedback
+} from "../../apps/web/src/lib/clockControl";
 import type {
   AuthenticatedUser,
   ScoreAddedPayload,
@@ -100,6 +108,9 @@ const scoreboardProjection: ScoreboardProjection = {
   periodNumber: 1,
   gameClockRemainingMs: 512000,
   shotClockRemainingMs: null,
+  gameClock: { remainingMs: 512000, running: false, lastStartedAt: null },
+  shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
+  clockUpdatedAt: null,
   status: "LIVE",
   currentSeq: 3,
   projectionVersion: "scoreboard-v1"
@@ -522,6 +533,49 @@ describe("web API client", () => {
     expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
+  test("posts clock commands with CSRF, expectedSeq, and command identifiers", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [
+            { eventId: "33333333-3333-4333-8333-333333333333", seqNo: 4, eventType: "SHOT_CLOCK_RESET" }
+          ],
+          reasonCode: null,
+          message: null
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.resetShotClock(scoreboardProjection.matchId, {
+      expectedSeq: 3,
+      payload: { resetToMs: 14000, reason: null }
+    });
+
+    const [, init] = fetchMock.mock.calls[1]!;
+    const body = JSON.parse(String(init?.body));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/clock/shot/reset`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(body).toMatchObject({
+      matchId: scoreboardProjection.matchId,
+      expectedSeq: 3,
+      payload: { resetToMs: 14000, reason: null }
+    });
+    expect(body.commandId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
   test("loads public scoreboard projection without requiring an auth envelope", async () => {
     const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(scoreboardProjection));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
@@ -661,6 +715,11 @@ describe("operator match landing UI policy", () => {
       href: "/operator/matches/match-1/fouls",
       label: "Open Foul Control"
     });
+    expect(card.clockControl).toEqual({
+      enabled: true,
+      href: "/operator/matches/match-1/clock",
+      label: "Open Clock Control"
+    });
     expect(card.publicScoreboard).toEqual({
       enabled: true,
       href: "/public/scoreboard/match-1",
@@ -681,6 +740,7 @@ describe("operator match landing UI policy", () => {
     expect(canOperateScore(viewerUser)).toBe(false);
     expect(buildOperatorMatchScoreLink("match 1")).toBe("/operator/matches/match%201/score");
     expect(buildOperatorMatchFoulsLink("match 1")).toBe("/operator/matches/match%201/fouls");
+    expect(buildOperatorMatchClockLink("match 1")).toBe("/operator/matches/match%201/clock");
   });
 
   test("empty operator match state is explicit", () => {
@@ -693,6 +753,7 @@ describe("operator match landing UI policy", () => {
       officials: { href: "/admin/matches/match-1/officials", label: "Officials" },
       operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
+      clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
   });
@@ -835,6 +896,63 @@ describe("foul control UI policy", () => {
     ).toEqual({ tone: "success", text: "Foul added. Current seq 4." });
     expect(
       getFoulControlFeedback({
+        status: "SYNC_REQUIRED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 5,
+        appendedEvents: [],
+        reasonCode: "INVALID_EXPECTED_SEQ",
+        message: "Expected seq 3, current seq 5"
+      })
+    ).toEqual({
+      tone: "error",
+      code: "INVALID_EXPECTED_SEQ",
+      text: "Conflict: refreshed, please try again."
+    });
+  });
+});
+
+describe("clock control UI policy", () => {
+  test("builds clock display state from projection", () => {
+    expect(buildClockControlState(scoreboardProjection)).toEqual({
+      gameClockLabel: "8:32",
+      gameClockRunning: false,
+      shotClockLabel: "24",
+      shotClockRunning: false,
+      expectedSeq: 3
+    });
+  });
+
+  test("builds game and shot clock command payloads from current projection", () => {
+    expect(buildGameClockSetPayload(scoreboardProjection, { minutes: 7, seconds: 30, reason: " table correction " }))
+      .toEqual({
+        expectedSeq: 3,
+        payload: { remainingMs: 450000, reason: "table correction" }
+      });
+    expect(buildShotClockSetPayload(scoreboardProjection, { seconds: 12, reason: "" })).toEqual({
+      expectedSeq: 3,
+      payload: { remainingMs: 12000, reason: null }
+    });
+    expect(buildShotClockResetPayload(scoreboardProjection, 14000, "")).toEqual({
+      expectedSeq: 3,
+      payload: { resetToMs: 14000, reason: null }
+    });
+  });
+
+  test("maps clock control command result feedback", () => {
+    expect(
+      getClockControlFeedback({
+        status: "ACCEPTED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 4,
+        appendedEvents: [],
+        reasonCode: null,
+        message: null
+      })
+    ).toEqual({ tone: "success", text: "Clock updated. Current seq 4." });
+    expect(
+      getClockControlFeedback({
         status: "SYNC_REQUIRED",
         commandId: "cmd",
         matchId: scoreboardProjection.matchId,

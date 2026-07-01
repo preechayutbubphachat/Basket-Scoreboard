@@ -7,11 +7,23 @@ import {
   applyScoreCorrectionCommandSchema,
   correctionRequestCommandSchema,
   createMatchSchema,
+  gameClockSetCommandSchema,
+  gameClockStartCommandSchema,
+  gameClockStopCommandSchema,
   reasonCodes,
   rejectCorrectionCommandSchema,
+  shotClockResetCommandSchema,
+  shotClockSetCommandSchema,
   syncQuerySchema
 } from "@basket-scoreboard/api-contracts";
 import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand.js";
+import {
+  appendGameClockSetCommand,
+  appendGameClockStartCommand,
+  appendGameClockStopCommand,
+  appendShotClockResetCommand,
+  appendShotClockSetCommand
+} from "../matchEventStore/appendClockCommand.js";
 import {
   appendPlayerFoulAddedCommand,
   appendTeamFoulAddedCommand
@@ -315,6 +327,85 @@ export function registerMatchRoutes(
     }
   );
 
+  const clockPreHandlers = [
+    auth.requireAuth,
+    auth.requireMatchPermission(
+      "match.score.operate",
+      (request: FastifyRequest) => (request.params as { matchId: string }).matchId
+    ),
+    auth.requireCsrf
+  ];
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/clock/game/start",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = gameClockStartCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      return appendGameClockStartCommand({ pool, command, user: request.user! });
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/clock/game/stop",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = gameClockStopCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      return appendGameClockStopCommand({ pool, command, user: request.user! });
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/clock/game/set",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = gameClockSetCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      return appendGameClockSetCommand({ pool, command, user: request.user! });
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/clock/shot/reset",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = shotClockResetCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      return appendShotClockResetCommand({ pool, command, user: request.user! });
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/clock/shot/set",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = shotClockSetCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      return appendShotClockSetCommand({ pool, command, user: request.user! });
+    }
+  );
+
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/corrections/request",
     {
@@ -438,4 +529,16 @@ export function registerMatchRoutes(
       return listCorrectionsForMatch(pool, request.params.matchId);
     }
   );
+}
+
+function commandMatchIdMismatch(command: { commandId: string; matchId: string }) {
+  return {
+    status: "REJECTED",
+    commandId: command.commandId,
+    matchId: command.matchId,
+    currentSeq: 0,
+    appendedEvents: [],
+    reasonCode: reasonCodes.MATCH_NOT_FOUND,
+    message: "Path matchId does not match command envelope matchId"
+  };
 }

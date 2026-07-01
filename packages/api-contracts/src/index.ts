@@ -158,6 +158,21 @@ export const playerFoulAddedPayloadSchema = teamFoulAddedPayloadSchema.extend({
   playerId: z.string().uuid()
 });
 
+export const gameClockSetPayloadSchema = z.object({
+  remainingMs: z.number().int().min(0).max(600000),
+  reason: z.string().max(500).nullable()
+});
+
+export const shotClockResetPayloadSchema = z.object({
+  resetToMs: z.union([z.literal(24000), z.literal(14000)]),
+  reason: z.string().max(500).nullable()
+});
+
+export const shotClockSetPayloadSchema = z.object({
+  remainingMs: z.number().int().min(0).max(24000),
+  reason: z.string().max(500).nullable()
+});
+
 export const correctionRequestPayloadSchema = z.object({
   targetSeq: z.number().int().positive(),
   correctionType: z.literal("SCORE_CORRECTION"),
@@ -207,6 +222,26 @@ export const addPlayerFoulCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: playerFoulAddedPayloadSchema
 });
 
+export const gameClockStartCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: z.object({}).default({})
+});
+
+export const gameClockStopCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: z.object({}).default({})
+});
+
+export const gameClockSetCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: gameClockSetPayloadSchema
+});
+
+export const shotClockResetCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: shotClockResetPayloadSchema
+});
+
+export const shotClockSetCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: shotClockSetPayloadSchema
+});
+
 export const applyScoreCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: applyScoreCorrectionPayloadSchema
 });
@@ -231,9 +266,17 @@ export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
 export type FoulType = z.infer<typeof foulTypeSchema>;
 export type TeamFoulAddedPayload = z.infer<typeof teamFoulAddedPayloadSchema>;
 export type PlayerFoulAddedPayload = z.infer<typeof playerFoulAddedPayloadSchema>;
+export type GameClockSetPayload = z.infer<typeof gameClockSetPayloadSchema>;
+export type ShotClockResetPayload = z.infer<typeof shotClockResetPayloadSchema>;
+export type ShotClockSetPayload = z.infer<typeof shotClockSetPayloadSchema>;
 export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
 export type AddTeamFoulCommand = z.infer<typeof addTeamFoulCommandSchema>;
 export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
+export type GameClockStartCommand = z.infer<typeof gameClockStartCommandSchema>;
+export type GameClockStopCommand = z.infer<typeof gameClockStopCommandSchema>;
+export type GameClockSetCommand = z.infer<typeof gameClockSetCommandSchema>;
+export type ShotClockResetCommand = z.infer<typeof shotClockResetCommandSchema>;
+export type ShotClockSetCommand = z.infer<typeof shotClockSetCommandSchema>;
 export type CorrectionRequestPayload = z.infer<typeof correctionRequestPayloadSchema>;
 export type ApplyScoreCorrectionPayload = z.infer<typeof applyScoreCorrectionPayloadSchema>;
 export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSchema>;
@@ -246,6 +289,11 @@ export type MatchEventType =
   | "SCORE_ADDED"
   | "TEAM_FOUL_ADDED"
   | "PLAYER_FOUL_ADDED"
+  | "GAME_CLOCK_STARTED"
+  | "GAME_CLOCK_STOPPED"
+  | "GAME_CLOCK_SET"
+  | "SHOT_CLOCK_RESET"
+  | "SHOT_CLOCK_SET"
   | "CORRECTION_REQUESTED"
   | "SCORE_REMOVED_BY_CORRECTION"
   | "CORRECTION_APPLIED"
@@ -289,6 +337,18 @@ export type ScoreboardProjection = {
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number | null;
+  gameClock?: {
+    remainingMs: number;
+    running: boolean;
+    lastStartedAt: string | null;
+  };
+  shotClock?: {
+    remainingMs: number;
+    running: boolean;
+    lastStartedAt: string | null;
+  };
+  clockUpdatedAt?: string | null;
+  serverTime?: string;
   status: "READY" | "LIVE" | "FINAL" | string;
   currentSeq: number;
   lastEventSeq?: number;

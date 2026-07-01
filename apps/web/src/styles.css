@@ -246,7 +246,8 @@ label {
   grid-template-columns: repeat(2, minmax(120px, 1fr));
 }
 
-.score-display div {
+.score-display div,
+.clock-display div {
   background: #f8fafc;
   border: 1px solid #d9e0ea;
   border-radius: 8px;
@@ -256,19 +257,22 @@ label {
   text-align: center;
 }
 
-.score-display span {
+.score-display span,
+.clock-display span {
   color: #667085;
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.score-display strong {
+.score-display strong,
+.clock-display strong {
   color: #101828;
   font-size: 44px;
   line-height: 1;
 }
 
-.score-display small {
+.score-display small,
+.clock-display small {
   color: #475467;
   font-weight: 700;
   min-height: 20px;
@@ -276,6 +280,20 @@ label {
 
 .score-display.large strong {
   font-size: 72px;
+}
+
+.clock-display {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+}
+
+.clock-display strong {
+  font-size: 56px;
+}
+
+.clock-display.public-clock strong {
+  font-size: 48px;
 }
 
 .state-strip {
@@ -370,7 +388,8 @@ th {
   .assignment-form,
   .inline-form,
   .form-grid.compact,
-  .score-actions {
+  .score-actions,
+  .clock-display {
     grid-template-columns: 1fr;
   }
 

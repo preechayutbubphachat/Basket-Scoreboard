@@ -30,6 +30,10 @@ export function buildAdminMatchActions(matchId: string) {
       href: buildOperatorMatchFoulsLink(matchId),
       label: "Operator Fouls"
     },
+    clock: {
+      href: buildOperatorMatchClockLink(matchId),
+      label: "Operator Clock"
+    },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Public scoreboard"
@@ -43,6 +47,10 @@ export function buildOperatorMatchScoreLink(matchId: string) {
 
 export function buildOperatorMatchFoulsLink(matchId: string) {
   return `/operator/matches/${encodeURIComponent(matchId)}/fouls`;
+}
+
+export function buildOperatorMatchClockLink(matchId: string) {
+  return `/operator/matches/${encodeURIComponent(matchId)}/clock`;
 }
 
 export function buildPublicScoreboardLink(matchId: string) {
@@ -72,6 +80,11 @@ export function buildOperatorMatchCard(match: OperatorMatchSummary) {
       enabled: true,
       href: buildOperatorMatchFoulsLink(match.matchId),
       label: "Open Foul Control"
+    },
+    clockControl: {
+      enabled: true,
+      href: buildOperatorMatchClockLink(match.matchId),
+      label: "Open Clock Control"
     },
     publicScoreboard: {
       enabled: true,
