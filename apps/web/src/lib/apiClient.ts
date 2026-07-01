@@ -223,6 +223,14 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
+    async getMatchProjection(matchId: string) {
+      return request<ScoreboardProjection>(
+        `/matches/${encodeURIComponent(matchId)}/projection`,
+        {},
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
     async syncMatch(matchId: string, lastEventSeq: number) {
       return request<MatchSyncResponse>(
         `/matches/${encodeURIComponent(matchId)}/sync?lastEventSeq=${encodeURIComponent(String(lastEventSeq))}`,

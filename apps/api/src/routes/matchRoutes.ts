@@ -17,7 +17,11 @@ import {
   requestScoreCorrection
 } from "../matchEventStore/correctionCommands.js";
 import { createMatch } from "../matchEventStore/createMatch.js";
-import { getScoreboardProjection, listMatchEvents } from "../matchEventStore/repositories.js";
+import {
+  getScoreboardProjection,
+  getScoreboardProjectionView,
+  listMatchEvents
+} from "../matchEventStore/repositories.js";
 import { getMatchSync } from "../matchEventStore/syncService.js";
 import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
@@ -103,6 +107,31 @@ export function registerMatchRoutes(
   );
 
   app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/projection",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request, reply) => {
+      const connection = await pool.getConnection();
+
+      try {
+        const projection = await getScoreboardProjectionView(connection, request.params.matchId);
+
+        if (!projection) {
+          return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match projection was not found"));
+        }
+
+        return projection;
+      } finally {
+        connection.release();
+      }
+    }
+  );
+
+  app.get<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/events",
     {
       preHandler: [
@@ -146,10 +175,10 @@ export function registerMatchRoutes(
       const connection = await pool.getConnection();
 
       try {
-        const projection = await getScoreboardProjection(connection, request.params.matchId);
+        const projection = await getScoreboardProjectionView(connection, request.params.matchId);
 
         if (!projection) {
-          return reply.status(404).send({ error: "MATCH_NOT_FOUND" });
+          return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match projection was not found"));
         }
 
         return projection;

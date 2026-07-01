@@ -234,6 +234,10 @@ export type CommandResult = {
 
 export type ScoreboardProjection = {
   matchId: string;
+  homeTeamId?: string | null;
+  homeTeamName?: string | null;
+  awayTeamId?: string | null;
+  awayTeamName?: string | null;
   homeScore: number;
   awayScore: number;
   periodNumber: number;
@@ -241,6 +245,8 @@ export type ScoreboardProjection = {
   shotClockRemainingMs: number | null;
   status: "READY" | "LIVE" | "FINAL" | string;
   currentSeq: number;
+  lastEventSeq?: number;
+  updatedAt?: string | null;
   projectionVersion: "scoreboard-v1";
 };
 

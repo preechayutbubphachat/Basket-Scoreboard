@@ -2,7 +2,6 @@ import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   MatchOfficialRoleCode,
   OperatorMatchSummary,
-  ScoreAddedPayload,
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
@@ -26,6 +25,15 @@ import {
   createEmptyOperatorMatchesMessage,
   getTeamLabel
 } from "./lib/operatorMatches";
+import {
+  buildScoreCommandPayload,
+  buildScoreControlPanels,
+  getScoreControlFeedback,
+  getScoreControlLinks,
+  getScoreControlPendingLabel,
+  type ScoreControlPoint,
+  type ScoreControlTeamSide
+} from "./lib/scoreControl";
 
 type Route =
   | { name: "home" }
@@ -395,7 +403,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     setLoading(true);
     setMessage(null);
     try {
-      setProjection(await api.getMatchState(matchId));
+      setProjection(await api.getMatchProjection(matchId));
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -413,10 +421,10 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
       setProjection(sync.projection);
       return;
     }
-    setProjection(await api.getMatchState(matchId));
+    setProjection(await api.getMatchProjection(matchId));
   }
 
-  async function addScore(teamSide: ScoreAddedPayload["teamSide"], points: ScoreAddedPayload["points"]) {
+  async function addScore(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
     if (!projection || !canSubmitScore) return;
     const key = `${teamSide}-${points}`;
     setPendingKey(key);
@@ -424,26 +432,16 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     const previousSeq = projection.currentSeq;
 
     try {
-      const result = await api.addScore(matchId, {
-        expectedSeq: previousSeq,
-        payload: {
-          teamSide,
-          points,
-          playerId: null,
-          periodNumber: projection.periodNumber,
-          gameClockRemainingMs: projection.gameClockRemainingMs,
-          note: null
-        }
-      });
+      const result = await api.addScore(matchId, buildScoreCommandPayload(projection, teamSide, points));
 
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
-        setMessage({ tone: "error", code: "INVALID_EXPECTED_SEQ", text: "State changed, please retry." });
+        setMessage(getScoreControlFeedback(result));
         await refreshAfterCommand(previousSeq);
         return;
       }
 
       await refreshAfterCommand(previousSeq);
-      setMessage({ tone: "success", text: `Score accepted. Current seq ${result.currentSeq}.` });
+      setMessage(getScoreControlFeedback(result));
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -457,6 +455,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         <h1>Score Control</h1>
         <p className="muted">Match ID: {matchId}</p>
         {!canSubmitScore ? <ErrorMessage code="FORBIDDEN" message="Score operation permission is required." /> : null}
+        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
       </div>
       {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
@@ -466,35 +465,35 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
       {projection ? (
         <section className="panel score-control">
           <div className="score-display" aria-label="Current score">
-            <div>
-              <span>Home</span>
-              <strong>{projection.homeScore}</strong>
-            </div>
-            <div>
-              <span>Away</span>
-              <strong>{projection.awayScore}</strong>
-            </div>
+            {buildScoreControlPanels(projection).map((panel) => (
+              <div key={panel.teamSide}>
+                <span>{panel.label}</span>
+                <strong>{panel.score}</strong>
+                <small>{panel.teamName}</small>
+              </div>
+            ))}
           </div>
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
           </dl>
           <div className="score-actions">
-            {(["HOME", "AWAY"] as const).map((teamSide) => (
-              <div key={teamSide}>
-                <h2>{teamSide === "HOME" ? "Home" : "Away"}</h2>
+            {buildScoreControlPanels(projection).map((panel) => (
+              <div key={panel.teamSide}>
+                <h2>{panel.teamName}</h2>
                 <div className="button-row">
-                  {([1, 2, 3] as const).map((points) => {
-                    const key = `${teamSide}-${points}`;
+                  {panel.buttons.map((button) => {
                     return (
                       <button
-                        key={key}
+                        key={button.pendingKey}
                         type="button"
+                        className="score-button"
                         disabled={!canSubmitScore || Boolean(pendingKey)}
-                        onClick={() => void addScore(teamSide, points)}
+                        onClick={() => void addScore(panel.teamSide, button.points)}
                       >
-                        {pendingKey === key ? "Submitting..." : `+${points}`}
+                        {getScoreControlPendingLabel(button.pendingKey, pendingKey)}
                       </button>
                     );
                   })}
@@ -503,16 +502,21 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
             ))}
           </div>
           <div className="button-row">
-            <a
-              className="button-link secondary"
-              href={buildPublicScoreboardLink(matchId)}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate(buildPublicScoreboardLink(matchId));
-              }}
-            >
-              Public Scoreboard
-            </a>
+            {Object.values(getScoreControlLinks(matchId, currentUser))
+              .filter((link): link is { href: string; label: string } => Boolean(link))
+              .map((link) => (
+                <a
+                  key={link.href}
+                  className="button-link secondary"
+                  href={link.href}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigate(link.href);
+                  }}
+                >
+                  {link.label}
+                </a>
+              ))}
           </div>
         </section>
       ) : null}
@@ -558,14 +562,13 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
       {projection ? (
         <>
           <div className="score-display large" aria-label="Public score">
-            <div>
-              <span>Home</span>
-              <strong>{projection.homeScore}</strong>
-            </div>
-            <div>
-              <span>Away</span>
-              <strong>{projection.awayScore}</strong>
-            </div>
+            {buildScoreControlPanels(projection).map((panel) => (
+              <div key={panel.teamSide}>
+                <span>{panel.label}</span>
+                <strong>{panel.score}</strong>
+                <small>{panel.teamName}</small>
+              </div>
+            ))}
           </div>
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>

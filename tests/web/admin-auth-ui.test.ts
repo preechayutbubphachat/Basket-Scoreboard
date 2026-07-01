@@ -23,6 +23,14 @@ import {
   canOperateScore,
   createEmptyOperatorMatchesMessage
 } from "../../apps/web/src/lib/operatorMatches";
+import {
+  buildScoreCommandPayload,
+  buildScoreControlPanels,
+  getScoreControlFeedback,
+  getScoreControlLinks,
+  getScoreControlPendingLabel,
+  scorePointOptions
+} from "../../apps/web/src/lib/scoreControl";
 import type { AuthenticatedUser, ScoreAddedPayload, ScoreboardProjection } from "../../packages/api-contracts/src";
 
 const memoryStorage = () => {
@@ -72,6 +80,8 @@ const viewerUser: AuthenticatedUser = {
 
 const scoreboardProjection: ScoreboardProjection = {
   matchId: "11111111-1111-4111-8111-111111111111",
+  homeTeamName: "Bangkok HOME",
+  awayTeamName: "Chiang Mai AWAY",
   homeScore: 10,
   awayScore: 8,
   periodNumber: 1,
@@ -398,6 +408,22 @@ describe("web API client", () => {
     );
   });
 
+  test("loads enriched operator projection with credentials", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(scoreboardProjection));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getMatchProjection(scoreboardProjection.matchId)).resolves.toMatchObject({
+      homeTeamName: "Bangkok HOME",
+      awayTeamName: "Chiang Mai AWAY",
+      currentSeq: 3
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/projection`,
+      expect.objectContaining({ credentials: "include" })
+    );
+  });
+
   test("posts score commands with CSRF, expectedSeq, and no client-owned totals", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -606,5 +632,94 @@ describe("operator match landing UI policy", () => {
       operator: { href: "/operator/matches/match-1/score", label: "Operator" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
+  });
+});
+
+describe("score control UI policy", () => {
+  test("builds large HOME and AWAY score panels from projection team names", () => {
+    const panels = buildScoreControlPanels(scoreboardProjection);
+
+    expect(scorePointOptions).toEqual([1, 2, 3]);
+    expect(panels).toEqual([
+      {
+        teamSide: "HOME",
+        label: "HOME",
+        teamName: "Bangkok HOME",
+        score: 10,
+        buttons: [
+          { points: 1, label: "+1", pendingKey: "HOME-1" },
+          { points: 2, label: "+2", pendingKey: "HOME-2" },
+          { points: 3, label: "+3", pendingKey: "HOME-3" }
+        ]
+      },
+      {
+        teamSide: "AWAY",
+        label: "AWAY",
+        teamName: "Chiang Mai AWAY",
+        score: 8,
+        buttons: [
+          { points: 1, label: "+1", pendingKey: "AWAY-1" },
+          { points: 2, label: "+2", pendingKey: "AWAY-2" },
+          { points: 3, label: "+3", pendingKey: "AWAY-3" }
+        ]
+      }
+    ]);
+  });
+
+  test("builds score command payload from current projection without client-owned totals", () => {
+    expect(buildScoreCommandPayload(scoreboardProjection, "AWAY", 3)).toEqual({
+      expectedSeq: 3,
+      payload: {
+        teamSide: "AWAY",
+        points: 3,
+        playerId: null,
+        periodNumber: 1,
+        gameClockRemainingMs: 512000,
+        note: null
+      }
+    });
+  });
+
+  test("maps score control pending and command result feedback", () => {
+    expect(getScoreControlPendingLabel("HOME-2", "HOME-2")).toBe("Saving...");
+    expect(getScoreControlPendingLabel("HOME-2", "AWAY-2")).toBe("+2");
+    expect(
+      getScoreControlFeedback({
+        status: "ACCEPTED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 4,
+        appendedEvents: [],
+        reasonCode: null,
+        message: null
+      })
+    ).toEqual({ tone: "success", text: "Score updated. Current seq 4." });
+    expect(
+      getScoreControlFeedback({
+        status: "SYNC_REQUIRED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 5,
+        appendedEvents: [],
+        reasonCode: "INVALID_EXPECTED_SEQ",
+        message: "Expected seq 3, current seq 5"
+      })
+    ).toEqual({
+      tone: "error",
+      code: "INVALID_EXPECTED_SEQ",
+      text: "Conflict: scoreboard refreshed, please try again."
+    });
+  });
+
+  test("builds score control navigation links", () => {
+    expect(getScoreControlLinks(scoreboardProjection.matchId, adminUser)).toEqual({
+      operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
+      publicScoreboard: {
+        href: `/public/scoreboard/${scoreboardProjection.matchId}`,
+        label: "Open Public Scoreboard"
+      },
+      adminMatches: { href: "/admin/matches", label: "Admin Match List" }
+    });
+    expect(getScoreControlLinks(scoreboardProjection.matchId, viewerUser).adminMatches).toBeNull();
   });
 });
