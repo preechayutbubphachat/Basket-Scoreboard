@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
+  FoulType,
   MatchOfficialRoleCode,
   OperatorMatchSummary,
   ScoreboardProjection
@@ -18,6 +19,7 @@ import {
   buildAdminMatchActions,
   buildAdminMatchLink,
   buildOperatorMatchScoreLink,
+  buildOperatorMatchFoulsLink,
   buildPublicScoreboardLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
@@ -34,6 +36,14 @@ import {
   type ScoreControlPoint,
   type ScoreControlTeamSide
 } from "./lib/scoreControl";
+import {
+  buildFoulControlPanels,
+  buildTeamFoulCommandPayload,
+  foulTypeOptions,
+  getFoulControlFeedback,
+  getFoulControlLinks,
+  type FoulControlTeamSide
+} from "./lib/foulControl";
 
 type Route =
   | { name: "home" }
@@ -43,6 +53,7 @@ type Route =
   | { name: "admin-officials"; matchId: string }
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
+  | { name: "operator-fouls"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -56,6 +67,11 @@ function parseRoute(pathname: string): Route {
   const operatorMatchId = operatorScoreMatch?.[1];
   if (operatorMatchId) {
     return { name: "operator-score", matchId: decodeURIComponent(operatorMatchId) };
+  }
+  const operatorFoulsMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/fouls$/);
+  const operatorFoulsMatchId = operatorFoulsMatch?.[1];
+  if (operatorFoulsMatchId) {
+    return { name: "operator-fouls", matchId: decodeURIComponent(operatorFoulsMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -372,6 +388,16 @@ function OperatorMatchesPage() {
                     {card.scoreControl.label}
                   </a>
                   <a
+                    className="button-link"
+                    href={card.foulControl.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.foulControl.href);
+                    }}
+                  >
+                    {card.foulControl.label}
+                  </a>
+                  <a
                     className="button-link secondary"
                     href={card.publicScoreboard.href}
                     onClick={(event) => {
@@ -470,6 +496,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                 <span>{panel.label}</span>
                 <strong>{panel.score}</strong>
                 <small>{panel.teamName}</small>
+                <small>Fouls {projection.teamFouls?.[panel.teamSide === "HOME" ? "home" : "away"] ?? 0}</small>
               </div>
             ))}
           </div>
@@ -517,6 +544,151 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                   {link.label}
                 </a>
               ))}
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function OperatorFoulPage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [foulType, setFoulType] = useState<FoulType>("PERSONAL");
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const canSubmitFoul = canOperateScore(currentUser);
+
+  async function loadState() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadState();
+  }, [matchId]);
+
+  async function refreshAfterCommand(lastSeq: number) {
+    const sync = await api.syncMatch(matchId, lastSeq);
+    if (sync.projection) {
+      setProjection(sync.projection);
+      return;
+    }
+    setProjection(await api.getMatchProjection(matchId));
+  }
+
+  async function addTeamFoul(teamSide: FoulControlTeamSide) {
+    if (!projection || !canSubmitFoul) return;
+    const key = `TEAM-${teamSide}`;
+    setPendingKey(key);
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+
+    try {
+      const result = await api.addTeamFoul(
+        matchId,
+        buildTeamFoulCommandPayload(projection, teamSide, { foulType, reason })
+      );
+
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage(getFoulControlFeedback(result));
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage(getFoulControlFeedback(result));
+      setReason("");
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Foul Control</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!canSubmitFoul ? <ErrorMessage code="FORBIDDEN" message="Foul operation permission is required." /> : null}
+        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
+      {!loading && !projection ? (
+        <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
+      ) : null}
+      {projection ? (
+        <section className="panel score-control">
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{projection.status}</dd></div>
+            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
+            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
+          </dl>
+          <div className="form-grid compact">
+            <label>
+              Foul type
+              <select value={foulType} onChange={(event) => setFoulType(event.target.value as FoulType)}>
+                {foulTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Reason
+              <input value={reason} onChange={(event) => setReason(event.target.value)} />
+            </label>
+          </div>
+          <div className="score-actions">
+            {buildFoulControlPanels(projection).map((panel) => (
+              <div key={panel.teamSide}>
+                <h2>{panel.teamName}</h2>
+                <div className="foul-count">
+                  <span>{panel.label} team fouls</span>
+                  <strong>{panel.fouls}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="score-button"
+                  disabled={!canSubmitFoul || Boolean(pendingKey)}
+                  onClick={() => void addTeamFoul(panel.teamSide)}
+                >
+                  {pendingKey === panel.pendingKey ? "Saving..." : "Add Team Foul"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <section className="inline-panel">
+            <h2>Player Fouls</h2>
+            <p className="muted">Player foul controls require roster data. Team foul control is available.</p>
+          </section>
+          <div className="button-row">
+            {Object.values(getFoulControlLinks(matchId)).map((link) => (
+              <a
+                key={link.href}
+                className="button-link secondary"
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(link.href);
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
           </div>
         </section>
       ) : null}
@@ -622,15 +794,26 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                     ))}
                   </span>
                 ) : (
-                  <a
-                    href={buildOperatorMatchScoreLink(match.matchId)}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      navigate(buildOperatorMatchScoreLink(match.matchId));
-                    }}
-                  >
-                    Score
-                  </a>
+                  <span className="inline-actions">
+                    <a
+                      href={buildOperatorMatchScoreLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchScoreLink(match.matchId));
+                      }}
+                    >
+                      Score
+                    </a>
+                    <a
+                      href={buildOperatorMatchFoulsLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchFoulsLink(match.matchId));
+                      }}
+                    >
+                      Fouls
+                    </a>
+                  </span>
                 )}
               </td>
             </tr>
@@ -874,6 +1057,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorScorePage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-fouls":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorFoulPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "public-scoreboard":

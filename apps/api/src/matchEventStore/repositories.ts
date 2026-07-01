@@ -5,7 +5,7 @@ import type {
   ScoreboardProjection as ApiScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
-import type { ScoreboardProjection } from "./projection.js";
+import { normalizeScoreboardProjection, type ScoreboardProjection } from "./projection.js";
 import { parseJsonField } from "./json.js";
 
 type StreamRow = RowDataPacket & {
@@ -50,6 +50,13 @@ type EventRow = RowDataPacket & {
 
 type DedupRow = RowDataPacket & {
   result: unknown;
+};
+
+type PlayerMatchRow = RowDataPacket & {
+  player_id: string;
+  display_name: string;
+  jersey_number: string | null;
+  team_side: "HOME" | "AWAY";
 };
 
 export type MatchEventRecord = {
@@ -146,7 +153,12 @@ export async function getScoreboardProjection(connection: PoolConnection, matchI
     [matchId]
   );
 
-  return rows[0] ? parseJsonField<ScoreboardProjection>(rows[0].projection_data) : null;
+  if (!rows[0]) {
+    return null;
+  }
+
+  const projection = parseJsonField<Partial<ScoreboardProjection> & { matchId: string }>(rows[0].projection_data);
+  return projection ? normalizeScoreboardProjection(projection) : null;
 }
 
 export async function getScoreboardProjectionView(connection: PoolConnection, matchId: string) {
@@ -190,6 +202,9 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
     matchId: typeof projection.matchId === "string" ? projection.matchId : row.match_id,
     homeScore: numberOrDefault(projection.homeScore, 0),
     awayScore: numberOrDefault(projection.awayScore, 0),
+    teamFouls: normalizeTeamFoulCount(projection.teamFouls),
+    teamFoulsByPeriod: normalizeTeamFoulsByPeriod(projection.teamFoulsByPeriod),
+    playerFouls: Array.isArray(projection.playerFouls) ? projection.playerFouls : [],
     period: periodNumber,
     periodNumber,
     gameClockRemainingMs: numberOrDefault(projection.gameClockRemainingMs, 600000),
@@ -212,9 +227,71 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
   } satisfies ApiScoreboardProjection;
 }
 
+export async function getActivePlayerForMatchSide(
+  connection: PoolConnection,
+  matchId: string,
+  playerId: string,
+  teamSide: "HOME" | "AWAY"
+) {
+  const [rows] = await connection.query<PlayerMatchRow[]>(
+    `SELECT
+      p.player_id,
+      p.display_name,
+      p.jersey_number,
+      CASE
+        WHEN p.team_id = m.home_team_id THEN 'HOME'
+        WHEN p.team_id = m.away_team_id THEN 'AWAY'
+      END AS team_side
+    FROM players p
+    INNER JOIN matches m ON p.team_id IN (m.home_team_id, m.away_team_id)
+    WHERE m.match_id = ?
+      AND p.player_id = ?
+      AND p.status = 'ACTIVE'`,
+    [matchId, playerId]
+  );
+
+  const player = rows[0];
+
+  if (!player || player.team_side !== teamSide) {
+    return null;
+  }
+
+  return {
+    playerId: player.player_id,
+    playerName: player.display_name,
+    jerseyNumber: player.jersey_number,
+    teamSide: player.team_side
+  };
+}
+
 function numberOrDefault(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeTeamFoulCount(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return { home: 0, away: 0 };
+  }
+
+  const candidate = value as { home?: unknown; away?: unknown };
+  return {
+    home: numberOrDefault(candidate.home, 0),
+    away: numberOrDefault(candidate.away, 0)
+  };
+}
+
+function normalizeTeamFoulsByPeriod(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([period, fouls]) => [
+      period,
+      normalizeTeamFoulCount(fouls)
+    ])
+  );
 }
 
 function parseProjectionJson(value: unknown): Partial<ScoreboardProjection> {

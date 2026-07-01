@@ -73,6 +73,26 @@ function scoreCommand(matchId: string, expectedSeq: number, commandId = randomUU
   };
 }
 
+function teamFoulCommand(
+  matchId: string,
+  expectedSeq: number,
+  teamSide: "HOME" | "AWAY" = "HOME",
+  commandId = randomUUID()
+) {
+  return {
+    commandId,
+    matchId,
+    expectedSeq,
+    correlationId: randomUUID(),
+    clientTimestamp: new Date().toISOString(),
+    payload: {
+      teamSide,
+      foulType: "PERSONAL",
+      reason: null
+    }
+  };
+}
+
 function correctionRequestCommand(matchId: string, expectedSeq: number, targetSeq: number, commandId = randomUUID()) {
   return {
     commandId,
@@ -139,6 +159,107 @@ function rejectCorrectionCommand(
 }
 
 describeDb("match event store MVP", () => {
+  it("appends team foul events, updates projection, deduplicates commands, and rejects stale expectedSeq", async () => {
+    const { app, pool } = await buildMigratedApp();
+
+    try {
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        headers: adminHeaders,
+        payload: {
+          matchCode: `FOUL-${randomUUID()}`,
+          ruleProfileId: "FIBA_2024"
+        }
+      });
+      expect(createResponse.statusCode).toBe(201);
+      const created = createResponse.json<{ matchId: string }>();
+
+      const homeFoul = teamFoulCommand(created.matchId, 0, "HOME");
+      const homeFoulResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
+        headers: scorerHeaders(created.matchId),
+        payload: homeFoul
+      });
+      expect(homeFoulResponse.statusCode).toBe(200);
+      expect(homeFoulResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 1,
+        appendedEvents: [{ seqNo: 1, eventType: "TEAM_FOUL_ADDED" }]
+      });
+
+      const duplicateResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
+        headers: scorerHeaders(created.matchId),
+        payload: homeFoul
+      });
+      expect(duplicateResponse.json()).toMatchObject({
+        status: "DUPLICATE_ACCEPTED",
+        currentSeq: 1,
+        appendedEvents: []
+      });
+
+      const awayFoulResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
+        headers: scorerHeaders(created.matchId),
+        payload: teamFoulCommand(created.matchId, 1, "AWAY")
+      });
+      expect(awayFoulResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 2
+      });
+
+      const staleResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
+        headers: scorerHeaders(created.matchId),
+        payload: teamFoulCommand(created.matchId, 0, "HOME")
+      });
+      expect(staleResponse.json()).toMatchObject({
+        status: "SYNC_REQUIRED",
+        currentSeq: 2,
+        reasonCode: "INVALID_EXPECTED_SEQ"
+      });
+
+      const [eventRows] = await pool.query<RowDataPacket[]>(
+        "SELECT seq_no, event_type, payload FROM match_events WHERE match_id = ? ORDER BY seq_no ASC",
+        [created.matchId]
+      );
+      expect(eventRows.map((event) => event.event_type)).toEqual([
+        "TEAM_FOUL_ADDED",
+        "TEAM_FOUL_ADDED"
+      ]);
+
+      const projectionResponse = await app.inject({
+        method: "GET",
+        url: `/api/v1/matches/${created.matchId}/projection`,
+        headers: scorerHeaders(created.matchId)
+      });
+      expect(projectionResponse.json()).toMatchObject({
+        currentSeq: 2,
+        lastEventSeq: 2,
+        teamFouls: { home: 1, away: 1 },
+        teamFoulsByPeriod: { "1": { home: 1, away: 1 } },
+        playerFouls: []
+      });
+
+      const publicResponse = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${created.matchId}/scoreboard`
+      });
+      expect(publicResponse.json()).toMatchObject({
+        teamFouls: { home: 1, away: 1 }
+      });
+      expect(JSON.stringify(publicResponse.json())).not.toContain("audit");
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
   it("creates matches, appends score events, deduplicates commands, syncs missed events, and keeps public output read-only", async () => {
     const { app, pool } = await buildMigratedApp();
 

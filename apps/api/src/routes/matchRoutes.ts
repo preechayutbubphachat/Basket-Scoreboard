@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool } from "mysql2/promise";
 import {
   addScoreCommandSchema,
+  addPlayerFoulCommandSchema,
+  addTeamFoulCommandSchema,
   applyScoreCorrectionCommandSchema,
   correctionRequestCommandSchema,
   createMatchSchema,
@@ -10,6 +12,10 @@ import {
   syncQuerySchema
 } from "@basket-scoreboard/api-contracts";
 import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand.js";
+import {
+  appendPlayerFoulAddedCommand,
+  appendTeamFoulAddedCommand
+} from "../matchEventStore/appendFoulCommand.js";
 import {
   applyScoreCorrection,
   listCorrectionsForMatch,
@@ -226,6 +232,80 @@ export function registerMatchRoutes(
       }
 
       const result = await appendScoreAddedCommand({
+        pool,
+        command,
+        user: request.user!
+      });
+
+      return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/foul/team/add",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission(
+          "match.score.operate",
+          (request) => (request.params as { matchId: string }).matchId
+        ),
+        auth.requireCsrf
+      ]
+    },
+    async (request, reply) => {
+      const command = addTeamFoulCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send({
+          status: "REJECTED",
+          commandId: command.commandId,
+          matchId: command.matchId,
+          currentSeq: 0,
+          appendedEvents: [],
+          reasonCode: reasonCodes.MATCH_NOT_FOUND,
+          message: "Path matchId does not match command envelope matchId"
+        });
+      }
+
+      const result = await appendTeamFoulAddedCommand({
+        pool,
+        command,
+        user: request.user!
+      });
+
+      return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/foul/player/add",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission(
+          "match.score.operate",
+          (request) => (request.params as { matchId: string }).matchId
+        ),
+        auth.requireCsrf
+      ]
+    },
+    async (request, reply) => {
+      const command = addPlayerFoulCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send({
+          status: "REJECTED",
+          commandId: command.commandId,
+          matchId: command.matchId,
+          currentSeq: 0,
+          appendedEvents: [],
+          reasonCode: reasonCodes.MATCH_NOT_FOUND,
+          message: "Path matchId does not match command envelope matchId"
+        });
+      }
+
+      const result = await appendPlayerFoulAddedCommand({
         pool,
         command,
         user: request.user!

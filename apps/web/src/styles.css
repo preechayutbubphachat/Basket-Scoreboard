@@ -138,6 +138,10 @@ select {
   gap: 14px;
 }
 
+.form-grid.compact {
+  grid-template-columns: minmax(180px, 240px) minmax(220px, 1fr);
+}
+
 .assignment-form {
   grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) auto;
 }
@@ -315,6 +319,34 @@ label {
   min-width: 86px;
 }
 
+.foul-count {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #d9e0ea;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.foul-count span {
+  color: #475467;
+  font-weight: 700;
+}
+
+.foul-count strong {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.inline-panel {
+  background: #f8fafc;
+  border: 1px solid #d9e0ea;
+  border-radius: 8px;
+  padding: 16px;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;
@@ -337,6 +369,7 @@ th {
   .top-bar,
   .assignment-form,
   .inline-form,
+  .form-grid.compact,
   .score-actions {
     grid-template-columns: 1fr;
   }

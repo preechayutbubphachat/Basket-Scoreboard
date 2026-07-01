@@ -9,7 +9,11 @@ export const correctionEventTypes = [
 
 export type CorrectionEventType = (typeof correctionEventTypes)[number];
 
-export type MatchEventType = "SCORE_ADDED" | CorrectionEventType;
+export const foulEventTypes = ["TEAM_FOUL_ADDED", "PLAYER_FOUL_ADDED"] as const;
+
+export type FoulEventType = (typeof foulEventTypes)[number];
+
+export type MatchEventType = "SCORE_ADDED" | FoulEventType | CorrectionEventType;
 
 export type CorrectionRequestedPayload = {
   targetSeq: number;
@@ -52,10 +56,35 @@ export type ScoreAddedPayload = {
   note: string | null;
 };
 
+export type FoulType = "PERSONAL" | "TECHNICAL" | "UNSPORTSMANLIKE" | "DISQUALIFYING" | "OTHER";
+
+export type TeamFoulAddedPayload = {
+  teamSide: TeamSide;
+  periodNumber: number;
+  foulType: FoulType;
+  reason: string | null;
+};
+
+export type PlayerFoulAddedPayload = TeamFoulAddedPayload & {
+  playerId: string;
+};
+
 export type ScoreboardProjection = {
   matchId: string;
   homeScore: number;
   awayScore: number;
+  teamFouls: {
+    home: number;
+    away: number;
+  };
+  teamFoulsByPeriod: Record<string, { home: number; away: number }>;
+  playerFouls: Array<{
+    playerId: string;
+    teamSide: TeamSide;
+    playerName: string | null;
+    jerseyNumber: string | null;
+    fouls: number;
+  }>;
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number;

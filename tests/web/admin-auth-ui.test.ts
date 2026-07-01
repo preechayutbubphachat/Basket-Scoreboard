@@ -17,6 +17,7 @@ import {
 import {
   buildAdminMatchActions,
   buildAdminMatchLink,
+  buildOperatorMatchFoulsLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
@@ -31,7 +32,16 @@ import {
   getScoreControlPendingLabel,
   scorePointOptions
 } from "../../apps/web/src/lib/scoreControl";
-import type { AuthenticatedUser, ScoreAddedPayload, ScoreboardProjection } from "../../packages/api-contracts/src";
+import {
+  buildFoulControlPanels,
+  buildTeamFoulCommandPayload,
+  getFoulControlFeedback
+} from "../../apps/web/src/lib/foulControl";
+import type {
+  AuthenticatedUser,
+  ScoreAddedPayload,
+  ScoreboardProjection
+} from "../../packages/api-contracts/src";
 
 const memoryStorage = () => {
   const values = new Map<string, string>();
@@ -84,6 +94,9 @@ const scoreboardProjection: ScoreboardProjection = {
   awayTeamName: "Chiang Mai AWAY",
   homeScore: 10,
   awayScore: 8,
+  teamFouls: { home: 2, away: 1 },
+  teamFoulsByPeriod: { "1": { home: 2, away: 1 } },
+  playerFouls: [],
   periodNumber: 1,
   gameClockRemainingMs: 512000,
   shotClockRemainingMs: null,
@@ -466,6 +479,49 @@ describe("web API client", () => {
     expect(body["final" + "Score"]).toBeUndefined();
   });
 
+  test("posts team foul commands with CSRF, expectedSeq, and command identifiers", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [
+            { eventId: "33333333-3333-4333-8333-333333333333", seqNo: 4, eventType: "TEAM_FOUL_ADDED" }
+          ],
+          reasonCode: null,
+          message: null
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.addTeamFoul(scoreboardProjection.matchId, {
+      expectedSeq: 3,
+      payload: { teamSide: "HOME", foulType: "PERSONAL", reason: null }
+    });
+
+    const [, init] = fetchMock.mock.calls[1]!;
+    const body = JSON.parse(String(init?.body));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/foul/team/add`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(body).toMatchObject({
+      matchId: scoreboardProjection.matchId,
+      expectedSeq: 3,
+      payload: { teamSide: "HOME", foulType: "PERSONAL", reason: null }
+    });
+    expect(body.commandId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
   test("loads public scoreboard projection without requiring an auth envelope", async () => {
     const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(scoreboardProjection));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
@@ -600,6 +656,11 @@ describe("operator match landing UI policy", () => {
       href: "/operator/matches/match-1/score",
       label: "Open Score Control"
     });
+    expect(card.foulControl).toEqual({
+      enabled: true,
+      href: "/operator/matches/match-1/fouls",
+      label: "Open Foul Control"
+    });
     expect(card.publicScoreboard).toEqual({
       enabled: true,
       href: "/public/scoreboard/match-1",
@@ -619,6 +680,7 @@ describe("operator match landing UI policy", () => {
     expect(canOperateScore(scorerUser)).toBe(true);
     expect(canOperateScore(viewerUser)).toBe(false);
     expect(buildOperatorMatchScoreLink("match 1")).toBe("/operator/matches/match%201/score");
+    expect(buildOperatorMatchFoulsLink("match 1")).toBe("/operator/matches/match%201/fouls");
   });
 
   test("empty operator match state is explicit", () => {
@@ -629,7 +691,8 @@ describe("operator match landing UI policy", () => {
     expect(buildAdminMatchLink("match-1")).toBe("/admin/matches/match-1/officials");
     expect(buildAdminMatchActions("match-1")).toEqual({
       officials: { href: "/admin/matches/match-1/officials", label: "Officials" },
-      operator: { href: "/operator/matches/match-1/score", label: "Operator" },
+      operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
+      fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
   });
@@ -721,5 +784,69 @@ describe("score control UI policy", () => {
       adminMatches: { href: "/admin/matches", label: "Admin Match List" }
     });
     expect(getScoreControlLinks(scoreboardProjection.matchId, viewerUser).adminMatches).toBeNull();
+  });
+});
+
+describe("foul control UI policy", () => {
+  test("builds HOME and AWAY team foul panels from projection team names", () => {
+    expect(buildFoulControlPanels(scoreboardProjection)).toEqual([
+      {
+        teamSide: "HOME",
+        label: "HOME",
+        teamName: "Bangkok HOME",
+        fouls: 2,
+        pendingKey: "TEAM-HOME"
+      },
+      {
+        teamSide: "AWAY",
+        label: "AWAY",
+        teamName: "Chiang Mai AWAY",
+        fouls: 1,
+        pendingKey: "TEAM-AWAY"
+      }
+    ]);
+  });
+
+  test("builds team foul command payload from current projection without client-owned totals", () => {
+    expect(buildTeamFoulCommandPayload(scoreboardProjection, "AWAY", {
+      foulType: "TECHNICAL",
+      reason: " bench warning "
+    })).toEqual({
+      expectedSeq: 3,
+      payload: {
+        teamSide: "AWAY",
+        foulType: "TECHNICAL",
+        reason: "bench warning"
+      }
+    });
+  });
+
+  test("maps foul control command result feedback", () => {
+    expect(
+      getFoulControlFeedback({
+        status: "ACCEPTED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 4,
+        appendedEvents: [],
+        reasonCode: null,
+        message: null
+      })
+    ).toEqual({ tone: "success", text: "Foul added. Current seq 4." });
+    expect(
+      getFoulControlFeedback({
+        status: "SYNC_REQUIRED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 5,
+        appendedEvents: [],
+        reasonCode: "INVALID_EXPECTED_SEQ",
+        message: "Expected seq 3, current seq 5"
+      })
+    ).toEqual({
+      tone: "error",
+      code: "INVALID_EXPECTED_SEQ",
+      text: "Conflict: refreshed, please try again."
+    });
   });
 });
