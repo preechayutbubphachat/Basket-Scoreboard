@@ -17,7 +17,11 @@ type ProjectionRow = RowDataPacket & {
   last_event_seq: number;
 };
 
-type ProjectionViewRow = ProjectionRow & {
+type ProjectionViewRow = RowDataPacket & {
+  match_id: string;
+  match_status: string | null;
+  projection_data: unknown | null;
+  last_event_seq: number | string | null;
   home_team_id: string | null;
   home_team_name: string | null;
   away_team_id: string | null;
@@ -148,18 +152,21 @@ export async function getScoreboardProjection(connection: PoolConnection, matchI
 export async function getScoreboardProjectionView(connection: PoolConnection, matchId: string) {
   const [rows] = await connection.query<ProjectionViewRow[]>(
     `SELECT
+      m.match_id,
+      m.status AS match_status,
       mp.projection_data,
       mp.last_event_seq,
       mp.updated_at,
       m.home_team_id,
-      home.team_name AS home_team_name,
+      home.name AS home_team_name,
       m.away_team_id,
-      away.team_name AS away_team_name
-    FROM match_projections mp
-    INNER JOIN matches m ON m.match_id = mp.match_id
+      away.name AS away_team_name
+    FROM matches m
+    LEFT JOIN match_projections mp ON mp.match_id = m.match_id
+      AND mp.projection_type = 'scoreboard'
     LEFT JOIN teams home ON home.team_id = m.home_team_id
     LEFT JOIN teams away ON away.team_id = m.away_team_id
-    WHERE mp.match_id = ? AND mp.projection_type = 'scoreboard'`,
+    WHERE m.match_id = ?`,
     [matchId]
   );
   const row = rows[0];
@@ -168,7 +175,9 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
     return null;
   }
 
-  const projection = parseJsonField<ScoreboardProjection>(row.projection_data);
+  const projection = row.projection_data ? parseProjectionJson(row.projection_data) : {};
+  const currentSeq = numberOrDefault(projection.currentSeq, numberOrDefault(row.last_event_seq, 0));
+  const periodNumber = numberOrDefault(projection.periodNumber, 1);
   const updatedAt =
     row.updated_at instanceof Date
       ? row.updated_at.toISOString()
@@ -178,13 +187,42 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
 
   return {
     ...projection,
+    matchId: typeof projection.matchId === "string" ? projection.matchId : row.match_id,
+    homeScore: numberOrDefault(projection.homeScore, 0),
+    awayScore: numberOrDefault(projection.awayScore, 0),
+    period: periodNumber,
+    periodNumber,
+    gameClockRemainingMs: numberOrDefault(projection.gameClockRemainingMs, 600000),
+    shotClockRemainingMs:
+      projection.shotClockRemainingMs === null
+        ? null
+        : numberOrDefault(projection.shotClockRemainingMs, 24000),
+    status:
+      typeof projection.status === "string"
+        ? projection.status
+        : row.match_status ?? "SCHEDULED",
+    currentSeq,
+    projectionVersion: "scoreboard-v1",
     homeTeamId: row.home_team_id,
-    homeTeamName: row.home_team_name,
+    homeTeamName: row.home_team_name ?? "HOME",
     awayTeamId: row.away_team_id,
-    awayTeamName: row.away_team_name,
-    lastEventSeq: Number(row.last_event_seq ?? projection.currentSeq),
+    awayTeamName: row.away_team_name ?? "AWAY",
+    lastEventSeq: numberOrDefault(row.last_event_seq, currentSeq),
     updatedAt
   } satisfies ApiScoreboardProjection;
+}
+
+function numberOrDefault(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseProjectionJson(value: unknown): Partial<ScoreboardProjection> {
+  try {
+    return parseJsonField<Partial<ScoreboardProjection>>(value) ?? {};
+  } catch {
+    return {};
+  }
 }
 
 export async function updateScoreboardProjection(

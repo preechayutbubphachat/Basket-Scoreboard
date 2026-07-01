@@ -10,11 +10,13 @@ function createProjectionFakePool(options: { found?: boolean } = {}) {
     async query(sql: string, params: unknown[] = []) {
       calls.push({ sql, params });
 
-      if (sql.includes("FROM match_projections mp")) {
+      if (sql.includes("FROM match_projections mp") || sql.includes("FROM matches m")) {
         return [
           found
             ? [
                 {
+                  match_id: matchId,
+                  match_status: "LIVE",
                   projection_data: JSON.stringify({
                     matchId,
                     homeScore: 12,
@@ -46,6 +48,52 @@ function createProjectionFakePool(options: { found?: boolean } = {}) {
 
   return {
     calls,
+    pool: {
+      getConnection: vi.fn().mockResolvedValue(connection)
+    }
+  };
+}
+
+function createLegacySmokeProjectionPool(options: { projectionExists?: boolean; matchExists?: boolean } = {}) {
+  const projectionExists = options.projectionExists ?? true;
+  const matchExists = options.matchExists ?? true;
+  const connection = {
+    async query(sql: string) {
+      if (sql.includes("home.team_name") || sql.includes("away.team_name")) {
+        throw new Error("Unknown column 'home.team_name' in 'field list'");
+      }
+
+      if (sql.includes("FROM matches m")) {
+        return [
+          matchExists
+            ? [
+                {
+                  match_id: matchId,
+                  match_status: "SCHEDULED",
+                  projection_data: projectionExists
+                    ? JSON.stringify({
+                        matchId
+                      })
+                    : null,
+                  last_event_seq: null,
+                  home_team_id: null,
+                  home_team_name: null,
+                  away_team_id: null,
+                  away_team_name: null,
+                  updated_at: null
+                }
+              ]
+            : [],
+          []
+        ];
+      }
+
+      return [[], []];
+    },
+    release: vi.fn()
+  };
+
+  return {
     pool: {
       getConnection: vi.fn().mockResolvedValue(connection)
     }
@@ -130,6 +178,76 @@ describe("alpha score control routes", () => {
         method: "GET",
         url: `/api/v1/matches/${matchId}/projection`,
         headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_FOUND" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns public fallback data for legacy smoke projections without throwing on team names", async () => {
+    const { pool } = createLegacySmokeProjectionPool();
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${matchId}/scoreboard`
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        matchId,
+        homeTeamName: "HOME",
+        awayTeamName: "AWAY",
+        homeScore: 0,
+        awayScore: 0,
+        periodNumber: 1,
+        status: "SCHEDULED",
+        currentSeq: 0,
+        lastEventSeq: 0,
+        projectionVersion: "scoreboard-v1"
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns public fallback data when match exists but projection is missing", async () => {
+    const { pool } = createLegacySmokeProjectionPool({ projectionExists: false });
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${matchId}/scoreboard`
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        matchId,
+        homeTeamName: "HOME",
+        awayTeamName: "AWAY",
+        homeScore: 0,
+        awayScore: 0,
+        status: "SCHEDULED",
+        lastEventSeq: 0
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns JSON 404 when the public scoreboard match does not exist", async () => {
+    const { pool } = createLegacySmokeProjectionPool({ matchExists: false });
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${matchId}/scoreboard`
       });
 
       expect(response.statusCode).toBe(404);

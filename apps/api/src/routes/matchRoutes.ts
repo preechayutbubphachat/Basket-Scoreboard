@@ -182,6 +182,16 @@ export function registerMatchRoutes(
         }
 
         return projection;
+      } catch (error) {
+        request.log.error(
+          {
+            err: error,
+            matchId: request.params.matchId,
+            route: "GET /api/v1/public/matches/:matchId/scoreboard"
+          },
+          "Public scoreboard read failed"
+        );
+        return reply.status(500).send(apiError(reasonCodes.INTERNAL_ERROR, "Public scoreboard could not be loaded"));
       } finally {
         connection.release();
       }
