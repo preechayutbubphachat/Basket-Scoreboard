@@ -46,6 +46,11 @@ import {
   deriveDisplayClockMs,
   getClockControlFeedback
 } from "../../apps/web/src/lib/clockControl";
+import {
+  applyRealtimeProjectionUpdate,
+  getRealtimeConnectionLabel,
+  getSocketBaseUrl
+} from "../../apps/web/src/lib/realtimeProjectionSync";
 import type {
   AuthenticatedUser,
   ScoreAddedPayload,
@@ -1067,5 +1072,47 @@ describe("clock control UI policy", () => {
       code: "INVALID_EXPECTED_SEQ",
       text: "Conflict: refreshed, please try again."
     });
+  });
+});
+
+describe("public scoreboard realtime sync policy", () => {
+  test("applies realtime projection updates at the same or newer sequence", () => {
+    const incoming: ScoreboardProjection = {
+      ...scoreboardProjection,
+      homeScore: 12,
+      currentSeq: 4,
+      lastEventSeq: 4
+    };
+
+    expect(applyRealtimeProjectionUpdate(scoreboardProjection, incoming)).toEqual(incoming);
+    expect(applyRealtimeProjectionUpdate({ ...scoreboardProjection, currentSeq: 4 }, incoming)).toEqual(incoming);
+  });
+
+  test("ignores stale realtime projection updates so polling remains authoritative", () => {
+    const current: ScoreboardProjection = {
+      ...scoreboardProjection,
+      homeScore: 12,
+      currentSeq: 5,
+      lastEventSeq: 5
+    };
+    const stale: ScoreboardProjection = {
+      ...scoreboardProjection,
+      homeScore: 10,
+      currentSeq: 4,
+      lastEventSeq: 4
+    };
+
+    expect(applyRealtimeProjectionUpdate(current, stale)).toBe(current);
+  });
+
+  test("derives socket base URL from same-origin and absolute API bases", () => {
+    expect(getSocketBaseUrl("/api/v1")).toBeUndefined();
+    expect(getSocketBaseUrl("https://scoreboard.example.com/api/v1")).toBe("https://scoreboard.example.com");
+  });
+
+  test("exposes public realtime connection labels with polling fallback", () => {
+    expect(getRealtimeConnectionLabel("CONNECTED")).toBe("Realtime connected");
+    expect(getRealtimeConnectionLabel("RECONNECTING")).toBe("Realtime reconnecting");
+    expect(getRealtimeConnectionLabel("POLLING_FALLBACK")).toBe("Polling fallback");
   });
 });

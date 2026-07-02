@@ -254,6 +254,14 @@ export const syncQuerySchema = z.object({
   lastEventSeq: z.coerce.number().int().min(0).default(0)
 });
 
+export const realtimeViewSchema = z.enum(["PUBLIC_SCOREBOARD", "OPERATOR"]);
+
+export const matchJoinPayloadSchema = z.object({
+  matchId: z.string().uuid(),
+  lastSeq: z.number().int().min(0).optional(),
+  view: realtimeViewSchema
+});
+
 export const commandResultStatusSchema = z.enum([
   "ACCEPTED",
   "REJECTED",
@@ -284,6 +292,8 @@ export type CorrectionRequestCommand = z.infer<typeof correctionRequestCommandSc
 export type ApplyScoreCorrectionCommand = z.infer<typeof applyScoreCorrectionCommandSchema>;
 export type RejectCorrectionCommand = z.infer<typeof rejectCorrectionCommandSchema>;
 export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
+export type RealtimeView = z.infer<typeof realtimeViewSchema>;
+export type MatchJoinPayload = z.infer<typeof matchJoinPayloadSchema>;
 
 export type MatchEventType =
   | "SCORE_ADDED"
@@ -366,4 +376,25 @@ export type MatchSyncResponse = {
   serverTime: string;
   projectionVersion: "scoreboard-v1";
   connectionStatus: "ONLINE" | "OFFLINE" | string;
+};
+
+export type MatchSnapshotPayload = {
+  matchId: string;
+  lastEventSeq: number;
+  publicScoreboard: ScoreboardProjection;
+  serverTime: string;
+};
+
+export type ProjectionUpdatedPayload = {
+  matchId: string;
+  lastEventSeq: number;
+  updatedAt: string;
+  publicScoreboard: ScoreboardProjection;
+};
+
+export type RealtimeErrorPayload = {
+  reasonCode: string;
+  message: string;
+  matchId?: string;
+  serverTime: string;
 };
