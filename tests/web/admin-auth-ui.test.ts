@@ -982,6 +982,48 @@ describe("clock control UI policy", () => {
     }).gameClockLabel).toBe("0:07");
   });
 
+  test("derives running shot clock display from projection for operator and public screens", () => {
+    const runningShotClockProjection: ScoreboardProjection = {
+      ...scoreboardProjection,
+      shotClockRemainingMs: 24000,
+      shotClock: {
+        remainingMs: 24000,
+        running: true,
+        lastStartedAt: "2026-07-01T10:00:00.000Z"
+      },
+      serverTime: "2026-07-01T10:00:00.000Z"
+    };
+
+    expect(buildClockControlState(runningShotClockProjection, {
+      nowMs: Date.parse("2026-07-01T10:00:03.100Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z")
+    })).toMatchObject({
+      shotClockLabel: "21",
+      shotClockRunning: true
+    });
+  });
+
+  test("freezes shot clock display when polling resyncs a stopped projection", () => {
+    const stoppedShotClockProjection: ScoreboardProjection = {
+      ...scoreboardProjection,
+      shotClockRemainingMs: 19000,
+      shotClock: {
+        remainingMs: 19000,
+        running: false,
+        lastStartedAt: null
+      },
+      serverTime: "2026-07-01T10:00:05.000Z"
+    };
+
+    expect(buildClockControlState(stoppedShotClockProjection, {
+      nowMs: Date.parse("2026-07-01T10:00:30.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:05.000Z")
+    })).toMatchObject({
+      shotClockLabel: "19",
+      shotClockRunning: false
+    });
+  });
+
   test("builds game and shot clock command payloads from current projection", () => {
     expect(buildGameClockSetPayload(scoreboardProjection, { minutes: 7, seconds: 30, reason: " table correction " }))
       .toEqual({

@@ -124,13 +124,22 @@ export function applyGameClockStarted(
   payload: { startedAt: string; remainingMsBeforeStart: number },
   seqNo: number
 ): ScoreboardProjection {
+  const shotClockRemainingMs = Math.max(0, projection.shotClock.remainingMs);
+  const shotClockRunning = shotClockRemainingMs > 0;
+
   return {
     ...projection,
     gameClockRemainingMs: payload.remainingMsBeforeStart,
+    shotClockRemainingMs,
     gameClock: {
       remainingMs: payload.remainingMsBeforeStart,
       running: true,
       lastStartedAt: payload.startedAt
+    },
+    shotClock: {
+      remainingMs: shotClockRemainingMs,
+      running: shotClockRunning,
+      lastStartedAt: shotClockRunning ? payload.startedAt : null
     },
     clockUpdatedAt: payload.startedAt,
     status: "LIVE",
@@ -143,11 +152,19 @@ export function applyGameClockStopped(
   payload: { stoppedAt: string; remainingMsAfterStop: number },
   seqNo: number
 ): ScoreboardProjection {
+  const shotClockRemainingMs = deriveStoppedClockRemainingMs(projection.shotClock, payload.stoppedAt);
+
   return {
     ...projection,
     gameClockRemainingMs: payload.remainingMsAfterStop,
+    shotClockRemainingMs,
     gameClock: {
       remainingMs: payload.remainingMsAfterStop,
+      running: false,
+      lastStartedAt: null
+    },
+    shotClock: {
+      remainingMs: shotClockRemainingMs,
       running: false,
       lastStartedAt: null
     },
@@ -179,13 +196,15 @@ export function applyShotClockReset(
   payload: { resetToMs: 24000 | 14000; resetAt: string },
   seqNo: number
 ): ScoreboardProjection {
+  const running = projection.gameClock.running && payload.resetToMs > 0;
+
   return {
     ...projection,
     shotClockRemainingMs: payload.resetToMs,
     shotClock: {
       remainingMs: payload.resetToMs,
-      running: false,
-      lastStartedAt: null
+      running,
+      lastStartedAt: running ? payload.resetAt : null
     },
     clockUpdatedAt: payload.resetAt,
     currentSeq: seqNo
@@ -197,13 +216,16 @@ export function applyShotClockSet(
   payload: { remainingMs: number; setAt: string },
   seqNo: number
 ): ScoreboardProjection {
+  const remainingMs = Math.max(0, payload.remainingMs);
+  const running = projection.gameClock.running && remainingMs > 0;
+
   return {
     ...projection,
-    shotClockRemainingMs: payload.remainingMs,
+    shotClockRemainingMs: remainingMs,
     shotClock: {
-      remainingMs: payload.remainingMs,
-      running: false,
-      lastStartedAt: null
+      remainingMs,
+      running,
+      lastStartedAt: running ? payload.setAt : null
     },
     clockUpdatedAt: payload.setAt,
     currentSeq: seqNo
@@ -340,4 +362,19 @@ function normalizeClockState(value: unknown, fallbackRemainingMs: number): Clock
     running: candidate.running === true,
     lastStartedAt: typeof candidate.lastStartedAt === "string" ? candidate.lastStartedAt : null
   };
+}
+
+function deriveStoppedClockRemainingMs(clock: ClockState, stoppedAt: string) {
+  if (!clock.running || !clock.lastStartedAt) {
+    return Math.max(0, clock.remainingMs);
+  }
+
+  const startedAtMs = Date.parse(clock.lastStartedAt);
+  const stoppedAtMs = Date.parse(stoppedAt);
+
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(stoppedAtMs)) {
+    return Math.max(0, clock.remainingMs);
+  }
+
+  return Math.max(0, clock.remainingMs - Math.max(0, stoppedAtMs - startedAtMs));
 }
