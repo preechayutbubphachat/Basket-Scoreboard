@@ -259,9 +259,13 @@ export async function getActiveRosterPlayerForMatchSide(
   playerId: string,
   teamSide: "HOME" | "AWAY"
 ) {
-  const entry = await getRosterEntryForPlayer(connection, matchId, playerId);
+  const [rows] = await connection.query<RosterRow[]>(
+    "SELECT roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, position, roster_status, is_starter, is_captain FROM match_roster_players mrp WHERE mrp.match_id = ? AND mrp.team_side = ? AND mrp.player_id = ? AND mrp.roster_status <> 'INACTIVE' LIMIT 1",
+    [matchId, teamSide, playerId]
+  );
+  const entry = rows[0] ? toRosterPlayer(rows[0]) : null;
 
-  if (!entry || entry.teamSide !== teamSide || entry.status === "INACTIVE") {
+  if (!entry) {
     return null;
   }
 

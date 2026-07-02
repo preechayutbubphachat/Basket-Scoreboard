@@ -77,6 +77,13 @@ export function getScoreControlFeedback(result: CommandResult) {
   };
 }
 
+export function getAcceptedScoreProjection(result: CommandResult) {
+  if (result.status !== "ACCEPTED" && result.status !== "DUPLICATE_ACCEPTED") {
+    return null;
+  }
+  return result.projection ?? null;
+}
+
 export function getScoreControlLinks(matchId: string, user: AuthenticatedUser | null) {
   return {
     operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },

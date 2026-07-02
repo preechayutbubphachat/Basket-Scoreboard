@@ -38,6 +38,7 @@ import {
 import {
   buildScoreCommandPayload,
   buildScoreControlPanels,
+  getAcceptedScoreProjection,
   getScoreControlFeedback,
   getScoreControlLinks,
   getScoreControlPendingLabel,
@@ -524,7 +525,7 @@ describe("web API client", () => {
       );
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
 
-    await client.addScore(scoreboardProjection.matchId, { expectedSeq: 3, payload: scorePayload });
+    const result = await client.addScore(scoreboardProjection.matchId, { expectedSeq: 3, payload: scorePayload });
 
     const [, init] = fetchMock.mock.calls[1]!;
     const body = JSON.parse(String(init?.body));
@@ -547,6 +548,7 @@ describe("web API client", () => {
     expect(body.homeScore).toBeUndefined();
     expect(body.awayScore).toBeUndefined();
     expect(body["final" + "Score"]).toBeUndefined();
+    expect(result.projection).toBeUndefined();
   });
 
   test("posts team foul commands with CSRF, expectedSeq, and command identifiers", async () => {
@@ -1141,6 +1143,64 @@ describe("score control UI policy", () => {
       code: "INVALID_EXPECTED_SEQ",
       text: "Conflict: scoreboard refreshed, please try again."
     });
+  });
+
+  test("uses accepted command projection for immediate score UI updates", () => {
+    const nextProjection = { ...scoreboardProjection, currentSeq: 4, homeScore: 12 };
+    expect(
+      getAcceptedScoreProjection({
+        status: "ACCEPTED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 4,
+        appendedEvents: [],
+        reasonCode: null,
+        message: null,
+        projection: nextProjection
+      })
+    ).toEqual(nextProjection);
+    expect(
+      getAcceptedScoreProjection({
+        status: "SYNC_REQUIRED",
+        commandId: "cmd",
+        matchId: scoreboardProjection.matchId,
+        currentSeq: 5,
+        appendedEvents: [],
+        reasonCode: "INVALID_EXPECTED_SEQ",
+        message: "Expected seq 3, current seq 5"
+      })
+    ).toBeNull();
+  });
+
+  test("score command response projection does not require a roster refetch", async () => {
+    const nextProjection = { ...scoreboardProjection, currentSeq: 4, homeScore: 12 };
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [{ eventId: "33333333-3333-4333-8333-333333333333", seqNo: 4, eventType: "SCORE_ADDED" }],
+          reasonCode: null,
+          message: null,
+          projection: nextProjection
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    const result = await client.addScore(scoreboardProjection.matchId, {
+      expectedSeq: 3,
+      payload: { ...scorePayload, playerId: matchRosters.rosters.HOME[0].playerId }
+    });
+
+    expect(getAcceptedScoreProjection(result)).toEqual(nextProjection);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).not.toContain(
+      `/api/v1/matches/${scoreboardProjection.matchId}/rosters`
+    );
   });
 
   test("builds score control navigation links", () => {

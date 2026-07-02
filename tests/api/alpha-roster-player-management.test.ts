@@ -47,6 +47,7 @@ function createRosterPool() {
     is_captain: 0 | 1;
   }> = [];
   const events: Array<{ eventType: string; payload: unknown }> = [];
+  const commandResults = new Map<string, unknown>();
 
   const connection = {
     beginTransaction: vi.fn(),
@@ -115,11 +116,25 @@ function createRosterPool() {
       }
 
       if (sql.includes("FROM match_roster_players mrp") && sql.includes("mrp.player_id = ?")) {
-        return [roster.filter((entry) => entry.match_id === params[0] && entry.player_id === params[1]), []];
+        return [
+          roster.filter((entry) => {
+            if (sql.includes("mrp.team_side = ?")) {
+              return (
+                entry.match_id === params[0] &&
+                entry.team_side === params[1] &&
+                entry.player_id === params[2] &&
+                entry.roster_status !== "INACTIVE"
+              );
+            }
+            return entry.match_id === params[0] && entry.player_id === params[1];
+          }),
+          []
+        ];
       }
 
       if (sql.includes("FROM command_deduplication")) {
-        return [[], []];
+        const result = commandResults.get(`${params[0]}:${params[1]}`);
+        return [result ? [{ result: JSON.stringify(result) }] : [], []];
       }
 
       if (sql.includes("SELECT last_seq_no FROM match_streams")) {
@@ -149,6 +164,11 @@ function createRosterPool() {
         return [{ affectedRows: 1 }, []];
       }
 
+      if (sql.includes("INSERT INTO command_deduplication")) {
+        commandResults.set(`${params[1]}:${params[0]}`, JSON.parse(String(params[4])));
+        return [{ affectedRows: 1 }, []];
+      }
+
       if (sql.includes("FROM matches m")) {
         return [[{
           match_id: matchId,
@@ -171,6 +191,9 @@ function createRosterPool() {
     events,
     players,
     roster,
+    get projection() {
+      return projection;
+    },
     pool: {
       getConnection: vi.fn().mockResolvedValue(connection)
     }
@@ -352,7 +375,14 @@ describe("alpha roster and player management", () => {
         })
       });
       expect(teamOnly.statusCode, teamOnly.body).toBe(200);
-      expect(teamOnly.json()).toMatchObject({ status: "ACCEPTED" });
+      expect(teamOnly.json()).toMatchObject({
+        status: "ACCEPTED",
+        projection: {
+          currentSeq: 1,
+          homeScore: 2,
+          awayScore: 0
+        }
+      });
       expect(fake.events.at(-1)).toMatchObject({ eventType: "SCORE_ADDED", payload: { playerId: null } });
 
       await app.inject({
@@ -379,7 +409,14 @@ describe("alpha roster and player management", () => {
         }
       });
       expect(attributed.statusCode).toBe(200);
-      expect(attributed.json()).toMatchObject({ status: "ACCEPTED" });
+      expect(attributed.json()).toMatchObject({
+        status: "ACCEPTED",
+        projection: {
+          currentSeq: 2,
+          homeScore: 5,
+          awayScore: 0
+        }
+      });
       expect(fake.events.at(-1)).toMatchObject({
         eventType: "SCORE_ADDED",
         payload: {
@@ -388,6 +425,127 @@ describe("alpha roster and player management", () => {
           jerseyNumberSnapshot: "7"
         }
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects invalid score attribution without appending match events", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const fake = createRosterPool();
+    fake.players.set(homePlayerId, {
+      player_id: homePlayerId,
+      team_id: homeTeamId,
+      display_name: "Narin Guard",
+      jersey_number: "7",
+      status: "ACTIVE",
+      metadata: { position: "GUARD" }
+    });
+    fake.players.set(awayPlayerId, {
+      player_id: awayPlayerId,
+      team_id: awayTeamId,
+      display_name: "Away Forward",
+      jersey_number: "9",
+      status: "ACTIVE",
+      metadata: { position: "FORWARD" }
+    });
+    const app = buildApiApp({ pool: fake.pool as never });
+
+    try {
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/rosters/AWAY/players`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: { playerId: awayPlayerId }
+      });
+
+      const wrongSide = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/score/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: command("22222222-2222-4222-8222-222222222225", {
+          teamSide: "HOME",
+          points: 2,
+          playerId: awayPlayerId,
+          periodNumber: 1,
+          gameClockRemainingMs: 600000,
+          note: null
+        })
+      });
+      expect(wrongSide.statusCode).toBe(200);
+      expect(wrongSide.json()).toMatchObject({ status: "REJECTED", reasonCode: "VALIDATION_ERROR" });
+      expect(fake.events).toHaveLength(0);
+
+      const notInRoster = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/score/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: command("22222222-2222-4222-8222-222222222226", {
+          teamSide: "HOME",
+          points: 2,
+          playerId: homePlayerId,
+          periodNumber: 1,
+          gameClockRemainingMs: 600000,
+          note: null
+        })
+      });
+      expect(notInRoster.statusCode).toBe(200);
+      expect(notInRoster.json()).toMatchObject({ status: "REJECTED", reasonCode: "VALIDATION_ERROR" });
+      expect(fake.events).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps duplicate score commands idempotent and stale expectedSeq non-mutating", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const fake = createRosterPool();
+    const app = buildApiApp({ pool: fake.pool as never });
+
+    try {
+      const duplicateCommand = command("22222222-2222-4222-8222-222222222227", {
+        teamSide: "HOME",
+        points: 1,
+        playerId: null,
+        periodNumber: 1,
+        gameClockRemainingMs: 600000,
+        note: null
+      });
+      const accepted = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/score/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: duplicateCommand
+      });
+      expect(accepted.statusCode).toBe(200);
+      expect(accepted.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
+
+      const duplicate = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/score/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: duplicateCommand
+      });
+      expect(duplicate.statusCode).toBe(200);
+      expect(duplicate.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 1 });
+      expect(fake.events).toHaveLength(1);
+
+      const stale = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/score/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: command("22222222-2222-4222-8222-222222222228", {
+          teamSide: "AWAY",
+          points: 3,
+          playerId: null,
+          periodNumber: 1,
+          gameClockRemainingMs: 600000,
+          note: null
+        })
+      });
+      expect(stale.statusCode).toBe(200);
+      expect(stale.json()).toMatchObject({ status: "SYNC_REQUIRED", currentSeq: 1 });
+      expect(fake.events).toHaveLength(1);
     } finally {
       await app.close();
     }

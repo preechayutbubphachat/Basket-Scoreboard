@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import type { Pool } from "mysql2/promise";
 import type { AddScoreCommand, CommandResult, ScoreAddedPayload } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
@@ -23,8 +24,17 @@ export async function appendScoreAddedCommand(options: {
   pool: Pool;
   command: AddScoreCommand;
   user: AuthenticatedUser;
+  logger?: {
+    info: (payload: Record<string, unknown>, message?: string) => void;
+  };
+  authRbacMs?: number;
 }): Promise<CommandResult> {
   const connection = await options.pool.getConnection();
+  const startedAt = performance.now();
+  let rosterValidationMs = 0;
+  let appendEventMs = 0;
+  let projectionUpdateMs = 0;
+  let responseSerializationMs = 0;
 
   try {
     await connection.beginTransaction();
@@ -68,16 +78,19 @@ export async function appendScoreAddedCommand(options: {
     const nextSeq = currentSeq + 1;
     const eventId = randomUUID();
     const occurredAt = new Date(options.command.clientTimestamp);
+    const rosterValidationStartedAt = performance.now();
     const payload = await buildScoreEventPayload({
       connection,
       command: options.command
     });
+    rosterValidationMs = performance.now() - rosterValidationStartedAt;
 
     if (!payload.ok) {
       await connection.rollback();
       return rejected(options.command, reasonCodes.VALIDATION_ERROR, payload.message, currentSeq);
     }
 
+    const appendEventStartedAt = performance.now();
     await connection.query(
       "INSERT INTO match_events (event_id, match_id, seq_no, event_type, payload, actor_user_id, actor_role, device_id, occurred_at, command_id, expected_seq, correlation_id, causation_id, reason, rule_profile_id) VALUES (?, ?, ?, 'SCORE_ADDED', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'FIBA_2024')",
       [
@@ -100,7 +113,9 @@ export async function appendScoreAddedCommand(options: {
       nextSeq,
       options.command.matchId
     ]);
+    appendEventMs = performance.now() - appendEventStartedAt;
 
+    const projectionUpdateStartedAt = performance.now();
     const projection = await getScoreboardProjection(connection, options.command.matchId);
 
     if (!projection) {
@@ -123,7 +138,9 @@ export async function appendScoreAddedCommand(options: {
       causationId: eventId,
       eventSeq: nextSeq
     });
+    projectionUpdateMs = performance.now() - projectionUpdateStartedAt;
 
+    const responseSerializationStartedAt = performance.now();
     const result: CommandResult = {
       status: "ACCEPTED",
       commandId: options.command.commandId,
@@ -131,8 +148,10 @@ export async function appendScoreAddedCommand(options: {
       currentSeq: nextSeq,
       appendedEvents: [{ eventId, seqNo: nextSeq, eventType: "SCORE_ADDED" }],
       reasonCode: null,
-      message: null
+      message: null,
+      projection: updatedProjection
     };
+    responseSerializationMs = performance.now() - responseSerializationStartedAt;
 
     await insertCommandResult(connection, {
       commandId: options.command.commandId,
@@ -143,6 +162,14 @@ export async function appendScoreAddedCommand(options: {
     });
 
     await connection.commit();
+    logScoreCommandTiming(options, {
+      totalMs: performance.now() - startedAt,
+      authRbacMs: options.authRbacMs ?? null,
+      rosterValidationMs,
+      appendEventMs,
+      projectionUpdateMs,
+      responseSerializationMs
+    });
     return result;
   } catch (error) {
     await connection.rollback();
@@ -150,6 +177,45 @@ export async function appendScoreAddedCommand(options: {
   } finally {
     connection.release();
   }
+}
+
+function logScoreCommandTiming(
+  options: {
+    command: AddScoreCommand;
+    logger?: {
+      info: (payload: Record<string, unknown>, message?: string) => void;
+    };
+  },
+  timing: {
+    totalMs: number;
+    authRbacMs: number | null;
+    rosterValidationMs: number;
+    appendEventMs: number;
+    projectionUpdateMs: number;
+    responseSerializationMs: number;
+  }
+) {
+  options.logger?.info(
+    {
+      route: "POST /api/v1/matches/:matchId/commands/score/add",
+      matchId: options.command.matchId,
+      commandId: options.command.commandId,
+      hasPlayerAttribution: Boolean(options.command.payload.playerId),
+      timingMs: {
+        total: roundMs(timing.totalMs),
+        authRbac: timing.authRbacMs === null ? null : roundMs(timing.authRbacMs),
+        rosterValidation: roundMs(timing.rosterValidationMs),
+        appendEvent: roundMs(timing.appendEventMs),
+        projectionUpdate: roundMs(timing.projectionUpdateMs),
+        responseSerialization: roundMs(timing.responseSerializationMs)
+      }
+    },
+    "Score command timing"
+  );
+}
+
+function roundMs(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 async function buildScoreEventPayload(options: {

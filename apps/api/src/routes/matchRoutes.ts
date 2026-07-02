@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { performance } from "node:perf_hooks";
 import type { Pool } from "mysql2/promise";
 import {
   addScoreCommandSchema,
@@ -236,6 +237,9 @@ export function registerMatchRoutes(
     "/api/v1/matches/:matchId/commands/score/add",
     {
       preHandler: [
+        async (request) => {
+          (request as FastifyRequest & { scoreCommandStartedAt?: number }).scoreCommandStartedAt = performance.now();
+        },
         auth.requireAuth,
         auth.requireMatchPermission(
           "match.score.operate",
@@ -262,7 +266,9 @@ export function registerMatchRoutes(
       const result = await appendScoreAddedCommand({
         pool,
         command,
-        user: request.user!
+        user: request.user!,
+        logger: request.log,
+        authRbacMs: performance.now() - ((request as FastifyRequest & { scoreCommandStartedAt?: number }).scoreCommandStartedAt ?? performance.now())
       });
 
       await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);

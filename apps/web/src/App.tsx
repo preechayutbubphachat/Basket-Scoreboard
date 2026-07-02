@@ -38,6 +38,7 @@ import {
 import {
   buildScoreCommandPayload,
   buildScoreControlPanels,
+  getAcceptedScoreProjection,
   getScoreControlFeedback,
   getScoreControlLinks,
   getScoreControlPendingLabel,
@@ -723,7 +724,12 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         return;
       }
 
-      await refreshAfterCommand(previousSeq);
+      const responseProjection = getAcceptedScoreProjection(result);
+      if (responseProjection) {
+        setProjection(responseProjection);
+      } else {
+        await refreshAfterCommand(previousSeq);
+      }
       setMessage(getScoreControlFeedback(result));
     } catch (error) {
       setMessage(toUiMessage(error));
