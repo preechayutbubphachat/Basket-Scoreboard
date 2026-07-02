@@ -11,6 +11,8 @@ import type {
   GameClockSetPayload,
   ShotClockResetPayload,
   ShotClockSetPayload,
+  TimeoutEndedPayload,
+  TimeoutGrantedPayload,
   TeamFoulAddedPayload,
   SmokeMatchResponse
 } from "@basket-scoreboard/api-contracts";
@@ -326,6 +328,28 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async setShotClock(matchId: string, input: { expectedSeq: number; payload: ShotClockSetPayload }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/clock/shot/set`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async grantTimeout(matchId: string, input: { expectedSeq: number; payload: TimeoutGrantedPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/timeout/grant`,
+        {
+          method: "POST",
+          body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async endTimeout(matchId: string, input: { expectedSeq: number; payload: TimeoutEndedPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/timeout/end`,
         {
           method: "POST",
           body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))

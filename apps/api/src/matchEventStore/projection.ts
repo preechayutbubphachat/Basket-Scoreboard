@@ -1,10 +1,15 @@
 import type {
   PlayerFoulAddedPayload,
   ScoreAddedPayload,
-  TeamFoulAddedPayload
+  TeamFoulAddedPayload,
+  TimeoutEndedPayload,
+  TimeoutGrantedPayload,
+  TimeoutRequestedBy
 } from "@basket-scoreboard/api-contracts";
 
 type TeamFoulCount = { home: number; away: number };
+type TimeoutCount = { used: number; remaining: number };
+type TimeoutBySide = { home: number; away: number };
 type ClockState = {
   remainingMs: number;
   running: boolean;
@@ -26,6 +31,22 @@ export type ScoreboardProjection = {
   teamFouls: TeamFoulCount;
   teamFoulsByPeriod: Record<string, TeamFoulCount>;
   playerFouls: PlayerFoulProjection[];
+  timeouts: {
+    home: TimeoutCount;
+    away: TimeoutCount;
+  };
+  timeoutsByHalf: {
+    firstHalf: TimeoutBySide;
+    secondHalf: TimeoutBySide;
+    overtime: TimeoutBySide;
+  };
+  activeTimeout: {
+    teamSide: "HOME" | "AWAY";
+    startedAt: string;
+    durationMs: number;
+    remainingMs: number;
+    requestedBy: TimeoutRequestedBy;
+  } | null;
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number;
@@ -45,6 +66,9 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     teamFouls: { home: 0, away: 0 },
     teamFoulsByPeriod: {},
     playerFouls: [],
+    timeouts: createDefaultTimeouts(),
+    timeoutsByHalf: createDefaultTimeoutsByHalf(),
+    activeTimeout: null,
     periodNumber: 1,
     gameClockRemainingMs: 600000,
     shotClockRemainingMs: 24000,
@@ -82,6 +106,9 @@ export function normalizeScoreboardProjection(
             fouls: numberOrDefault(player.fouls, 0)
           }))
       : [],
+    timeouts: normalizeTimeouts(projection.timeouts),
+    timeoutsByHalf: normalizeTimeoutsByHalf(projection.timeoutsByHalf),
+    activeTimeout: normalizeActiveTimeout(projection.activeTimeout),
     periodNumber,
     gameClockRemainingMs: gameClock.remainingMs,
     shotClockRemainingMs: shotClock.remainingMs,
@@ -292,6 +319,79 @@ export function applyPlayerFoulAdded(
   };
 }
 
+export function applyTimeoutGranted(
+  projection: ScoreboardProjection,
+  payload: TimeoutGrantedPayload & {
+    startedAt: string;
+    periodNumber: number;
+    gameClockRemainingMs: number | null;
+    shotClockRemainingMs: number | null;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  const sideKey = payload.teamSide === "HOME" ? "home" : "away";
+  const halfKey = getHalfKey(payload.periodNumber);
+  const timeouts = normalizeTimeouts(projection.timeouts);
+  const timeoutsByHalf = normalizeTimeoutsByHalf(projection.timeoutsByHalf);
+  const nextUsed = timeouts[sideKey].used + 1;
+  const nextHalf = {
+    ...timeoutsByHalf[halfKey],
+    [sideKey]: timeoutsByHalf[halfKey][sideKey] + 1
+  };
+
+  return {
+    ...projection,
+    timeouts: {
+      ...timeouts,
+      [sideKey]: {
+        used: nextUsed,
+        remaining: Math.max(0, 5 - nextUsed)
+      }
+    },
+    timeoutsByHalf: {
+      ...timeoutsByHalf,
+      [halfKey]: nextHalf
+    },
+    activeTimeout: {
+      teamSide: payload.teamSide,
+      startedAt: payload.startedAt,
+      durationMs: payload.durationMs,
+      remainingMs: payload.durationMs,
+      requestedBy: payload.requestedBy
+    },
+    gameClockRemainingMs: payload.gameClockRemainingMs ?? projection.gameClockRemainingMs,
+    shotClockRemainingMs: payload.shotClockRemainingMs ?? projection.shotClockRemainingMs,
+    gameClock: {
+      ...projection.gameClock,
+      remainingMs: payload.gameClockRemainingMs ?? projection.gameClock.remainingMs,
+      running: false,
+      lastStartedAt: null
+    },
+    shotClock: {
+      ...projection.shotClock,
+      remainingMs: payload.shotClockRemainingMs ?? projection.shotClock.remainingMs,
+      running: false,
+      lastStartedAt: null
+    },
+    clockUpdatedAt: payload.startedAt,
+    status: "LIVE",
+    currentSeq: seqNo
+  };
+}
+
+export function applyTimeoutEnded(
+  projection: ScoreboardProjection,
+  payload: TimeoutEndedPayload & { endedAt: string },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    activeTimeout: null,
+    clockUpdatedAt: payload.endedAt,
+    currentSeq: seqNo
+  };
+}
+
 export function applyScoreRemovedByCorrection(
   projection: ScoreboardProjection,
   payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
@@ -345,6 +445,100 @@ function normalizeTeamFoulsByPeriod(value: unknown): Record<string, TeamFoulCoun
       normalizeTeamFoulCount(fouls)
     ])
   );
+}
+
+function createDefaultTimeouts() {
+  return {
+    home: { used: 0, remaining: 5 },
+    away: { used: 0, remaining: 5 }
+  };
+}
+
+function normalizeTimeouts(value: unknown): { home: TimeoutCount; away: TimeoutCount } {
+  if (!value || typeof value !== "object") {
+    return createDefaultTimeouts();
+  }
+
+  const candidate = value as { home?: Partial<TimeoutCount>; away?: Partial<TimeoutCount> };
+  const homeUsed = numberOrDefault(candidate.home?.used, 0);
+  const awayUsed = numberOrDefault(candidate.away?.used, 0);
+  return {
+    home: {
+      used: homeUsed,
+      remaining: numberOrDefault(candidate.home?.remaining, Math.max(0, 5 - homeUsed))
+    },
+    away: {
+      used: awayUsed,
+      remaining: numberOrDefault(candidate.away?.remaining, Math.max(0, 5 - awayUsed))
+    }
+  };
+}
+
+function createDefaultTimeoutsByHalf() {
+  return {
+    firstHalf: { home: 0, away: 0 },
+    secondHalf: { home: 0, away: 0 },
+    overtime: { home: 0, away: 0 }
+  };
+}
+
+function normalizeTimeoutsByHalf(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return createDefaultTimeoutsByHalf();
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return {
+    firstHalf: normalizeTimeoutBySide(candidate.firstHalf),
+    secondHalf: normalizeTimeoutBySide(candidate.secondHalf),
+    overtime: normalizeTimeoutBySide(candidate.overtime)
+  };
+}
+
+function normalizeTimeoutBySide(value: unknown): TimeoutBySide {
+  if (!value || typeof value !== "object") {
+    return { home: 0, away: 0 };
+  }
+  const candidate = value as Partial<Record<keyof TimeoutBySide, unknown>>;
+  return {
+    home: numberOrDefault(candidate.home, 0),
+    away: numberOrDefault(candidate.away, 0)
+  };
+}
+
+function normalizeActiveTimeout(value: unknown): ScoreboardProjection["activeTimeout"] {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<NonNullable<ScoreboardProjection["activeTimeout"]>>;
+  if (candidate.teamSide !== "HOME" && candidate.teamSide !== "AWAY") {
+    return null;
+  }
+
+  return {
+    teamSide: candidate.teamSide,
+    startedAt: typeof candidate.startedAt === "string" ? candidate.startedAt : new Date(0).toISOString(),
+    durationMs: numberOrDefault(candidate.durationMs, 60000),
+    remainingMs: numberOrDefault(candidate.remainingMs, 60000),
+    requestedBy: normalizeRequestedBy(candidate.requestedBy)
+  };
+}
+
+function normalizeRequestedBy(value: unknown): TimeoutRequestedBy {
+  return value === "HEAD_COACH" ||
+    value === "ASSISTANT_COACH" ||
+    value === "BENCH" ||
+    value === "OFFICIAL" ||
+    value === "OTHER"
+    ? value
+    : "OTHER";
+}
+
+function getHalfKey(periodNumber: number): keyof ReturnType<typeof createDefaultTimeoutsByHalf> {
+  if (periodNumber <= 2) return "firstHalf";
+  if (periodNumber <= 4) return "secondHalf";
+  return "overtime";
 }
 
 function normalizeClockState(value: unknown, fallbackRemainingMs: number): ClockState {

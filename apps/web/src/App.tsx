@@ -4,7 +4,8 @@ import type {
   FoulType,
   MatchOfficialRoleCode,
   OperatorMatchSummary,
-  ScoreboardProjection
+  ScoreboardProjection,
+  TimeoutRequestedBy
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
@@ -22,6 +23,7 @@ import {
   buildOperatorMatchClockLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
+  buildOperatorMatchTimeoutsLink,
   buildPublicScoreboardLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
@@ -55,6 +57,16 @@ import {
   getClockControlLinks
 } from "./lib/clockControl";
 import {
+  buildTimeoutControlPanels,
+  buildTimeoutEndPayload,
+  buildTimeoutGrantPayload,
+  getActiveTimeoutLabel,
+  getTimeoutControlFeedback,
+  getTimeoutControlLinks,
+  timeoutRequestedByOptions,
+  type TimeoutControlTeamSide
+} from "./lib/timeoutControl";
+import {
   applyRealtimeProjectionUpdate,
   createPublicProjectionSocket,
   getOperatorPollingIntervalMs,
@@ -74,6 +86,7 @@ type Route =
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
   | { name: "operator-clock"; matchId: string }
+  | { name: "operator-timeouts"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -97,6 +110,11 @@ function parseRoute(pathname: string): Route {
   const operatorClockMatchId = operatorClockMatch?.[1];
   if (operatorClockMatchId) {
     return { name: "operator-clock", matchId: decodeURIComponent(operatorClockMatchId) };
+  }
+  const operatorTimeoutsMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/timeouts$/);
+  const operatorTimeoutsMatchId = operatorTimeoutsMatch?.[1];
+  if (operatorTimeoutsMatchId) {
+    return { name: "operator-timeouts", matchId: decodeURIComponent(operatorTimeoutsMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -443,6 +461,16 @@ function OperatorMatchesPage() {
                     }}
                   >
                     {card.clockControl.label}
+                  </a>
+                  <a
+                    className="button-link"
+                    href={card.timeoutControl.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.timeoutControl.href);
+                    }}
+                  >
+                    {card.timeoutControl.label}
                   </a>
                   <a
                     className="button-link secondary"
@@ -1134,6 +1162,210 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   );
 }
 
+function OperatorTimeoutPage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [requestedBy, setRequestedBy] = useState<TimeoutRequestedBy>("HEAD_COACH");
+  const [durationSeconds, setDurationSeconds] = useState(60);
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const canSubmitTimeout = canOperateScore(currentUser);
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
+
+  async function loadState() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadState();
+  }, [matchId]);
+
+  async function refreshProjectionSilently() {
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => void refreshProjectionSilently(),
+      getOperatorPollingIntervalMs(realtimeState)
+    );
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState]);
+
+  async function refreshAfterCommand(lastSeq: number) {
+    const sync = await api.syncMatch(matchId, lastSeq);
+    setProjection(sync.projection ?? await api.getMatchProjection(matchId));
+  }
+
+  async function grantTimeout(teamSide: TimeoutControlTeamSide) {
+    if (!projection || !canSubmitTimeout) return;
+    const key = `grant-${teamSide}`;
+    setPendingKey(key);
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+
+    try {
+      const result = await api.grantTimeout(
+        matchId,
+        buildTimeoutGrantPayload(projection, teamSide, requestedBy, durationSeconds * 1000, reason)
+      );
+
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage(getTimeoutControlFeedback(result));
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage(getTimeoutControlFeedback(result));
+      setReason("");
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function endTimeout() {
+    if (!projection || !canSubmitTimeout || !projection.activeTimeout) return;
+    setPendingKey("end");
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+
+    try {
+      const result = await api.endTimeout(matchId, buildTimeoutEndPayload(projection, reason));
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage(getTimeoutControlFeedback(result));
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage(getTimeoutControlFeedback(result));
+      setReason("");
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Timeout Control</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!canSubmitTimeout ? <ErrorMessage code="FORBIDDEN" message="Timeout operation permission is required." /> : null}
+        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
+      {!loading && !projection ? (
+        <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
+      ) : null}
+      {projection ? (
+        <section className="panel score-control">
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{projection.status}</dd></div>
+            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
+            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
+          </dl>
+          <div className="form-grid compact">
+            <label>
+              Requested by
+              <select value={requestedBy} onChange={(event) => setRequestedBy(event.target.value as TimeoutRequestedBy)}>
+                {timeoutRequestedByOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Duration seconds
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={durationSeconds}
+                onChange={(event) => setDurationSeconds(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Reason
+              <input value={reason} onChange={(event) => setReason(event.target.value)} />
+            </label>
+          </div>
+          <section className="inline-panel">
+            <h2>{getActiveTimeoutLabel(projection)}</h2>
+            <button
+              type="button"
+              disabled={!canSubmitTimeout || Boolean(pendingKey) || !projection.activeTimeout}
+              onClick={() => void endTimeout()}
+            >
+              End Timeout
+            </button>
+          </section>
+          <div className="score-actions">
+            {buildTimeoutControlPanels(projection).map((panel) => (
+              <div key={panel.teamSide}>
+                <h2>{panel.teamName}</h2>
+                <div className="foul-count">
+                  <span>Timeouts</span>
+                  <strong>{panel.remaining}</strong>
+                  <small>Used {panel.used}</small>
+                </div>
+                <button
+                  type="button"
+                  className="score-button"
+                  disabled={
+                    !canSubmitTimeout ||
+                    Boolean(pendingKey) ||
+                    Boolean(projection.activeTimeout) ||
+                    panel.remaining <= 0
+                  }
+                  onClick={() => void grantTimeout(panel.teamSide)}
+                >
+                  {pendingKey === panel.pendingKey ? "Saving..." : "Grant Timeout"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="button-row">
+            {Object.values(getTimeoutControlLinks(matchId)).map((link) => (
+              <a
+                key={link.href}
+                className="button-link secondary"
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(link.href);
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -1201,6 +1433,15 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
               <strong>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockLabel}</strong>
               <small>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockRunning ? "Running" : "Stopped"}</small>
             </div>
+          </div>
+          <div className="state-strip" aria-label="Timeouts">
+            {buildTimeoutControlPanels(projection).map((panel) => (
+              <div key={panel.teamSide}>
+                <dt>{panel.teamSide} Timeouts</dt>
+                <dd>{panel.remaining}</dd>
+              </div>
+            ))}
+            <div><dt>Active Timeout</dt><dd>{getActiveTimeoutLabel(projection)}</dd></div>
           </div>
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
@@ -1282,6 +1523,15 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                       }}
                     >
                       Clock
+                    </a>
+                    <a
+                      href={buildOperatorMatchTimeoutsLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchTimeoutsLink(match.matchId));
+                      }}
+                    >
+                      Timeouts
                     </a>
                   </span>
                 )}
@@ -1539,6 +1789,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorClockPage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-timeouts":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorTimeoutPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "public-scoreboard":
