@@ -48,8 +48,12 @@ import {
 } from "../../apps/web/src/lib/clockControl";
 import {
   applyRealtimeProjectionUpdate,
+  getOperatorPollingIntervalMs,
+  getPublicPollingIntervalMs,
   getRealtimeConnectionLabel,
-  getSocketBaseUrl
+  getSocketBaseUrl,
+  parseRealtimeSocketTransports,
+  shouldRefetchAfterRealtimeProjection
 } from "../../apps/web/src/lib/realtimeProjectionSync";
 import type {
   AuthenticatedUser,
@@ -1076,6 +1080,12 @@ describe("clock control UI policy", () => {
 });
 
 describe("public scoreboard realtime sync policy", () => {
+  test("uses env transport config and supports polling-only mode", () => {
+    expect(parseRealtimeSocketTransports("polling")).toEqual(["polling"]);
+    expect(parseRealtimeSocketTransports("polling,websocket")).toEqual(["polling", "websocket"]);
+    expect(parseRealtimeSocketTransports(undefined)).toEqual(["polling", "websocket"]);
+  });
+
   test("applies realtime projection updates at the same or newer sequence", () => {
     const incoming: ScoreboardProjection = {
       ...scoreboardProjection,
@@ -1105,14 +1115,33 @@ describe("public scoreboard realtime sync policy", () => {
     expect(applyRealtimeProjectionUpdate(current, stale)).toBe(current);
   });
 
+  test("detects realtime sequence gaps so callers can refetch authoritative projection", () => {
+    const current: ScoreboardProjection = {
+      ...scoreboardProjection,
+      currentSeq: 5,
+      lastEventSeq: 5
+    };
+
+    expect(shouldRefetchAfterRealtimeProjection(current, { ...scoreboardProjection, currentSeq: 6, lastEventSeq: 6 })).toBe(false);
+    expect(shouldRefetchAfterRealtimeProjection(current, { ...scoreboardProjection, currentSeq: 8, lastEventSeq: 8 })).toBe(true);
+  });
+
   test("derives socket base URL from same-origin and absolute API bases", () => {
     expect(getSocketBaseUrl("/api/v1")).toBeUndefined();
     expect(getSocketBaseUrl("https://scoreboard.example.com/api/v1")).toBe("https://scoreboard.example.com");
   });
 
-  test("exposes public realtime connection labels with polling fallback", () => {
+  test("exposes realtime connection labels with explicit fallback states", () => {
     expect(getRealtimeConnectionLabel("CONNECTED")).toBe("Realtime connected");
     expect(getRealtimeConnectionLabel("RECONNECTING")).toBe("Realtime reconnecting");
-    expect(getRealtimeConnectionLabel("POLLING_FALLBACK")).toBe("Polling fallback");
+    expect(getRealtimeConnectionLabel("UNAVAILABLE")).toBe("Realtime unavailable");
+    expect(getRealtimeConnectionLabel("POLLING_FALLBACK")).toBe("Polling fallback active");
+  });
+
+  test("uses faster polling fallback intervals while realtime is disconnected", () => {
+    expect(getPublicPollingIntervalMs("CONNECTED")).toBe(1000);
+    expect(getPublicPollingIntervalMs("POLLING_FALLBACK")).toBe(300);
+    expect(getOperatorPollingIntervalMs("RECONNECTING")).toBe(300);
+    expect(getOperatorPollingIntervalMs("CONNECTED")).toBe(500);
   });
 });

@@ -57,7 +57,10 @@ import {
 import {
   applyRealtimeProjectionUpdate,
   createPublicProjectionSocket,
+  getOperatorPollingIntervalMs,
+  getPublicPollingIntervalMs,
   getRealtimeConnectionLabel,
+  shouldRefetchAfterRealtimeProjection,
   type RealtimeConnectionState
 } from "./lib/realtimeProjectionSync";
 
@@ -465,13 +468,18 @@ function usePublicProjectionRealtime(
   matchId: string,
   projection: ScoreboardProjection | null,
   setProjection: React.Dispatch<React.SetStateAction<ScoreboardProjection | null>>,
-  onProjectionReceived?: () => void
+  onProjectionReceived?: () => void,
+  onSequenceGap?: () => void | Promise<void>
 ) {
   const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("POLLING_FALLBACK");
   const projectionSeqRef = useRef(0);
+  const projectionRef = useRef<ScoreboardProjection | null>(null);
   const onProjectionReceivedRef = useRef(onProjectionReceived);
+  const onSequenceGapRef = useRef(onSequenceGap);
+  const fallbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    projectionRef.current = projection;
     projectionSeqRef.current = projection?.lastEventSeq ?? projection?.currentSeq ?? 0;
   }, [projection]);
 
@@ -480,9 +488,28 @@ function usePublicProjectionRealtime(
   }, [onProjectionReceived]);
 
   useEffect(() => {
+    onSequenceGapRef.current = onSequenceGap;
+  }, [onSequenceGap]);
+
+  useEffect(() => {
     const socket = createPublicProjectionSocket(getDefaultApiBaseUrl());
 
+    const clearFallbackTimer = () => {
+      if (fallbackTimerRef.current !== null) {
+        window.clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+    };
+
+    const schedulePollingFallback = () => {
+      clearFallbackTimer();
+      fallbackTimerRef.current = window.setTimeout(() => {
+        setRealtimeState("POLLING_FALLBACK");
+      }, 1500);
+    };
+
     const joinPublicRoom = () => {
+      clearFallbackTimer();
       setRealtimeState("CONNECTED");
       socket.emit("match:join", {
         matchId,
@@ -492,14 +519,33 @@ function usePublicProjectionRealtime(
     };
 
     const applyProjection = (next: ScoreboardProjection) => {
+      if (shouldRefetchAfterRealtimeProjection(projectionRef.current, next)) {
+        void onSequenceGapRef.current?.();
+        return;
+      }
+
+      const incomingSeq = next.lastEventSeq ?? next.currentSeq;
+      if (projectionRef.current && incomingSeq < projectionSeqRef.current) {
+        return;
+      }
+
       setProjection((current) => applyRealtimeProjectionUpdate(current, next));
       onProjectionReceivedRef.current?.();
     };
 
     socket.on("connect", joinPublicRoom);
-    socket.on("disconnect", () => setRealtimeState("RECONNECTING"));
-    socket.on("connect_error", () => setRealtimeState("POLLING_FALLBACK"));
-    socket.io.on("reconnect_attempt", () => setRealtimeState("RECONNECTING"));
+    socket.on("disconnect", () => {
+      setRealtimeState("RECONNECTING");
+      schedulePollingFallback();
+    });
+    socket.on("connect_error", () => {
+      setRealtimeState("UNAVAILABLE");
+      schedulePollingFallback();
+    });
+    socket.io.on("reconnect_attempt", () => {
+      setRealtimeState("RECONNECTING");
+      schedulePollingFallback();
+    });
     socket.on("match:snapshot", (payload) => {
       if (payload.matchId === matchId) {
         applyProjection(payload.publicScoreboard);
@@ -510,9 +556,13 @@ function usePublicProjectionRealtime(
         applyProjection(payload.publicScoreboard);
       }
     });
-    socket.on("match:error", () => setRealtimeState("POLLING_FALLBACK"));
+    socket.on("match:error", () => {
+      setRealtimeState("UNAVAILABLE");
+      schedulePollingFallback();
+    });
 
     return () => {
+      clearFallbackTimer();
       socket.close();
     };
   }, [matchId, setProjection]);
@@ -527,7 +577,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitScore = canOperateScore(currentUser);
-  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection);
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
     setLoading(true);
@@ -544,6 +594,22 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   useEffect(() => {
     void loadState();
   }, [matchId]);
+
+  async function refreshProjectionSilently() {
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => void refreshProjectionSilently(),
+      getOperatorPollingIntervalMs(realtimeState)
+    );
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState]);
 
   async function refreshAfterCommand(lastSeq: number) {
     const sync = await api.syncMatch(matchId, lastSeq);
@@ -665,7 +731,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitFoul = canOperateScore(currentUser);
-  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection);
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
     setLoading(true);
@@ -682,6 +748,22 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   useEffect(() => {
     void loadState();
   }, [matchId]);
+
+  async function refreshProjectionSilently() {
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => void refreshProjectionSilently(),
+      getOperatorPollingIntervalMs(realtimeState)
+    );
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState]);
 
   async function refreshAfterCommand(lastSeq: number) {
     const sync = await api.syncMatch(matchId, lastSeq);
@@ -818,7 +900,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
-  });
+  }, refreshProjectionSilently);
 
   async function loadState() {
     setLoading(true);
@@ -840,6 +922,24 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   useEffect(() => {
     void loadState();
   }, [matchId]);
+
+  async function refreshProjectionSilently() {
+    try {
+      const nextProjection = await api.getMatchProjection(matchId);
+      setProjection(nextProjection);
+      setProjectionReceivedAtMs(Date.now());
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => void refreshProjectionSilently(),
+      getOperatorPollingIntervalMs(realtimeState)
+    );
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState]);
 
   async function refreshAfterCommand(lastSeq: number) {
     const sync = await api.syncMatch(matchId, lastSeq);
@@ -1043,33 +1143,36 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
     setMessage(null);
-  });
+  }, refreshPublicScoreboard);
+
+  async function refreshPublicScoreboard(cancelled?: () => boolean) {
+    try {
+      const next = await api.getPublicScoreboard(matchId);
+      if (!cancelled?.()) {
+        setProjection(next);
+        setProjectionReceivedAtMs(Date.now());
+        setMessage(null);
+      }
+    } catch (error) {
+      if (!cancelled?.()) {
+        setMessage(toUiMessage(error));
+      }
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      try {
-        const next = await api.getPublicScoreboard(matchId);
-        if (!cancelled) {
-          setProjection(next);
-          setProjectionReceivedAtMs(Date.now());
-          setMessage(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setMessage(toUiMessage(error));
-        }
-      }
-    }
-
-    void load();
-    const timer = window.setInterval(() => void load(), 3000);
+    void refreshPublicScoreboard(() => cancelled);
+    const timer = window.setInterval(
+      () => void refreshPublicScoreboard(() => cancelled),
+      getPublicPollingIntervalMs(realtimeState)
+    );
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [api, matchId]);
+  }, [api, matchId, realtimeState]);
 
   return (
     <section className="panel public-scoreboard">

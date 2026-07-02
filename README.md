@@ -278,6 +278,20 @@ https://scoreboard.ob-gate.com/api/v1/auth/login
 
 Do not point the browser at a separate API subdomain for production login. Keep `DEV_AUTH_ENABLED=false`, leave `AUTH_COOKIE_DOMAIN` empty for a host-only cookie, and do not change login, score, correction, or assignment writes to `GET`.
 
+Realtime projection sync:
+
+```bash
+SOCKET_IO_ENABLED=true
+REALTIME_SOCKET_TRANSPORTS=polling
+VITE_REALTIME_SOCKET_TRANSPORTS=polling
+POLLING_INTERVAL_PUBLIC_FAST_MS=300
+POLLING_INTERVAL_OPERATOR_FAST_MS=300
+VITE_POLLING_INTERVAL_PUBLIC_FAST_MS=300
+VITE_POLLING_INTERVAL_OPERATOR_FAST_MS=300
+```
+
+Use `REALTIME_SOCKET_TRANSPORTS=polling` and `VITE_REALTIME_SOCKET_TRANSPORTS=polling` on Plesk/Passenger deployments where WebSocket upgrades reconnect repeatedly. Socket.IO remains notification-only; REST polling remains the fallback and match events remain the source of truth.
+
 See [docs/deployment/SINGLE_NODE_APP_PLESK.md](docs/deployment/SINGLE_NODE_APP_PLESK.md) for the complete single-app Plesk configuration and environment example.
 
 Plesk SPA route troubleshooting:
