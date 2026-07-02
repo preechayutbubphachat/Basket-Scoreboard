@@ -440,6 +440,7 @@ export type CommandResult = {
   }>;
   reasonCode: string | null;
   message: string | null;
+  projection?: ScoreboardProjection | null;
 };
 
 export type ScoreboardProjection = {
