@@ -15,6 +15,8 @@ type ClockState = {
   running: boolean;
   lastStartedAt: string | null;
 };
+type MatchLifecycleStatus = "SCHEDULED" | "READY" | "LIVE" | "PERIOD_BREAK" | "OVERTIME" | "FINISHED" | "FINAL";
+type PeriodType = "REGULATION" | "OVERTIME";
 
 export type PlayerFoulProjection = {
   playerId: string;
@@ -47,13 +49,23 @@ export type ScoreboardProjection = {
     remainingMs: number;
     requestedBy: TimeoutRequestedBy;
   } | null;
+  periodType: PeriodType;
+  regulationPeriods: number;
+  periodDurationMs: number;
+  overtimeDurationMs: number;
+  winnerSide: "HOME" | "AWAY" | null;
+  finalScore: { home: number; away: number } | null;
+  matchStartedAt: string | null;
+  matchFinishedAt: string | null;
+  currentPeriodStartedAt: string | null;
+  currentPeriodEndedAt: string | null;
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number;
   gameClock: ClockState;
   shotClock: ClockState;
   clockUpdatedAt: string | null;
-  status: "READY" | "LIVE" | "FINAL";
+  status: MatchLifecycleStatus;
   currentSeq: number;
   projectionVersion: "scoreboard-v1";
 };
@@ -69,6 +81,16 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     timeouts: createDefaultTimeouts(),
     timeoutsByHalf: createDefaultTimeoutsByHalf(),
     activeTimeout: null,
+    periodType: "REGULATION",
+    regulationPeriods: 4,
+    periodDurationMs: 600000,
+    overtimeDurationMs: 300000,
+    winnerSide: null,
+    finalScore: null,
+    matchStartedAt: null,
+    matchFinishedAt: null,
+    currentPeriodStartedAt: null,
+    currentPeriodEndedAt: null,
     periodNumber: 1,
     gameClockRemainingMs: 600000,
     shotClockRemainingMs: 24000,
@@ -109,16 +131,23 @@ export function normalizeScoreboardProjection(
     timeouts: normalizeTimeouts(projection.timeouts),
     timeoutsByHalf: normalizeTimeoutsByHalf(projection.timeoutsByHalf),
     activeTimeout: normalizeActiveTimeout(projection.activeTimeout),
+    periodType: projection.periodType === "OVERTIME" ? "OVERTIME" : "REGULATION",
+    regulationPeriods: numberOrDefault(projection.regulationPeriods, 4),
+    periodDurationMs: numberOrDefault(projection.periodDurationMs, 600000),
+    overtimeDurationMs: numberOrDefault(projection.overtimeDurationMs, 300000),
+    winnerSide: projection.winnerSide === "HOME" || projection.winnerSide === "AWAY" ? projection.winnerSide : null,
+    finalScore: normalizeFinalScore(projection.finalScore),
+    matchStartedAt: stringOrNull(projection.matchStartedAt),
+    matchFinishedAt: stringOrNull(projection.matchFinishedAt),
+    currentPeriodStartedAt: stringOrNull(projection.currentPeriodStartedAt),
+    currentPeriodEndedAt: stringOrNull(projection.currentPeriodEndedAt),
     periodNumber,
     gameClockRemainingMs: gameClock.remainingMs,
     shotClockRemainingMs: shotClock.remainingMs,
     gameClock,
     shotClock,
     clockUpdatedAt: typeof projection.clockUpdatedAt === "string" ? projection.clockUpdatedAt : null,
-    status:
-      projection.status === "LIVE" || projection.status === "FINAL" || projection.status === "READY"
-        ? projection.status
-        : "READY",
+    status: normalizeLifecycleStatus(projection.status),
     currentSeq: numberOrDefault(projection.currentSeq, 0),
     projectionVersion: "scoreboard-v1"
   };
@@ -392,6 +421,152 @@ export function applyTimeoutEnded(
   };
 }
 
+export function applyMatchStarted(
+  projection: ScoreboardProjection,
+  payload: {
+    startedAt: string;
+    periodNumber: number;
+    periodType: PeriodType;
+    gameClockRemainingMs: number;
+    shotClockRemainingMs: number;
+    reason: string | null;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    status: "LIVE",
+    periodNumber: payload.periodNumber,
+    periodType: payload.periodType,
+    matchStartedAt: projection.matchStartedAt ?? payload.startedAt,
+    currentPeriodStartedAt: payload.startedAt,
+    currentPeriodEndedAt: null,
+    matchFinishedAt: null,
+    winnerSide: null,
+    finalScore: null,
+    gameClockRemainingMs: payload.gameClockRemainingMs,
+    shotClockRemainingMs: payload.shotClockRemainingMs,
+    gameClock: { remainingMs: payload.gameClockRemainingMs, running: false, lastStartedAt: null },
+    shotClock: { remainingMs: payload.shotClockRemainingMs, running: false, lastStartedAt: null },
+    clockUpdatedAt: payload.startedAt,
+    activeTimeout: null,
+    currentSeq: seqNo
+  };
+}
+
+export function applyPeriodEnded(
+  projection: ScoreboardProjection,
+  payload: {
+    periodNumber: number;
+    periodType: PeriodType;
+    endedAt: string;
+    gameClockRemainingMs: number;
+    shotClockRemainingMs: number;
+    reason: string | null;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    status: "PERIOD_BREAK",
+    periodNumber: payload.periodNumber,
+    periodType: payload.periodType,
+    currentPeriodEndedAt: payload.endedAt,
+    gameClockRemainingMs: payload.gameClockRemainingMs,
+    shotClockRemainingMs: payload.shotClockRemainingMs,
+    gameClock: { remainingMs: payload.gameClockRemainingMs, running: false, lastStartedAt: null },
+    shotClock: { remainingMs: payload.shotClockRemainingMs, running: false, lastStartedAt: null },
+    clockUpdatedAt: payload.endedAt,
+    activeTimeout: null,
+    currentSeq: seqNo
+  };
+}
+
+export function applyPeriodStarted(
+  projection: ScoreboardProjection,
+  payload: {
+    periodNumber: number;
+    periodType: "REGULATION";
+    startedAt: string;
+    gameClockRemainingMs: number;
+    shotClockRemainingMs: number;
+    reason: string | null;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    status: "LIVE",
+    periodNumber: payload.periodNumber,
+    periodType: payload.periodType,
+    currentPeriodStartedAt: payload.startedAt,
+    currentPeriodEndedAt: null,
+    gameClockRemainingMs: payload.gameClockRemainingMs,
+    shotClockRemainingMs: payload.shotClockRemainingMs,
+    gameClock: { remainingMs: payload.gameClockRemainingMs, running: false, lastStartedAt: null },
+    shotClock: { remainingMs: payload.shotClockRemainingMs, running: false, lastStartedAt: null },
+    clockUpdatedAt: payload.startedAt,
+    activeTimeout: null,
+    currentSeq: seqNo
+  };
+}
+
+export function applyOvertimeStarted(
+  projection: ScoreboardProjection,
+  payload: {
+    periodNumber: number;
+    periodType: "OVERTIME";
+    startedAt: string;
+    gameClockRemainingMs: number;
+    shotClockRemainingMs: number;
+    reason: string | null;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    status: "OVERTIME",
+    periodNumber: payload.periodNumber,
+    periodType: payload.periodType,
+    currentPeriodStartedAt: payload.startedAt,
+    currentPeriodEndedAt: null,
+    gameClockRemainingMs: payload.gameClockRemainingMs,
+    shotClockRemainingMs: payload.shotClockRemainingMs,
+    gameClock: { remainingMs: payload.gameClockRemainingMs, running: false, lastStartedAt: null },
+    shotClock: { remainingMs: payload.shotClockRemainingMs, running: false, lastStartedAt: null },
+    clockUpdatedAt: payload.startedAt,
+    activeTimeout: null,
+    currentSeq: seqNo
+  };
+}
+
+export function applyMatchFinished(
+  projection: ScoreboardProjection,
+  payload: {
+    finishedAt: string;
+    finalHomeScore: number;
+    finalAwayScore: number;
+    winnerSide: "HOME" | "AWAY" | null;
+    reason: string | null;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    status: "FINISHED",
+    matchFinishedAt: payload.finishedAt,
+    finalScore: { home: payload.finalHomeScore, away: payload.finalAwayScore },
+    winnerSide: payload.winnerSide,
+    gameClockRemainingMs: projection.gameClock.remainingMs,
+    shotClockRemainingMs: projection.shotClock.remainingMs,
+    gameClock: { ...projection.gameClock, running: false, lastStartedAt: null },
+    shotClock: { ...projection.shotClock, running: false, lastStartedAt: null },
+    clockUpdatedAt: payload.finishedAt,
+    activeTimeout: null,
+    currentSeq: seqNo
+  };
+}
+
 export function applyScoreRemovedByCorrection(
   projection: ScoreboardProjection,
   payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
@@ -432,6 +607,34 @@ function normalizeTeamFoulCount(value: unknown): TeamFoulCount {
     home: numberOrDefault(candidate.home, 0),
     away: numberOrDefault(candidate.away, 0)
   };
+}
+
+function normalizeLifecycleStatus(value: unknown): MatchLifecycleStatus {
+  return value === "SCHEDULED" ||
+    value === "READY" ||
+    value === "LIVE" ||
+    value === "PERIOD_BREAK" ||
+    value === "OVERTIME" ||
+    value === "FINISHED" ||
+    value === "FINAL"
+    ? value
+    : "SCHEDULED";
+}
+
+function normalizeFinalScore(value: unknown): ScoreboardProjection["finalScore"] {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as { home?: unknown; away?: unknown };
+  return {
+    home: numberOrDefault(candidate.home, 0),
+    away: numberOrDefault(candidate.away, 0)
+  };
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" ? value : null;
 }
 
 function normalizeTeamFoulsByPeriod(value: unknown): Record<string, TeamFoulCount> {

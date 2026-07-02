@@ -210,6 +210,16 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
     timeouts: normalizeTimeouts(projection.timeouts),
     timeoutsByHalf: normalizeTimeoutsByHalf(projection.timeoutsByHalf),
     activeTimeout: normalizeActiveTimeout(projection.activeTimeout),
+    periodType: projection.periodType === "OVERTIME" ? "OVERTIME" : "REGULATION",
+    regulationPeriods: numberOrDefault(projection.regulationPeriods, 4),
+    periodDurationMs: numberOrDefault(projection.periodDurationMs, 600000),
+    overtimeDurationMs: numberOrDefault(projection.overtimeDurationMs, 300000),
+    winnerSide: projection.winnerSide === "HOME" || projection.winnerSide === "AWAY" ? projection.winnerSide : null,
+    finalScore: normalizeFinalScore(projection.finalScore),
+    matchStartedAt: stringOrNull(projection.matchStartedAt),
+    matchFinishedAt: stringOrNull(projection.matchFinishedAt),
+    currentPeriodStartedAt: stringOrNull(projection.currentPeriodStartedAt),
+    currentPeriodEndedAt: stringOrNull(projection.currentPeriodEndedAt),
     period: periodNumber,
     periodNumber,
     gameClockRemainingMs: gameClock.remainingMs,
@@ -404,6 +414,22 @@ function normalizeActiveTimeout(value: unknown): NonNullable<ApiScoreboardProjec
         ? candidate.requestedBy
         : "OTHER"
   };
+}
+
+function normalizeFinalScore(value: unknown): NonNullable<ApiScoreboardProjection["finalScore"]> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as { home?: unknown; away?: unknown };
+  return {
+    home: numberOrDefault(candidate.home, 0),
+    away: numberOrDefault(candidate.away, 0)
+  };
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" ? value : null;
 }
 
 function parseProjectionJson(value: unknown): Partial<ScoreboardProjection> {

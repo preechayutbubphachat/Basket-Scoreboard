@@ -9,6 +9,7 @@ import type {
   ScoreAddedPayload,
   ScoreboardProjection,
   GameClockSetPayload,
+  LifecycleCommandPayload,
   ShotClockResetPayload,
   ShotClockSetPayload,
   TimeoutEndedPayload,
@@ -358,6 +359,21 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
+    async startMatch(matchId: string, input: { expectedSeq: number; payload: LifecycleCommandPayload }) {
+      return lifecycleCommand("/commands/lifecycle/start-match", matchId, input);
+    },
+    async endPeriod(matchId: string, input: { expectedSeq: number; payload: LifecycleCommandPayload }) {
+      return lifecycleCommand("/commands/lifecycle/end-period", matchId, input);
+    },
+    async startNextPeriod(matchId: string, input: { expectedSeq: number; payload: LifecycleCommandPayload }) {
+      return lifecycleCommand("/commands/lifecycle/start-next-period", matchId, input);
+    },
+    async startOvertime(matchId: string, input: { expectedSeq: number; payload: LifecycleCommandPayload }) {
+      return lifecycleCommand("/commands/lifecycle/start-overtime", matchId, input);
+    },
+    async finishMatch(matchId: string, input: { expectedSeq: number; payload: LifecycleCommandPayload }) {
+      return lifecycleCommand("/commands/lifecycle/finish-match", matchId, input);
+    },
     async getPublicScoreboard(matchId: string) {
       return request<ScoreboardProjection>(
         `/public/matches/${encodeURIComponent(matchId)}/scoreboard`,
@@ -394,5 +410,21 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       clientTimestamp: new Date().toISOString(),
       payload
     };
+  }
+
+  function lifecycleCommand(
+    path: string,
+    matchId: string,
+    input: { expectedSeq: number; payload: LifecycleCommandPayload }
+  ) {
+    return request<CommandResult>(
+      `/matches/${encodeURIComponent(matchId)}${path}`,
+      {
+        method: "POST",
+        body: JSON.stringify(createCommandEnvelope(matchId, input.expectedSeq, input.payload))
+      },
+      false,
+      { acceptRawSuccess: true }
+    );
   }
 }

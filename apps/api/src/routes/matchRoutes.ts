@@ -10,6 +10,7 @@ import {
   gameClockSetCommandSchema,
   gameClockStartCommandSchema,
   gameClockStopCommandSchema,
+  lifecycleCommandSchema,
   reasonCodes,
   rejectCorrectionCommandSchema,
   shotClockResetCommandSchema,
@@ -34,6 +35,13 @@ import {
   appendTimeoutEndCommand,
   appendTimeoutGrantCommand
 } from "../matchEventStore/appendTimeoutCommand.js";
+import {
+  appendMatchFinishedCommand,
+  appendMatchStartedCommand,
+  appendOvertimeStartedCommand,
+  appendPeriodEndedCommand,
+  appendPeriodStartedCommand
+} from "../matchEventStore/appendLifecycleCommand.js";
 import {
   applyScoreCorrection,
   listCorrectionsForMatch,
@@ -454,6 +462,86 @@ export function registerMatchRoutes(
       }
 
       const result = await appendTimeoutEndCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/lifecycle/start-match",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = lifecycleCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendMatchStartedCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/lifecycle/end-period",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = lifecycleCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendPeriodEndedCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/lifecycle/start-next-period",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = lifecycleCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendPeriodStartedCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/lifecycle/start-overtime",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = lifecycleCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendOvertimeStartedCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/lifecycle/finish-match",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = lifecycleCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendMatchFinishedCommand({ pool, command, user: request.user! });
       await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return result;
     }

@@ -192,6 +192,10 @@ export const timeoutEndedPayloadSchema = z.object({
   reason: z.string().max(500).nullable()
 });
 
+export const lifecycleCommandPayloadSchema = z.object({
+  reason: z.string().max(500).nullable()
+});
+
 export const correctionRequestPayloadSchema = z.object({
   targetSeq: z.number().int().positive(),
   correctionType: z.literal("SCORE_CORRECTION"),
@@ -269,6 +273,10 @@ export const timeoutEndCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: timeoutEndedPayloadSchema
 });
 
+export const lifecycleCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: lifecycleCommandPayloadSchema
+});
+
 export const applyScoreCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: applyScoreCorrectionPayloadSchema
 });
@@ -307,6 +315,7 @@ export type ShotClockSetPayload = z.infer<typeof shotClockSetPayloadSchema>;
 export type TimeoutRequestedBy = z.infer<typeof timeoutRequestedBySchema>;
 export type TimeoutGrantedPayload = z.infer<typeof timeoutGrantedPayloadSchema>;
 export type TimeoutEndedPayload = z.infer<typeof timeoutEndedPayloadSchema>;
+export type LifecycleCommandPayload = z.infer<typeof lifecycleCommandPayloadSchema>;
 export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
 export type AddTeamFoulCommand = z.infer<typeof addTeamFoulCommandSchema>;
 export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
@@ -317,6 +326,7 @@ export type ShotClockResetCommand = z.infer<typeof shotClockResetCommandSchema>;
 export type ShotClockSetCommand = z.infer<typeof shotClockSetCommandSchema>;
 export type TimeoutGrantCommand = z.infer<typeof timeoutGrantCommandSchema>;
 export type TimeoutEndCommand = z.infer<typeof timeoutEndCommandSchema>;
+export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type CorrectionRequestPayload = z.infer<typeof correctionRequestPayloadSchema>;
 export type ApplyScoreCorrectionPayload = z.infer<typeof applyScoreCorrectionPayloadSchema>;
 export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSchema>;
@@ -328,6 +338,11 @@ export type RealtimeView = z.infer<typeof realtimeViewSchema>;
 export type MatchJoinPayload = z.infer<typeof matchJoinPayloadSchema>;
 
 export type MatchEventType =
+  | "MATCH_STARTED"
+  | "PERIOD_STARTED"
+  | "PERIOD_ENDED"
+  | "OVERTIME_STARTED"
+  | "MATCH_FINISHED"
   | "SCORE_ADDED"
   | "TEAM_FOUL_ADDED"
   | "PLAYER_FOUL_ADDED"
@@ -393,6 +408,16 @@ export type ScoreboardProjection = {
     remainingMs: number;
     requestedBy: TimeoutRequestedBy;
   } | null;
+  periodType?: "REGULATION" | "OVERTIME";
+  regulationPeriods?: number;
+  periodDurationMs?: number;
+  overtimeDurationMs?: number;
+  winnerSide?: "HOME" | "AWAY" | null;
+  finalScore?: { home: number; away: number } | null;
+  matchStartedAt?: string | null;
+  matchFinishedAt?: string | null;
+  currentPeriodStartedAt?: string | null;
+  currentPeriodEndedAt?: string | null;
   period?: number;
   periodNumber: number;
   gameClockRemainingMs: number;
@@ -409,7 +434,7 @@ export type ScoreboardProjection = {
   };
   clockUpdatedAt?: string | null;
   serverTime?: string;
-  status: "READY" | "LIVE" | "FINAL" | string;
+  status: "SCHEDULED" | "READY" | "LIVE" | "PERIOD_BREAK" | "OVERTIME" | "FINISHED" | "FINAL" | string;
   currentSeq: number;
   lastEventSeq?: number;
   updatedAt?: string | null;
