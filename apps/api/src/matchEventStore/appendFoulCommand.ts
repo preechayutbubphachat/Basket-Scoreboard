@@ -14,12 +14,12 @@ import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,
   findDuplicateCommand,
-  getActivePlayerForMatchSide,
   getScoreboardProjection,
   insertCommandResult,
   lockMatchStream,
   updateScoreboardProjection
 } from "./repositories.js";
+import { getActiveRosterPlayerForMatchSide } from "../rosters/rosterRepository.js";
 import { applyPlayerFoulAdded, applyTeamFoulAdded } from "./projection.js";
 
 type FoulCommand = AddTeamFoulCommand | AddPlayerFoulCommand;
@@ -228,7 +228,7 @@ async function buildEventPayload(options: {
   }
 
   const playerCommand = options.command as AddPlayerFoulCommand;
-  const player = await getActivePlayerForMatchSide(
+  const player = await getActiveRosterPlayerForMatchSide(
     options.connection,
     playerCommand.matchId,
     playerCommand.payload.playerId,
@@ -238,7 +238,7 @@ async function buildEventPayload(options: {
   if (!player) {
     return {
       ok: false,
-      message: "Player was not found on the selected match side"
+      message: "Player was not found on the selected match roster side"
     };
   }
 

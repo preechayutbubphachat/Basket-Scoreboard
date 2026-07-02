@@ -2,8 +2,11 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CommandResult,
   FoulType,
+  MatchRosterPlayer,
+  MatchRostersResponse,
   MatchOfficialRoleCode,
   OperatorMatchSummary,
+  PlayerPosition,
   ScoreboardProjection,
   TimeoutRequestedBy
 } from "@basket-scoreboard/api-contracts";
@@ -76,6 +79,16 @@ import {
   type LifecycleAction
 } from "./lib/lifecycleControl";
 import {
+  buildCreatePlayerPayload,
+  buildPlayerFoulCommandPayload,
+  buildRosterPlayerLabel,
+  buildScorePlayerOptions,
+  createPlayerFormState,
+  getRosterPlayersForSide,
+  getRosterTeamLabel,
+  type CreatePlayerFormState
+} from "./lib/rosterControl";
+import {
   applyRealtimeProjectionUpdate,
   createPublicProjectionSocket,
   getOperatorPollingIntervalMs,
@@ -91,6 +104,7 @@ type Route =
   | { name: "admin" }
   | { name: "admin-matches" }
   | { name: "admin-officials"; matchId: string }
+  | { name: "admin-rosters"; matchId: string }
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
@@ -105,6 +119,11 @@ function parseRoute(pathname: string): Route {
   const matchId = officialMatch?.[1];
   if (matchId) {
     return { name: "admin-officials", matchId: decodeURIComponent(matchId) };
+  }
+  const rosterMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/rosters$/);
+  const rosterMatchId = rosterMatch?.[1];
+  if (rosterMatchId) {
+    return { name: "admin-rosters", matchId: decodeURIComponent(rosterMatchId) };
   }
   const operatorScoreMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/score$/);
   const operatorMatchId = operatorScoreMatch?.[1];
@@ -626,6 +645,8 @@ function usePublicProjectionRealtime(
 function OperatorScorePage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
+  const [selectedPlayers, setSelectedPlayers] = useState<Record<ScoreControlTeamSide, string>>({ HOME: "", AWAY: "" });
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
@@ -636,7 +657,12 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     setLoading(true);
     setMessage(null);
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const [nextProjection, nextRosters] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getMatchRosters(matchId).catch(() => null)
+      ]);
+      setProjection(nextProjection);
+      setRosters(nextRosters);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -681,7 +707,15 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     const previousSeq = projection.currentSeq;
 
     try {
-      const result = await api.addScore(matchId, buildScoreCommandPayload(projection, teamSide, points));
+      const payload = buildScoreCommandPayload(projection, teamSide, points);
+      const playerId = selectedPlayers[teamSide] || null;
+      const result = await api.addScore(matchId, {
+        ...payload,
+        payload: {
+          ...payload.payload,
+          playerId
+        }
+      });
 
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getScoreControlFeedback(result));
@@ -734,6 +768,22 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
             {buildScoreControlPanels(projection).map((panel) => (
               <div key={panel.teamSide}>
                 <h2>{panel.teamName}</h2>
+                <label>
+                  Player
+                  <select
+                    value={selectedPlayers[panel.teamSide]}
+                    onChange={(event) =>
+                      setSelectedPlayers({ ...selectedPlayers, [panel.teamSide]: event.target.value })
+                    }
+                  >
+                    <option value="">No player attribution</option>
+                    {buildScorePlayerOptions(rosters, panel.teamSide).map((player) => (
+                      <option key={player.playerId} value={player.playerId}>
+                        {player.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <div className="button-row">
                   {panel.buttons.map((button) => {
                     return (
@@ -778,6 +828,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
 function OperatorFoulPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [foulType, setFoulType] = useState<FoulType>("PERSONAL");
@@ -790,7 +841,12 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     setLoading(true);
     setMessage(null);
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const [nextProjection, nextRosters] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getMatchRosters(matchId).catch(() => null)
+      ]);
+      setProjection(nextProjection);
+      setRosters(nextRosters);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -838,6 +894,35 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       const result = await api.addTeamFoul(
         matchId,
         buildTeamFoulCommandPayload(projection, teamSide, { foulType, reason })
+      );
+
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage(getFoulControlFeedback(result));
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage(getFoulControlFeedback(result));
+      setReason("");
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function addPlayerFoul(player: MatchRosterPlayer) {
+    if (!projection || !canSubmitFoul) return;
+    const key = `PLAYER-${player.playerId}`;
+    setPendingKey(key);
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+
+    try {
+      const result = await api.addPlayerFoul(
+        matchId,
+        buildPlayerFoulCommandPayload(projection, player, { foulType, reason })
       );
 
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
@@ -915,7 +1000,33 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
           </div>
           <section className="inline-panel">
             <h2>Player Fouls</h2>
-            <p className="muted">Player foul controls require roster data. Team foul control is available.</p>
+            {!rosters || (rosters.rosters.HOME.length === 0 && rosters.rosters.AWAY.length === 0) ? (
+              <p className="muted">No roster players found. Team foul control is available.</p>
+            ) : (
+              <div className="score-actions">
+                {(["HOME", "AWAY"] as const).map((teamSide) => (
+                  <div key={teamSide}>
+                    <h3>{getRosterTeamLabel(projection, teamSide)}</h3>
+                    {getRosterPlayersForSide(rosters, teamSide).length === 0 ? (
+                      <p className="muted">No players assigned.</p>
+                    ) : null}
+                    {getRosterPlayersForSide(rosters, teamSide).map((player) => (
+                      <button
+                        key={player.playerId}
+                        type="button"
+                        className="score-button"
+                        disabled={!canSubmitFoul || Boolean(pendingKey)}
+                        onClick={() => void addPlayerFoul(player)}
+                      >
+                        {pendingKey === `PLAYER-${player.playerId}`
+                          ? "Saving..."
+                          : `Add foul ${buildRosterPlayerLabel(player)}`}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
           <div className="button-row">
             {Object.values(getFoulControlLinks(matchId)).map((link) => (
@@ -1888,6 +1999,177 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
   );
 }
 
+function AdminRostersPage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
+  const [teamPlayers, setTeamPlayers] = useState<Record<"HOME" | "AWAY", Array<{ playerId: string; displayName: string; jerseyNumber: string | null; position: PlayerPosition }>>>({
+    HOME: [],
+    AWAY: []
+  });
+  const [forms, setForms] = useState<Record<"HOME" | "AWAY", CreatePlayerFormState>>({
+    HOME: createPlayerFormState(),
+    AWAY: createPlayerFormState()
+  });
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const isAdmin = canManageAssignments(currentUser);
+
+  async function loadRosters(options: { clearMessage?: boolean } = {}) {
+    setLoading(true);
+    if (options.clearMessage ?? true) {
+      setMessage(null);
+    }
+    try {
+      const nextProjection = await api.getMatchProjection(matchId);
+      setProjection(nextProjection);
+      const nextRosters = await api.getMatchRosters(matchId);
+      setRosters(nextRosters);
+      const homePlayers = nextProjection.homeTeamId ? await api.listTeamPlayers(nextProjection.homeTeamId) : [];
+      const awayPlayers = nextProjection.awayTeamId ? await api.listTeamPlayers(nextProjection.awayTeamId) : [];
+      setTeamPlayers({
+        HOME: homePlayers,
+        AWAY: awayPlayers
+      });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRosters();
+  }, [matchId]);
+
+  async function createAndAssign(teamSide: "HOME" | "AWAY") {
+    if (!isAdmin || !projection) return;
+    const teamId = teamSide === "HOME" ? projection.homeTeamId : projection.awayTeamId;
+    if (!teamId) {
+      setMessage({ tone: "error", code: "VALIDATION_ERROR", text: `${teamSide} team is not assigned.` });
+      return;
+    }
+
+    try {
+      const player = await api.createPlayer(teamId, buildCreatePlayerPayload(forms[teamSide]));
+      await api.assignRosterPlayer(matchId, teamSide, player.playerId);
+      setForms({ ...forms, [teamSide]: createPlayerFormState() });
+      setMessage({ tone: "success", text: `${teamSide} roster player saved.` });
+      await loadRosters({ clearMessage: false });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  async function assignExisting(teamSide: "HOME" | "AWAY", playerId: string) {
+    if (!isAdmin) return;
+    try {
+      await api.assignRosterPlayer(matchId, teamSide, playerId);
+      setMessage({ tone: "success", text: `${teamSide} roster assignment saved.` });
+      await loadRosters({ clearMessage: false });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Match Rosters</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!isAdmin ? <ErrorMessage code="FORBIDDEN" message="Admin role is required to manage rosters." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading rosters...</p></section> : null}
+      {!loading && projection ? (
+        <section className="score-actions">
+          {(["HOME", "AWAY"] as const).map((teamSide) => {
+            const teamId = teamSide === "HOME" ? projection.homeTeamId : projection.awayTeamId;
+            const form = forms[teamSide];
+            const rosterPlayers = getRosterPlayersForSide(rosters, teamSide);
+            const assignedIds = new Set(rosterPlayers.map((player) => player.playerId));
+            return (
+              <article className="panel" key={teamSide}>
+                <h2>{getRosterTeamLabel(projection, teamSide)}</h2>
+                <p className="muted">{teamId ?? "Team pending"}</p>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Position</th>
+                        <th>Status</th>
+                        <th>Starter</th>
+                        <th>Captain</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rosterPlayers.length === 0 ? (
+                        <tr><td colSpan={6}>No roster players assigned.</td></tr>
+                      ) : rosterPlayers.map((player) => (
+                        <tr key={player.playerId}>
+                          <td>{player.jerseyNumberSnapshot ?? "-"}</td>
+                          <td>{player.displayNameSnapshot}</td>
+                          <td>{player.position}</td>
+                          <td>{player.status}</td>
+                          <td>{player.isStarter ? "Yes" : "No"}</td>
+                          <td>{player.isCaptain ? "Yes" : "No"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <form className="assignment-form" onSubmit={(event) => { event.preventDefault(); void createAndAssign(teamSide); }}>
+                  <label>
+                    Player name
+                    <input
+                      value={form.displayName}
+                      onChange={(event) => setForms({ ...forms, [teamSide]: { ...form, displayName: event.target.value } })}
+                    />
+                  </label>
+                  <label>
+                    Jersey
+                    <input
+                      value={form.jerseyNumber}
+                      onChange={(event) => setForms({ ...forms, [teamSide]: { ...form, jerseyNumber: event.target.value } })}
+                    />
+                  </label>
+                  <label>
+                    Position
+                    <select
+                      value={form.position}
+                      onChange={(event) => setForms({ ...forms, [teamSide]: { ...form, position: event.target.value as PlayerPosition } })}
+                    >
+                      {(["UNKNOWN", "GUARD", "FORWARD", "CENTER"] as const).map((position) => (
+                        <option key={position} value={position}>{position}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit" disabled={!isAdmin || !teamId}>Add to team and roster</button>
+                </form>
+                <div className="button-row">
+                  {teamPlayers[teamSide].filter((player) => !assignedIds.has(player.playerId)).map((player) => (
+                    <button
+                      key={player.playerId}
+                      type="button"
+                      className="secondary"
+                      disabled={!isAdmin}
+                      onClick={() => void assignExisting(teamSide, player.playerId)}
+                    >
+                      Assign {player.jerseyNumber ? `#${player.jerseyNumber} ` : ""}{player.displayName}
+                    </button>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function HomePage() {
   return (
     <section className="panel">
@@ -1972,6 +2254,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireAdmin>
             <AdminOfficialsPage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "admin-rosters":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminRostersPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "operator-matches":

@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "mysql2/promise";
-import type { AddScoreCommand, CommandResult } from "@basket-scoreboard/api-contracts";
+import type { AddScoreCommand, CommandResult, ScoreAddedPayload } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "./auditRepository.js";
+import { getActiveRosterPlayerForMatchSide } from "../rosters/rosterRepository.js";
 import {
   ensurePlaceholderUser,
   findDuplicateCommand,
@@ -67,6 +68,15 @@ export async function appendScoreAddedCommand(options: {
     const nextSeq = currentSeq + 1;
     const eventId = randomUUID();
     const occurredAt = new Date(options.command.clientTimestamp);
+    const payload = await buildScoreEventPayload({
+      connection,
+      command: options.command
+    });
+
+    if (!payload.ok) {
+      await connection.rollback();
+      return rejected(options.command, reasonCodes.VALIDATION_ERROR, payload.message, currentSeq);
+    }
 
     await connection.query(
       "INSERT INTO match_events (event_id, match_id, seq_no, event_type, payload, actor_user_id, actor_role, device_id, occurred_at, command_id, expected_seq, correlation_id, causation_id, reason, rule_profile_id) VALUES (?, ?, ?, 'SCORE_ADDED', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'FIBA_2024')",
@@ -74,7 +84,7 @@ export async function appendScoreAddedCommand(options: {
         eventId,
         options.command.matchId,
         nextSeq,
-        JSON.stringify(options.command.payload),
+        JSON.stringify(payload.value),
         options.user.userId,
         options.user.role,
         options.user.deviceId,
@@ -97,7 +107,7 @@ export async function appendScoreAddedCommand(options: {
       throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
     }
 
-    const updatedProjection = applyScoreAdded(projection, options.command.payload, nextSeq);
+    const updatedProjection = applyScoreAdded(projection, payload.value, nextSeq);
     await updateScoreboardProjection(connection, updatedProjection);
     await insertAuditLog(connection, {
       entityType: "match",
@@ -140,6 +150,41 @@ export async function appendScoreAddedCommand(options: {
   } finally {
     connection.release();
   }
+}
+
+async function buildScoreEventPayload(options: {
+  connection: Awaited<ReturnType<Pool["getConnection"]>>;
+  command: AddScoreCommand;
+}): Promise<
+  | { ok: true; value: ScoreAddedPayload }
+  | { ok: false; message: string }
+> {
+  if (!options.command.payload.playerId) {
+    return { ok: true, value: options.command.payload };
+  }
+
+  const player = await getActiveRosterPlayerForMatchSide(
+    options.connection,
+    options.command.matchId,
+    options.command.payload.playerId,
+    options.command.payload.teamSide
+  );
+
+  if (!player) {
+    return {
+      ok: false,
+      message: "Player was not found on the selected match roster side"
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...options.command.payload,
+      playerNameSnapshot: player.playerName,
+      jerseyNumberSnapshot: player.jerseyNumber
+    }
+  };
 }
 
 function rejected(

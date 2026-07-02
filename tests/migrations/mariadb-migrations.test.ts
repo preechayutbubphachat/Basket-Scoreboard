@@ -22,7 +22,8 @@ describe("MariaDB migration foundation", () => {
       "005_create_projection_tables.sql",
       "006_create_audit_tables.sql",
       "007_create_user_sessions_table.sql",
-      "008_create_match_officials_table.sql"
+      "008_create_match_officials_table.sql",
+      "009_create_match_roster_tables.sql"
     ]);
   });
 
@@ -41,6 +42,7 @@ describe("MariaDB migration foundation", () => {
       "user_roles",
       "user_sessions",
       "match_officials",
+      "match_roster_players",
       "tournaments",
       "teams",
       "players",
@@ -91,6 +93,24 @@ describe("MariaDB migration foundation", () => {
     expect(assignmentSql).toContain("key idx_match_officials_role_code");
     expect(assignmentSql).toContain("key idx_match_officials_assignment_status");
     expect(assignmentSql).toContain("engine=innodb");
+  });
+
+  it("adds match roster player assignments without mutating match events", () => {
+    const rosterSql = compact(readMigration("009_create_match_roster_tables.sql"));
+
+    expect(rosterSql).toContain("create table if not exists match_roster_players");
+    expect(rosterSql).toContain("match_id char(36) not null");
+    expect(rosterSql).toContain("team_side enum('home', 'away') not null");
+    expect(rosterSql).toContain("player_id char(36) not null");
+    expect(rosterSql).toContain("display_name_snapshot varchar(200) not null");
+    expect(rosterSql).toContain("jersey_number_snapshot varchar(12) null");
+    expect(rosterSql).toContain("unique key uq_match_roster_players_match_player");
+    expect(rosterSql).toContain("key idx_match_roster_players_match_side");
+    expect(rosterSql).toContain("foreign key (match_id) references matches");
+    expect(rosterSql).toContain("foreign key (player_id) references players");
+    expect(rosterSql).toContain("engine=innodb");
+    expect(rosterSql).not.toContain(["update", "match_events"].join(" "));
+    expect(rosterSql).not.toContain(["delete", "from", "match_events"].join(" "));
   });
 
   it("defines the critical append-only event store columns and constraints", () => {
