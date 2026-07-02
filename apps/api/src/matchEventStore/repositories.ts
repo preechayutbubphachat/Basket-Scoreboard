@@ -207,6 +207,9 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
     teamFouls: normalizeTeamFoulCount(projection.teamFouls),
     teamFoulsByPeriod: normalizeTeamFoulsByPeriod(projection.teamFoulsByPeriod),
     playerFouls: Array.isArray(projection.playerFouls) ? projection.playerFouls : [],
+    timeouts: normalizeTimeouts(projection.timeouts),
+    timeoutsByHalf: normalizeTimeoutsByHalf(projection.timeoutsByHalf),
+    activeTimeout: normalizeActiveTimeout(projection.activeTimeout),
     period: periodNumber,
     periodNumber,
     gameClockRemainingMs: gameClock.remainingMs,
@@ -311,6 +314,95 @@ function normalizeClockState(value: unknown, fallbackRemainingMs: number) {
     remainingMs: numberOrDefault(candidate.remainingMs, fallbackRemainingMs),
     running: candidate.running === true,
     lastStartedAt: typeof candidate.lastStartedAt === "string" ? candidate.lastStartedAt : null
+  };
+}
+
+function normalizeTimeouts(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return createDefaultTimeouts();
+  }
+
+  const candidate = value as {
+    home?: { used?: unknown; remaining?: unknown };
+    away?: { used?: unknown; remaining?: unknown };
+  };
+  const homeUsed = numberOrDefault(candidate.home?.used, 0);
+  const awayUsed = numberOrDefault(candidate.away?.used, 0);
+  return {
+    home: {
+      used: homeUsed,
+      remaining: numberOrDefault(candidate.home?.remaining, Math.max(0, 5 - homeUsed))
+    },
+    away: {
+      used: awayUsed,
+      remaining: numberOrDefault(candidate.away?.remaining, Math.max(0, 5 - awayUsed))
+    }
+  };
+}
+
+function createDefaultTimeouts() {
+  return {
+    home: { used: 0, remaining: 5 },
+    away: { used: 0, remaining: 5 }
+  };
+}
+
+function normalizeTimeoutsByHalf(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return createDefaultTimeoutsByHalf();
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return {
+    firstHalf: normalizeTimeoutSide(candidate.firstHalf),
+    secondHalf: normalizeTimeoutSide(candidate.secondHalf),
+    overtime: normalizeTimeoutSide(candidate.overtime)
+  };
+}
+
+function createDefaultTimeoutsByHalf() {
+  return {
+    firstHalf: { home: 0, away: 0 },
+    secondHalf: { home: 0, away: 0 },
+    overtime: { home: 0, away: 0 }
+  };
+}
+
+function normalizeTimeoutSide(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return { home: 0, away: 0 };
+  }
+
+  const candidate = value as { home?: unknown; away?: unknown };
+  return {
+    home: numberOrDefault(candidate.home, 0),
+    away: numberOrDefault(candidate.away, 0)
+  };
+}
+
+function normalizeActiveTimeout(value: unknown): NonNullable<ApiScoreboardProjection["activeTimeout"]> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as NonNullable<ApiScoreboardProjection["activeTimeout"]>;
+  if (candidate.teamSide !== "HOME" && candidate.teamSide !== "AWAY") {
+    return null;
+  }
+
+  return {
+    teamSide: candidate.teamSide,
+    startedAt: typeof candidate.startedAt === "string" ? candidate.startedAt : new Date(0).toISOString(),
+    durationMs: numberOrDefault(candidate.durationMs, 60000),
+    remainingMs: numberOrDefault(candidate.remainingMs, 60000),
+    requestedBy:
+      candidate.requestedBy === "HEAD_COACH" ||
+      candidate.requestedBy === "ASSISTANT_COACH" ||
+      candidate.requestedBy === "BENCH" ||
+      candidate.requestedBy === "OFFICIAL" ||
+      candidate.requestedBy === "OTHER"
+        ? candidate.requestedBy
+        : "OTHER"
   };
 }
 

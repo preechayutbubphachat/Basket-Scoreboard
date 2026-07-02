@@ -14,7 +14,9 @@ import {
   rejectCorrectionCommandSchema,
   shotClockResetCommandSchema,
   shotClockSetCommandSchema,
-  syncQuerySchema
+  syncQuerySchema,
+  timeoutEndCommandSchema,
+  timeoutGrantCommandSchema
 } from "@basket-scoreboard/api-contracts";
 import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand.js";
 import {
@@ -28,6 +30,10 @@ import {
   appendPlayerFoulAddedCommand,
   appendTeamFoulAddedCommand
 } from "../matchEventStore/appendFoulCommand.js";
+import {
+  appendTimeoutEndCommand,
+  appendTimeoutGrantCommand
+} from "../matchEventStore/appendTimeoutCommand.js";
 import {
   applyScoreCorrection,
   listCorrectionsForMatch,
@@ -416,6 +422,38 @@ export function registerMatchRoutes(
       }
 
       const result = await appendShotClockSetCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/timeout/grant",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = timeoutGrantCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendTimeoutGrantCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/timeout/end",
+    { preHandler: clockPreHandlers },
+    async (request, reply) => {
+      const command = timeoutEndCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendTimeoutEndCommand({ pool, command, user: request.user! });
       await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return result;
     }

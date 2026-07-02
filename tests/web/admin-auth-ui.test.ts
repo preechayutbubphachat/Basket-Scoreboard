@@ -20,6 +20,7 @@ import {
   buildOperatorMatchClockLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchScoreLink,
+  buildOperatorMatchTimeoutsLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
   canOperateScore,
@@ -46,6 +47,15 @@ import {
   deriveDisplayClockMs,
   getClockControlFeedback
 } from "../../apps/web/src/lib/clockControl";
+import {
+  buildTimeoutControlPanels,
+  buildTimeoutEndPayload,
+  buildTimeoutGrantPayload,
+  getActiveTimeoutLabel,
+  getTimeoutControlFeedback,
+  getTimeoutControlLinks,
+  timeoutRequestedByOptions
+} from "../../apps/web/src/lib/timeoutControl";
 import {
   applyRealtimeProjectionUpdate,
   getOperatorPollingIntervalMs,
@@ -543,6 +553,81 @@ describe("web API client", () => {
     expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
+  test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [
+            { eventId: "33333333-3333-4333-8333-333333333333", seqNo: 4, eventType: "TIMEOUT_GRANTED" }
+          ],
+          reasonCode: null,
+          message: null
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222223",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 5,
+          appendedEvents: [
+            { eventId: "33333333-3333-4333-8333-333333333334", seqNo: 5, eventType: "TIMEOUT_ENDED" }
+          ],
+          reasonCode: null,
+          message: null
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.grantTimeout(scoreboardProjection.matchId, {
+      expectedSeq: 3,
+      payload: { teamSide: "HOME", requestedBy: "HEAD_COACH", durationMs: 60000, reason: "Alpha timeout" }
+    });
+    await client.endTimeout(scoreboardProjection.matchId, {
+      expectedSeq: 4,
+      payload: { reason: "Done" }
+    });
+
+    const grantBody = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body));
+    const endBody = JSON.parse(String(fetchMock.mock.calls[2]![1]?.body));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/timeout/grant`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/timeout/end`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(grantBody).toMatchObject({
+      matchId: scoreboardProjection.matchId,
+      expectedSeq: 3,
+      payload: { teamSide: "HOME", requestedBy: "HEAD_COACH", durationMs: 60000, reason: "Alpha timeout" }
+    });
+    expect(endBody).toMatchObject({
+      matchId: scoreboardProjection.matchId,
+      expectedSeq: 4,
+      payload: { reason: "Done" }
+    });
+    expect(grantBody.commandId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(endBody.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
   test("posts clock commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -730,6 +815,11 @@ describe("operator match landing UI policy", () => {
       href: "/operator/matches/match-1/clock",
       label: "Open Clock Control"
     });
+    expect(card.timeoutControl).toEqual({
+      enabled: true,
+      href: "/operator/matches/match-1/timeouts",
+      label: "Open Timeout Control"
+    });
     expect(card.publicScoreboard).toEqual({
       enabled: true,
       href: "/public/scoreboard/match-1",
@@ -751,6 +841,7 @@ describe("operator match landing UI policy", () => {
     expect(buildOperatorMatchScoreLink("match 1")).toBe("/operator/matches/match%201/score");
     expect(buildOperatorMatchFoulsLink("match 1")).toBe("/operator/matches/match%201/fouls");
     expect(buildOperatorMatchClockLink("match 1")).toBe("/operator/matches/match%201/clock");
+    expect(buildOperatorMatchTimeoutsLink("match 1")).toBe("/operator/matches/match%201/timeouts");
   });
 
   test("empty operator match state is explicit", () => {
@@ -764,6 +855,7 @@ describe("operator match landing UI policy", () => {
       operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
+      timeouts: { href: "/operator/matches/match-1/timeouts", label: "Operator Timeouts" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
   });
@@ -1076,6 +1168,67 @@ describe("clock control UI policy", () => {
       code: "INVALID_EXPECTED_SEQ",
       text: "Conflict: refreshed, please try again."
     });
+  });
+});
+
+describe("timeout control UI policy", () => {
+  test("builds timeout panels from projection defaults and active timeout state", () => {
+    const projection: ScoreboardProjection = {
+      ...scoreboardProjection,
+      timeouts: { home: { used: 1, remaining: 4 }, away: { used: 0, remaining: 5 } },
+      activeTimeout: {
+        teamSide: "HOME",
+        startedAt: "2026-07-02T10:00:00.000Z",
+        durationMs: 60000,
+        remainingMs: 45000,
+        requestedBy: "HEAD_COACH"
+      }
+    };
+
+    expect(buildTimeoutControlPanels(projection)).toEqual([
+      { teamSide: "HOME", teamName: "Bangkok HOME", used: 1, remaining: 4, pendingKey: "grant-HOME" },
+      { teamSide: "AWAY", teamName: "Chiang Mai AWAY", used: 0, remaining: 5, pendingKey: "grant-AWAY" }
+    ]);
+    expect(getActiveTimeoutLabel(projection)).toBe("Bangkok HOME timeout - 45s remaining");
+    expect(timeoutRequestedByOptions).toContain("HEAD_COACH");
+  });
+
+  test("builds timeout command payloads with expectedSeq", () => {
+    expect(buildTimeoutGrantPayload(scoreboardProjection, "AWAY", "BENCH", 60000, "TV break")).toEqual({
+      expectedSeq: 3,
+      payload: { teamSide: "AWAY", requestedBy: "BENCH", durationMs: 60000, reason: "TV break" }
+    });
+    expect(buildTimeoutEndPayload(scoreboardProjection, "Done")).toEqual({
+      expectedSeq: 3,
+      payload: { reason: "Done" }
+    });
+  });
+
+  test("maps timeout command feedback", () => {
+    expect(getTimeoutControlFeedback({
+      status: "ACCEPTED",
+      commandId: "cmd",
+      matchId: scoreboardProjection.matchId,
+      currentSeq: 4,
+      appendedEvents: [],
+      reasonCode: null,
+      message: null
+    })).toEqual({ tone: "success", text: "Timeout updated. Current seq 4." });
+    expect(getTimeoutControlFeedback({
+      status: "REJECTED",
+      commandId: "cmd",
+      matchId: scoreboardProjection.matchId,
+      currentSeq: 3,
+      appendedEvents: [],
+      reasonCode: "VALIDATION_ERROR",
+      message: "Active timeout already exists"
+    })).toEqual({ tone: "error", code: "VALIDATION_ERROR", text: "Active timeout already exists" });
+  });
+
+  test("builds timeout page sibling links", () => {
+    expect(Object.values(getTimeoutControlLinks(scoreboardProjection.matchId)).map((link) => link.href)).toContain(
+      `/public/scoreboard/${scoreboardProjection.matchId}`
+    );
   });
 });
 

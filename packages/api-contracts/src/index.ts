@@ -173,6 +173,25 @@ export const shotClockSetPayloadSchema = z.object({
   reason: z.string().max(500).nullable()
 });
 
+export const timeoutRequestedBySchema = z.enum([
+  "HEAD_COACH",
+  "ASSISTANT_COACH",
+  "BENCH",
+  "OFFICIAL",
+  "OTHER"
+]);
+
+export const timeoutGrantedPayloadSchema = z.object({
+  teamSide: z.enum(["HOME", "AWAY"]),
+  requestedBy: timeoutRequestedBySchema,
+  durationMs: z.number().int().min(1000).max(120000).default(60000),
+  reason: z.string().max(500).nullable()
+});
+
+export const timeoutEndedPayloadSchema = z.object({
+  reason: z.string().max(500).nullable()
+});
+
 export const correctionRequestPayloadSchema = z.object({
   targetSeq: z.number().int().positive(),
   correctionType: z.literal("SCORE_CORRECTION"),
@@ -242,6 +261,14 @@ export const shotClockSetCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: shotClockSetPayloadSchema
 });
 
+export const timeoutGrantCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: timeoutGrantedPayloadSchema
+});
+
+export const timeoutEndCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: timeoutEndedPayloadSchema
+});
+
 export const applyScoreCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: applyScoreCorrectionPayloadSchema
 });
@@ -277,6 +304,9 @@ export type PlayerFoulAddedPayload = z.infer<typeof playerFoulAddedPayloadSchema
 export type GameClockSetPayload = z.infer<typeof gameClockSetPayloadSchema>;
 export type ShotClockResetPayload = z.infer<typeof shotClockResetPayloadSchema>;
 export type ShotClockSetPayload = z.infer<typeof shotClockSetPayloadSchema>;
+export type TimeoutRequestedBy = z.infer<typeof timeoutRequestedBySchema>;
+export type TimeoutGrantedPayload = z.infer<typeof timeoutGrantedPayloadSchema>;
+export type TimeoutEndedPayload = z.infer<typeof timeoutEndedPayloadSchema>;
 export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
 export type AddTeamFoulCommand = z.infer<typeof addTeamFoulCommandSchema>;
 export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
@@ -285,6 +315,8 @@ export type GameClockStopCommand = z.infer<typeof gameClockStopCommandSchema>;
 export type GameClockSetCommand = z.infer<typeof gameClockSetCommandSchema>;
 export type ShotClockResetCommand = z.infer<typeof shotClockResetCommandSchema>;
 export type ShotClockSetCommand = z.infer<typeof shotClockSetCommandSchema>;
+export type TimeoutGrantCommand = z.infer<typeof timeoutGrantCommandSchema>;
+export type TimeoutEndCommand = z.infer<typeof timeoutEndCommandSchema>;
 export type CorrectionRequestPayload = z.infer<typeof correctionRequestPayloadSchema>;
 export type ApplyScoreCorrectionPayload = z.infer<typeof applyScoreCorrectionPayloadSchema>;
 export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSchema>;
@@ -304,6 +336,8 @@ export type MatchEventType =
   | "GAME_CLOCK_SET"
   | "SHOT_CLOCK_RESET"
   | "SHOT_CLOCK_SET"
+  | "TIMEOUT_GRANTED"
+  | "TIMEOUT_ENDED"
   | "CORRECTION_REQUESTED"
   | "SCORE_REMOVED_BY_CORRECTION"
   | "CORRECTION_APPLIED"
@@ -343,6 +377,22 @@ export type ScoreboardProjection = {
     jerseyNumber: string | null;
     fouls: number;
   }>;
+  timeouts?: {
+    home: { used: number; remaining: number };
+    away: { used: number; remaining: number };
+  };
+  timeoutsByHalf?: {
+    firstHalf: { home: number; away: number };
+    secondHalf: { home: number; away: number };
+    overtime: { home: number; away: number };
+  };
+  activeTimeout?: {
+    teamSide: "HOME" | "AWAY";
+    startedAt: string;
+    durationMs: number;
+    remainingMs: number;
+    requestedBy: TimeoutRequestedBy;
+  } | null;
   period?: number;
   periodNumber: number;
   gameClockRemainingMs: number;
