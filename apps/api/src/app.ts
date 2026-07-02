@@ -11,13 +11,27 @@ import { registerDeployDiagnosticsRoutes } from "./routes/deployDiagnosticsRoute
 import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
+import {
+  noopProjectionRealtime,
+  registerProjectionRealtime,
+  type ProjectionRealtime
+} from "./realtime/projectionRealtime.js";
 
-export function buildApiApp(options: { pool?: Pool; frontendDistDir?: string | null } = {}) {
+export function buildApiApp(options: {
+  pool?: Pool;
+  frontendDistDir?: string | null;
+  realtime?: { enabled?: boolean; service?: ProjectionRealtime };
+} = {}) {
   const app = Fastify({
     logger: false
   });
   const pool = options.pool ?? createDatabasePool();
   const auth = createAuthHandlers(pool);
+  const realtime =
+    options.realtime?.service ??
+    (options.realtime?.enabled || process.env.SOCKET_IO_ENABLED === "true"
+      ? registerProjectionRealtime(app, pool)
+      : noopProjectionRealtime);
 
   app.setErrorHandler(fastifyErrorHandler);
   registerCors(app);
@@ -31,7 +45,7 @@ export function buildApiApp(options: { pool?: Pool; frontendDistDir?: string | n
 
   registerDeployDiagnosticsRoutes(app);
   registerAuthRoutes(app, pool, auth);
-  registerMatchRoutes(app, pool, auth);
+  registerMatchRoutes(app, pool, auth, realtime);
   registerMatchOfficialRoutes(app, pool, auth);
   registerOperatorRoutes(app, pool, auth);
   registerSpaFallback(

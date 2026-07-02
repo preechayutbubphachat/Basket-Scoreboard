@@ -44,6 +44,7 @@ import { getMatchSync } from "../matchEventStore/syncService.js";
 import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { apiError } from "../errors/apiErrors.js";
+import type { ProjectionRealtime } from "../realtime/projectionRealtime.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -63,7 +64,8 @@ export function registerMatchRoutes(
       getMatchId: (request: FastifyRequest) => string
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     requireCsrf: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
-  }
+  },
+  realtime: ProjectionRealtime
 ) {
   app.post(
     "/api/v1/matches",
@@ -249,6 +251,7 @@ export function registerMatchRoutes(
         user: request.user!
       });
 
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return reply.send(result);
     }
   );
@@ -286,6 +289,7 @@ export function registerMatchRoutes(
         user: request.user!
       });
 
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return reply.send(result);
     }
   );
@@ -323,6 +327,7 @@ export function registerMatchRoutes(
         user: request.user!
       });
 
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return reply.send(result);
     }
   );
@@ -346,7 +351,9 @@ export function registerMatchRoutes(
         return reply.send(commandMatchIdMismatch(command));
       }
 
-      return appendGameClockStartCommand({ pool, command, user: request.user! });
+      const result = await appendGameClockStartCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
     }
   );
 
@@ -360,7 +367,9 @@ export function registerMatchRoutes(
         return reply.send(commandMatchIdMismatch(command));
       }
 
-      return appendGameClockStopCommand({ pool, command, user: request.user! });
+      const result = await appendGameClockStopCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
     }
   );
 
@@ -374,7 +383,9 @@ export function registerMatchRoutes(
         return reply.send(commandMatchIdMismatch(command));
       }
 
-      return appendGameClockSetCommand({ pool, command, user: request.user! });
+      const result = await appendGameClockSetCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
     }
   );
 
@@ -388,7 +399,9 @@ export function registerMatchRoutes(
         return reply.send(commandMatchIdMismatch(command));
       }
 
-      return appendShotClockResetCommand({ pool, command, user: request.user! });
+      const result = await appendShotClockResetCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
     }
   );
 
@@ -402,7 +415,9 @@ export function registerMatchRoutes(
         return reply.send(commandMatchIdMismatch(command));
       }
 
-      return appendShotClockSetCommand({ pool, command, user: request.user! });
+      const result = await appendShotClockSetCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return result;
     }
   );
 
@@ -529,6 +544,28 @@ export function registerMatchRoutes(
       return listCorrectionsForMatch(pool, request.params.matchId);
     }
   );
+}
+
+async function emitProjectionUpdateForAcceptedCommand(
+  pool: Pool,
+  realtime: ProjectionRealtime,
+  matchId: string,
+  status: string
+) {
+  if (status !== "ACCEPTED") {
+    return;
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    const projection = await getScoreboardProjectionView(connection, matchId);
+    if (projection) {
+      realtime.emitProjectionUpdated(projection);
+    }
+  } finally {
+    connection.release();
+  }
 }
 
 function commandMatchIdMismatch(command: { commandId: string; matchId: string }) {

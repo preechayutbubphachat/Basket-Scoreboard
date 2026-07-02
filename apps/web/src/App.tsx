@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CommandResult,
   FoulType,
@@ -7,7 +7,7 @@ import type {
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
-import { ApiClientError, type AssignmentRecord } from "./lib/apiClient";
+import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import {
   canManageAssignments,
   createAssignmentFormState,
@@ -54,6 +54,12 @@ import {
   getClockControlFeedback,
   getClockControlLinks
 } from "./lib/clockControl";
+import {
+  applyRealtimeProjectionUpdate,
+  createPublicProjectionSocket,
+  getRealtimeConnectionLabel,
+  type RealtimeConnectionState
+} from "./lib/realtimeProjectionSync";
 
 type Route =
   | { name: "home" }
@@ -455,6 +461,65 @@ function OperatorMatchesPage() {
   );
 }
 
+function usePublicProjectionRealtime(
+  matchId: string,
+  projection: ScoreboardProjection | null,
+  setProjection: React.Dispatch<React.SetStateAction<ScoreboardProjection | null>>,
+  onProjectionReceived?: () => void
+) {
+  const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("POLLING_FALLBACK");
+  const projectionSeqRef = useRef(0);
+  const onProjectionReceivedRef = useRef(onProjectionReceived);
+
+  useEffect(() => {
+    projectionSeqRef.current = projection?.lastEventSeq ?? projection?.currentSeq ?? 0;
+  }, [projection]);
+
+  useEffect(() => {
+    onProjectionReceivedRef.current = onProjectionReceived;
+  }, [onProjectionReceived]);
+
+  useEffect(() => {
+    const socket = createPublicProjectionSocket(getDefaultApiBaseUrl());
+
+    const joinPublicRoom = () => {
+      setRealtimeState("CONNECTED");
+      socket.emit("match:join", {
+        matchId,
+        lastSeq: projectionSeqRef.current,
+        view: "PUBLIC_SCOREBOARD"
+      });
+    };
+
+    const applyProjection = (next: ScoreboardProjection) => {
+      setProjection((current) => applyRealtimeProjectionUpdate(current, next));
+      onProjectionReceivedRef.current?.();
+    };
+
+    socket.on("connect", joinPublicRoom);
+    socket.on("disconnect", () => setRealtimeState("RECONNECTING"));
+    socket.on("connect_error", () => setRealtimeState("POLLING_FALLBACK"));
+    socket.io.on("reconnect_attempt", () => setRealtimeState("RECONNECTING"));
+    socket.on("match:snapshot", (payload) => {
+      if (payload.matchId === matchId) {
+        applyProjection(payload.publicScoreboard);
+      }
+    });
+    socket.on("projection.updated", (payload) => {
+      if (payload.matchId === matchId) {
+        applyProjection(payload.publicScoreboard);
+      }
+    });
+    socket.on("match:error", () => setRealtimeState("POLLING_FALLBACK"));
+
+    return () => {
+      socket.close();
+    };
+  }, [matchId, setProjection]);
+
+  return realtimeState;
+}
+
 function OperatorScorePage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -462,6 +527,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitScore = canOperateScore(currentUser);
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection);
 
   async function loadState() {
     setLoading(true);
@@ -543,6 +609,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="score-actions">
             {buildScoreControlPanels(projection).map((panel) => (
@@ -598,6 +665,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitFoul = canOperateScore(currentUser);
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection);
 
   async function loadState() {
     setLoading(true);
@@ -673,6 +741,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="form-grid compact">
             <label>
@@ -747,6 +816,9 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitClock = canOperateScore(currentUser);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
+    setProjectionReceivedAtMs(Date.now());
+  });
 
   async function loadState() {
     setLoading(true);
@@ -837,6 +909,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Expected Seq</dt><dd>{clockState.expectedSeq}</dd></div>
+            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="button-row">
             <button
@@ -967,6 +1040,10 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
+    setProjectionReceivedAtMs(Date.now());
+    setMessage(null);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -1026,6 +1103,7 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
         </>
       ) : (
