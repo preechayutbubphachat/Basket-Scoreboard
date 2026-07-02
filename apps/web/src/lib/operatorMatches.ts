@@ -38,6 +38,10 @@ export function buildAdminMatchActions(matchId: string) {
       href: buildOperatorMatchTimeoutsLink(matchId),
       label: "Operator Timeouts"
     },
+    lifecycle: {
+      href: buildOperatorMatchLifecycleLink(matchId),
+      label: "Operator Lifecycle"
+    },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Public scoreboard"
@@ -59,6 +63,10 @@ export function buildOperatorMatchClockLink(matchId: string) {
 
 export function buildOperatorMatchTimeoutsLink(matchId: string) {
   return `/operator/matches/${encodeURIComponent(matchId)}/timeouts`;
+}
+
+export function buildOperatorMatchLifecycleLink(matchId: string) {
+  return `/operator/matches/${encodeURIComponent(matchId)}/lifecycle`;
 }
 
 export function buildPublicScoreboardLink(matchId: string) {
@@ -98,6 +106,11 @@ export function buildOperatorMatchCard(match: OperatorMatchSummary) {
       enabled: true,
       href: buildOperatorMatchTimeoutsLink(match.matchId),
       label: "Open Timeout Control"
+    },
+    lifecycleControl: {
+      enabled: true,
+      href: buildOperatorMatchLifecycleLink(match.matchId),
+      label: "Open Lifecycle Control"
     },
     publicScoreboard: {
       enabled: true,

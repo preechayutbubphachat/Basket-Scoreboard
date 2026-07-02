@@ -23,6 +23,7 @@ import {
   buildOperatorMatchClockLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
+  buildOperatorMatchLifecycleLink,
   buildOperatorMatchTimeoutsLink,
   buildPublicScoreboardLink,
   buildOperatorMatchCard,
@@ -67,6 +68,14 @@ import {
   type TimeoutControlTeamSide
 } from "./lib/timeoutControl";
 import {
+  buildLifecycleCommandPayload,
+  buildLifecycleControlState,
+  getLifecycleActionPlan,
+  getLifecycleControlFeedback,
+  getLifecycleControlLinks,
+  type LifecycleAction
+} from "./lib/lifecycleControl";
+import {
   applyRealtimeProjectionUpdate,
   createPublicProjectionSocket,
   getOperatorPollingIntervalMs,
@@ -87,6 +96,7 @@ type Route =
   | { name: "operator-fouls"; matchId: string }
   | { name: "operator-clock"; matchId: string }
   | { name: "operator-timeouts"; matchId: string }
+  | { name: "operator-lifecycle"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -115,6 +125,11 @@ function parseRoute(pathname: string): Route {
   const operatorTimeoutsMatchId = operatorTimeoutsMatch?.[1];
   if (operatorTimeoutsMatchId) {
     return { name: "operator-timeouts", matchId: decodeURIComponent(operatorTimeoutsMatchId) };
+  }
+  const operatorLifecycleMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/lifecycle$/);
+  const operatorLifecycleMatchId = operatorLifecycleMatch?.[1];
+  if (operatorLifecycleMatchId) {
+    return { name: "operator-lifecycle", matchId: decodeURIComponent(operatorLifecycleMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -471,6 +486,16 @@ function OperatorMatchesPage() {
                     }}
                   >
                     {card.timeoutControl.label}
+                  </a>
+                  <a
+                    className="button-link"
+                    href={card.lifecycleControl.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.lifecycleControl.href);
+                    }}
+                  >
+                    {card.lifecycleControl.label}
                   </a>
                   <a
                     className="button-link secondary"
@@ -1366,6 +1391,172 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   );
 }
 
+function OperatorLifecyclePage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingKey, setPendingKey] = useState<LifecycleAction | null>(null);
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const canSubmitLifecycle = canOperateScore(currentUser);
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
+
+  async function loadState() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadState();
+  }, [matchId]);
+
+  async function refreshProjectionSilently() {
+    try {
+      setProjection(await api.getMatchProjection(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => void refreshProjectionSilently(),
+      getOperatorPollingIntervalMs(realtimeState)
+    );
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState]);
+
+  async function refreshAfterCommand(lastSeq: number) {
+    const sync = await api.syncMatch(matchId, lastSeq);
+    setProjection(sync.projection ?? await api.getMatchProjection(matchId));
+  }
+
+  async function runLifecycleCommand(action: LifecycleAction) {
+    if (!projection || !canSubmitLifecycle) return;
+    const plan = getLifecycleActionPlan(projection)[action];
+    if (!plan.enabled) return;
+    if (plan.requiresConfirmation && !window.confirm(`${plan.label}?`)) {
+      return;
+    }
+
+    setPendingKey(action);
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+    const input = buildLifecycleCommandPayload(projection, reason);
+
+    try {
+      const result =
+        action === "startMatch"
+          ? await api.startMatch(matchId, input)
+          : action === "endPeriod"
+            ? await api.endPeriod(matchId, input)
+            : action === "startNextPeriod"
+              ? await api.startNextPeriod(matchId, input)
+              : action === "startOvertime"
+                ? await api.startOvertime(matchId, input)
+                : await api.finishMatch(matchId, input);
+
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage(getLifecycleControlFeedback(result));
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage(getLifecycleControlFeedback(result));
+      setReason("");
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  const lifecycleState = projection ? buildLifecycleControlState(projection) : null;
+  const actionPlan = projection ? getLifecycleActionPlan(projection) : null;
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Match Lifecycle</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!canSubmitLifecycle ? <ErrorMessage code="FORBIDDEN" message="Lifecycle operation permission is required." /> : null}
+        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
+      {!loading && !projection ? (
+        <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
+      ) : null}
+      {projection && lifecycleState && actionPlan ? (
+        <section className="panel score-control">
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{lifecycleState.status}</dd></div>
+            <div><dt>Period</dt><dd>{lifecycleState.periodNumber}</dd></div>
+            <div><dt>Type</dt><dd>{lifecycleState.periodType}</dd></div>
+            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Expected Seq</dt><dd>{lifecycleState.expectedSeq}</dd></div>
+            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
+          </dl>
+          <div className="clock-display" aria-label="Lifecycle summary">
+            <div>
+              <span>Score</span>
+              <strong>{lifecycleState.scoreLabel}</strong>
+              <small>{lifecycleState.finalLabel ?? "Official result pending"}</small>
+            </div>
+            <div>
+              <span>Game Clock</span>
+              <strong>{lifecycleState.clockLabel}</strong>
+              <small>{projection.gameClock?.running ? "Running" : "Stopped"}</small>
+            </div>
+          </div>
+          <label className="form-grid compact">
+            Reason
+            <input value={reason} onChange={(event) => setReason(event.target.value)} />
+          </label>
+          <div className="button-row">
+            {(Object.entries(actionPlan) as Array<[LifecycleAction, { enabled: boolean; label: string }]>).map(
+              ([action, plan]) => (
+                <button
+                  key={action}
+                  type="button"
+                  className="score-button"
+                  disabled={!canSubmitLifecycle || Boolean(pendingKey) || !plan.enabled}
+                  onClick={() => void runLifecycleCommand(action)}
+                >
+                  {pendingKey === action ? "Saving..." : plan.label}
+                </button>
+              )
+            )}
+          </div>
+          <div className="button-row">
+            {Object.values(getLifecycleControlLinks(matchId)).map((link) => (
+              <a
+                key={link.href}
+                className="button-link secondary"
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(link.href);
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -1446,9 +1637,16 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
+            <div><dt>Type</dt><dd>{projection.periodType === "OVERTIME" ? "OT" : "REG"}</dd></div>
             <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
+          {projection.status === "FINISHED" ? (
+            <Notice
+              tone="success"
+              text={`Final ${projection.finalScore?.home ?? projection.homeScore} - ${projection.finalScore?.away ?? projection.awayScore}`}
+            />
+          ) : null}
         </>
       ) : (
         <p>Loading scoreboard...</p>
@@ -1532,6 +1730,15 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                       }}
                     >
                       Timeouts
+                    </a>
+                    <a
+                      href={buildOperatorMatchLifecycleLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchLifecycleLink(match.matchId));
+                      }}
+                    >
+                      Lifecycle
                     </a>
                   </span>
                 )}
@@ -1795,6 +2002,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorTimeoutPage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-lifecycle":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorLifecyclePage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "public-scoreboard":

@@ -19,6 +19,7 @@ import {
   buildAdminMatchLink,
   buildOperatorMatchClockLink,
   buildOperatorMatchFoulsLink,
+  buildOperatorMatchLifecycleLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchTimeoutsLink,
   buildOperatorMatchCard,
@@ -56,6 +57,13 @@ import {
   getTimeoutControlLinks,
   timeoutRequestedByOptions
 } from "../../apps/web/src/lib/timeoutControl";
+import {
+  buildLifecycleCommandPayload,
+  buildLifecycleControlState,
+  getLifecycleActionPlan,
+  getLifecycleControlFeedback,
+  getLifecycleControlLinks
+} from "../../apps/web/src/lib/lifecycleControl";
 import {
   applyRealtimeProjectionUpdate,
   getOperatorPollingIntervalMs,
@@ -628,6 +636,57 @@ describe("web API client", () => {
     expect(endBody.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
+  test("posts lifecycle commands with CSRF, expectedSeq, and command identifiers", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValue(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [
+            { eventId: "33333333-3333-4333-8333-333333333333", seqNo: 4, eventType: "MATCH_STARTED" }
+          ],
+          reasonCode: null,
+          message: null
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.startMatch(scoreboardProjection.matchId, buildLifecycleCommandPayload(scoreboardProjection, "open"));
+    await client.endPeriod(scoreboardProjection.matchId, buildLifecycleCommandPayload(scoreboardProjection, "period done"));
+    await client.startNextPeriod(scoreboardProjection.matchId, buildLifecycleCommandPayload(scoreboardProjection, null));
+    await client.startOvertime(scoreboardProjection.matchId, buildLifecycleCommandPayload(scoreboardProjection, "tied"));
+    await client.finishMatch(scoreboardProjection.matchId, buildLifecycleCommandPayload(scoreboardProjection, "final"));
+
+    const lifecyclePaths = fetchMock.mock.calls.slice(1).map(([path]) => String(path));
+    expect(lifecyclePaths).toEqual([
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/lifecycle/start-match`,
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/lifecycle/end-period`,
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/lifecycle/start-next-period`,
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/lifecycle/start-overtime`,
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/lifecycle/finish-match`
+    ]);
+
+    for (const [, init] of fetchMock.mock.calls.slice(1)) {
+      const body = JSON.parse(String(init?.body));
+      expect(init).toEqual(expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      }));
+      expect(body).toMatchObject({
+        matchId: scoreboardProjection.matchId,
+        expectedSeq: 3
+      });
+      expect(body.payload).toHaveProperty("reason");
+      expect(body.commandId).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
+    }
+  });
+
   test("posts clock commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -842,6 +901,7 @@ describe("operator match landing UI policy", () => {
     expect(buildOperatorMatchFoulsLink("match 1")).toBe("/operator/matches/match%201/fouls");
     expect(buildOperatorMatchClockLink("match 1")).toBe("/operator/matches/match%201/clock");
     expect(buildOperatorMatchTimeoutsLink("match 1")).toBe("/operator/matches/match%201/timeouts");
+    expect(buildOperatorMatchLifecycleLink("match 1")).toBe("/operator/matches/match%201/lifecycle");
   });
 
   test("empty operator match state is explicit", () => {
@@ -856,6 +916,7 @@ describe("operator match landing UI policy", () => {
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
       timeouts: { href: "/operator/matches/match-1/timeouts", label: "Operator Timeouts" },
+      lifecycle: { href: "/operator/matches/match-1/lifecycle", label: "Operator Lifecycle" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
   });
@@ -1229,6 +1290,87 @@ describe("timeout control UI policy", () => {
     expect(Object.values(getTimeoutControlLinks(scoreboardProjection.matchId)).map((link) => link.href)).toContain(
       `/public/scoreboard/${scoreboardProjection.matchId}`
     );
+  });
+});
+
+describe("match lifecycle control UI policy", () => {
+  test("builds lifecycle state with safe defaults for old projections", () => {
+    expect(buildLifecycleControlState(scoreboardProjection)).toEqual({
+      status: "LIVE",
+      periodNumber: 1,
+      periodType: "REGULATION",
+      expectedSeq: 3,
+      scoreLabel: "Bangkok HOME 10 - 8 Chiang Mai AWAY",
+      clockLabel: "8:32",
+      finalLabel: null
+    });
+
+    expect(buildLifecycleControlState({
+      ...scoreboardProjection,
+      status: "FINISHED",
+      winnerSide: "HOME",
+      finalScore: { home: 91, away: 88 }
+    })).toMatchObject({
+      status: "FINISHED",
+      finalLabel: "Final: Bangkok HOME 91 - 88 Chiang Mai AWAY (HOME)"
+    });
+  });
+
+  test("enables only phase-safe lifecycle actions", () => {
+    expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "READY" })).toMatchObject({
+      startMatch: { enabled: true },
+      endPeriod: { enabled: false },
+      startNextPeriod: { enabled: false },
+      startOvertime: { enabled: false },
+      finishMatch: { enabled: false }
+    });
+
+    expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "PERIOD_BREAK", periodNumber: 4, homeScore: 80, awayScore: 80 }))
+      .toMatchObject({
+        startMatch: { enabled: false },
+        startNextPeriod: { enabled: false },
+        startOvertime: { enabled: true },
+        finishMatch: { enabled: false }
+      });
+  });
+
+  test("builds lifecycle command payload and feedback", () => {
+    expect(buildLifecycleCommandPayload(scoreboardProjection, " final buzzer ")).toEqual({
+      expectedSeq: 3,
+      payload: { reason: "final buzzer" }
+    });
+    expect(buildLifecycleCommandPayload(scoreboardProjection, "")).toEqual({
+      expectedSeq: 3,
+      payload: { reason: null }
+    });
+    expect(getLifecycleControlFeedback({
+      status: "ACCEPTED",
+      commandId: "cmd",
+      matchId: scoreboardProjection.matchId,
+      currentSeq: 4,
+      appendedEvents: [{ eventId: "event", seqNo: 4, eventType: "MATCH_FINISHED" }],
+      reasonCode: null,
+      message: null
+    })).toEqual({ tone: "success", text: "Match finished. Current seq 4." });
+    expect(getLifecycleControlFeedback({
+      status: "SYNC_REQUIRED",
+      commandId: "cmd",
+      matchId: scoreboardProjection.matchId,
+      currentSeq: 5,
+      appendedEvents: [],
+      reasonCode: "INVALID_EXPECTED_SEQ",
+      message: "Expected seq 3, current seq 5"
+    })).toEqual({ tone: "error", code: "INVALID_EXPECTED_SEQ", text: "Conflict: refreshed, please try again." });
+  });
+
+  test("builds lifecycle sibling links", () => {
+    expect(getLifecycleControlLinks(scoreboardProjection.matchId)).toEqual({
+      score: { href: `/operator/matches/${scoreboardProjection.matchId}/score`, label: "Score" },
+      fouls: { href: `/operator/matches/${scoreboardProjection.matchId}/fouls`, label: "Fouls" },
+      clock: { href: `/operator/matches/${scoreboardProjection.matchId}/clock`, label: "Clock" },
+      timeouts: { href: `/operator/matches/${scoreboardProjection.matchId}/timeouts`, label: "Timeouts" },
+      publicScoreboard: { href: `/public/scoreboard/${scoreboardProjection.matchId}`, label: "Public scoreboard" }
+    });
   });
 });
 
