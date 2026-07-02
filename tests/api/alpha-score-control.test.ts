@@ -3,8 +3,9 @@ import { buildApiApp } from "../../apps/api/src/app";
 
 const matchId = "11111111-1111-4111-8111-111111111111";
 
-function createProjectionFakePool(options: { found?: boolean } = {}) {
+function createProjectionFakePool(options: { found?: boolean; shotClockRunning?: boolean } = {}) {
   const found = options.found ?? true;
+  const shotClockRunning = options.shotClockRunning ?? false;
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   const connection = {
     async query(sql: string, params: unknown[] = []) {
@@ -31,8 +32,8 @@ function createProjectionFakePool(options: { found?: boolean } = {}) {
                     },
                     shotClock: {
                       remainingMs: 18000,
-                      running: false,
-                      lastStartedAt: null
+                      running: shotClockRunning,
+                      lastStartedAt: shotClockRunning ? "2026-07-01T09:59:30.000Z" : null
                     },
                     clockUpdatedAt: "2026-07-01T10:00:00.000Z",
                     periodNumber: 2,
@@ -161,7 +162,7 @@ describe("alpha score control routes", () => {
   });
 
   it("keeps public scoreboard read-only while returning public-safe team names", async () => {
-    const { pool } = createProjectionFakePool();
+    const { pool } = createProjectionFakePool({ shotClockRunning: true });
     const app = buildApiApp({ pool: pool as never });
 
     try {
@@ -181,6 +182,11 @@ describe("alpha score control routes", () => {
         teamFouls: { home: 2, away: 1 },
         gameClockRemainingMs: 430000,
         shotClockRemainingMs: 18000,
+        shotClock: {
+          remainingMs: 18000,
+          running: true,
+          lastStartedAt: "2026-07-01T09:59:30.000Z"
+        },
         lastEventSeq: 7
       });
       expect(JSON.stringify(body)).not.toContain("actor");
