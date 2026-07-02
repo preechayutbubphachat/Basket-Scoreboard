@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   CreatePlayerRequest,
+  LineupActionRequest,
+  MatchLineupResponse,
   MatchRosterPlayer,
   MatchRostersResponse,
   PlayerPosition,
   PlayerRecord,
+  RosterReadiness,
   RosterStatus,
   UpdatePlayerRequest,
   UpdateRosterPlayerRequest
@@ -28,6 +31,11 @@ type MatchRow = RowDataPacket & {
   home_team_id: string | null;
   away_team_id: string | null;
   status: string;
+};
+type RosterConfirmationRow = RowDataPacket & {
+  team_side: "HOME" | "AWAY";
+  reason: string | null;
+  confirmed_by_user_id: string | null;
 };
 type RosterRow = RowDataPacket & {
   roster_player_id: string;
@@ -158,7 +166,169 @@ export async function listMatchRoster(pool: Pool, matchId: string): Promise<Matc
     }
 
     const entries = await listMatchRosterEntries(connection, matchId);
-    return groupRoster(matchId, entries);
+    const confirmations = await listRosterConfirmations(connection, matchId);
+    return groupRoster(matchId, entries, confirmations);
+  } finally {
+    connection.release();
+  }
+}
+
+export async function listMatchLineup(pool: Pool, matchId: string): Promise<MatchLineupResponse | null> {
+  const connection = await pool.getConnection();
+
+  try {
+    const match = await getMatchTeams(connection, matchId);
+    if (!match) {
+      return null;
+    }
+
+    return getLineupResponse(connection, match);
+  } finally {
+    connection.release();
+  }
+}
+
+export async function selectLineupStarter(
+  pool: Pool,
+  options: { matchId: string; teamSide: "HOME" | "AWAY"; playerId: string; input: LineupActionRequest }
+) {
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const validation = await validateLineupMutation(connection, options);
+    if (!validation.ok) {
+      await connection.rollback();
+      return validation;
+    }
+
+    const entry = validation.entry;
+    if (!entry.isStarter) {
+      const entries = await listMatchRosterEntries(connection, options.matchId);
+      const starterCount = entries.filter((player) => player.teamSide === options.teamSide && player.isStarter).length;
+      if (starterCount >= 5) {
+        await connection.rollback();
+        return { ok: false as const, statusCode: 422, reasonCode: "VALIDATION_ERROR", message: "Alpha lineup allows at most 5 starters per team" };
+      }
+
+      await connection.query(
+        "UPDATE match_roster_players SET is_starter = 1 WHERE match_id = ? AND team_side = ? AND player_id = ?",
+        [options.matchId, options.teamSide, options.playerId]
+      );
+    }
+
+    const lineup = await getLineupResponse(connection, validation.match);
+    await connection.commit();
+    return { ok: true as const, statusCode: 200, lineup };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function removeLineupStarter(
+  pool: Pool,
+  options: { matchId: string; teamSide: "HOME" | "AWAY"; playerId: string; input: LineupActionRequest }
+) {
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const validation = await validateLineupMutation(connection, options, { allowInactive: true });
+    if (!validation.ok) {
+      await connection.rollback();
+      return validation;
+    }
+
+    await connection.query(
+      "UPDATE match_roster_players SET is_starter = 0 WHERE match_id = ? AND team_side = ? AND player_id = ?",
+      [options.matchId, options.teamSide, options.playerId]
+    );
+
+    const lineup = await getLineupResponse(connection, validation.match);
+    await connection.commit();
+    return { ok: true as const, statusCode: 200, lineup };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function setLineupCaptain(
+  pool: Pool,
+  options: { matchId: string; teamSide: "HOME" | "AWAY"; playerId: string; input: LineupActionRequest }
+) {
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const validation = await validateLineupMutation(connection, options);
+    if (!validation.ok) {
+      await connection.rollback();
+      return validation;
+    }
+
+    await connection.query(
+      "UPDATE match_roster_players SET is_captain = 0 WHERE match_id = ? AND team_side = ?",
+      [options.matchId, options.teamSide]
+    );
+    await connection.query(
+      "UPDATE match_roster_players SET is_captain = 1 WHERE match_id = ? AND team_side = ? AND player_id = ?",
+      [options.matchId, options.teamSide, options.playerId]
+    );
+
+    const lineup = await getLineupResponse(connection, validation.match);
+    await connection.commit();
+    return { ok: true as const, statusCode: 200, lineup };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function confirmLineupRoster(
+  pool: Pool,
+  options: { matchId: string; teamSide: "HOME" | "AWAY"; input: LineupActionRequest; actorUserId: string | null }
+) {
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    const match = await getMatchTeams(connection, options.matchId);
+    if (!match) {
+      await connection.rollback();
+      return { ok: false as const, statusCode: 404, reasonCode: "MATCH_NOT_FOUND", message: "Match was not found" };
+    }
+    if (isFinishedMatch(match.status)) {
+      await connection.rollback();
+      return { ok: false as const, statusCode: 422, reasonCode: "VALIDATION_ERROR", message: "Finished matches cannot be changed" };
+    }
+
+    const entries = await listMatchRosterEntries(connection, options.matchId);
+    const sideEntries = entries.filter((player) => player.teamSide === options.teamSide);
+    const starterCount = sideEntries.filter((player) => player.isStarter).length;
+    if (starterCount !== 5) {
+      await connection.rollback();
+      return { ok: false as const, statusCode: 422, reasonCode: "VALIDATION_ERROR", message: "Alpha lineup requires exactly 5 starters to confirm roster" };
+    }
+
+    await connection.query(
+      "INSERT INTO match_roster_confirmations (confirmation_id, match_id, team_side, confirmed_by_user_id, reason) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE confirmed_at = CURRENT_TIMESTAMP, confirmed_by_user_id = VALUES(confirmed_by_user_id), reason = VALUES(reason), updated_at = CURRENT_TIMESTAMP",
+      [randomUUID(), options.matchId, options.teamSide, options.actorUserId, options.input.reason ?? null]
+    );
+
+    const lineup = await getLineupResponse(connection, match);
+    await connection.commit();
+    return { ok: true as const, statusCode: 200, lineup };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
   } finally {
     connection.release();
   }
@@ -301,12 +471,77 @@ async function listMatchRosterEntries(connection: PoolConnection, matchId: strin
   return rows.map(toRosterPlayer);
 }
 
+async function listRosterConfirmations(connection: PoolConnection, matchId: string) {
+  const [rows] = await connection.query<RosterConfirmationRow[]>(
+    "SELECT team_side, confirmed_by_user_id, reason FROM match_roster_confirmations WHERE match_id = ?",
+    [matchId]
+  );
+  return new Set(rows.map((row) => row.team_side));
+}
+
 async function getRosterEntryForPlayer(connection: PoolConnection, matchId: string, playerId: string) {
   const [rows] = await connection.query<RosterRow[]>(
     "SELECT roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, position, roster_status, is_starter, is_captain FROM match_roster_players mrp WHERE mrp.match_id = ? AND mrp.player_id = ?",
     [matchId, playerId]
   );
   return rows[0] ? toRosterPlayer(rows[0]) : null;
+}
+
+async function getRosterEntryForMatchSidePlayer(
+  connection: PoolConnection,
+  matchId: string,
+  teamSide: "HOME" | "AWAY",
+  playerId: string
+) {
+  const [rows] = await connection.query<RosterRow[]>(
+    "SELECT roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, position, roster_status, is_starter, is_captain FROM match_roster_players mrp WHERE mrp.match_id = ? AND mrp.team_side = ? AND mrp.player_id = ?",
+    [matchId, teamSide, playerId]
+  );
+  return rows[0] ? toRosterPlayer(rows[0]) : null;
+}
+
+async function validateLineupMutation(
+  connection: PoolConnection,
+  options: { matchId: string; teamSide: "HOME" | "AWAY"; playerId: string },
+  validationOptions: { allowInactive?: boolean } = {}
+) {
+  const match = await getMatchTeams(connection, options.matchId);
+  if (!match) {
+    return { ok: false as const, statusCode: 404, reasonCode: "MATCH_NOT_FOUND", message: "Match was not found" };
+  }
+  if (isFinishedMatch(match.status)) {
+    return { ok: false as const, statusCode: 422, reasonCode: "VALIDATION_ERROR", message: "Finished matches cannot be changed" };
+  }
+  const entry = await getRosterEntryForMatchSidePlayer(connection, options.matchId, options.teamSide, options.playerId);
+  if (!entry) {
+    return { ok: false as const, statusCode: 404, reasonCode: "MATCH_NOT_FOUND", message: "Roster player was not found" };
+  }
+  if (!validationOptions.allowInactive && entry.status === "INACTIVE") {
+    return { ok: false as const, statusCode: 422, reasonCode: "VALIDATION_ERROR", message: "Inactive roster players cannot be selected" };
+  }
+  return { ok: true as const, match, entry };
+}
+
+async function getLineupResponse(connection: PoolConnection, match: MatchRow): Promise<MatchLineupResponse> {
+  const entries = await listMatchRosterEntries(connection, match.match_id);
+  const confirmations = await listRosterConfirmations(connection, match.match_id);
+  const homePlayers = entries.filter((entry) => entry.teamSide === "HOME");
+  const awayPlayers = entries.filter((entry) => entry.teamSide === "AWAY");
+  return {
+    matchId: match.match_id,
+    home: {
+      teamId: match.home_team_id,
+      teamName: null,
+      players: homePlayers,
+      readiness: buildReadiness(homePlayers, confirmations.has("HOME"))
+    },
+    away: {
+      teamId: match.away_team_id,
+      teamName: null,
+      players: awayPlayers,
+      readiness: buildReadiness(awayPlayers, confirmations.has("AWAY"))
+    }
+  };
 }
 
 function toPlayerRecord(row: PlayerRow): PlayerRecord {
@@ -342,14 +577,37 @@ function toRosterPlayer(row: RosterRow): MatchRosterPlayer {
   };
 }
 
-function groupRoster(matchId: string, entries: MatchRosterPlayer[]): MatchRostersResponse {
+function groupRoster(matchId: string, entries: MatchRosterPlayer[], confirmations: Set<"HOME" | "AWAY">): MatchRostersResponse {
+  const home = entries.filter((entry) => entry.teamSide === "HOME");
+  const away = entries.filter((entry) => entry.teamSide === "AWAY");
   return {
     matchId,
     rosters: {
-      HOME: entries.filter((entry) => entry.teamSide === "HOME"),
-      AWAY: entries.filter((entry) => entry.teamSide === "AWAY")
+      HOME: home,
+      AWAY: away
+    },
+    readiness: {
+      home: buildReadiness(home, confirmations.has("HOME")),
+      away: buildReadiness(away, confirmations.has("AWAY"))
     }
   };
+}
+
+function buildReadiness(players: MatchRosterPlayer[], confirmed: boolean): RosterReadiness {
+  const starterCount = players.filter((player) => player.isStarter).length;
+  const captainSet = players.some((player) => player.isCaptain);
+  return {
+    playerCount: players.length,
+    starterCount,
+    captainSet,
+    confirmed,
+    ready: confirmed && starterCount === 5
+  };
+}
+
+function isFinishedMatch(status: string) {
+  const normalized = status.toUpperCase();
+  return normalized === "FINISHED" || normalized === "FINAL";
 }
 
 function normalizePosition(value: unknown): PlayerPosition {
