@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
+  CommandResult,
   FoulType,
   MatchOfficialRoleCode,
   OperatorMatchSummary,
@@ -18,6 +19,7 @@ import {
 import {
   buildAdminMatchActions,
   buildAdminMatchLink,
+  buildOperatorMatchClockLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
   buildPublicScoreboardLink,
@@ -44,6 +46,14 @@ import {
   getFoulControlLinks,
   type FoulControlTeamSide
 } from "./lib/foulControl";
+import {
+  buildClockControlState,
+  buildGameClockSetPayload,
+  buildShotClockResetPayload,
+  buildShotClockSetPayload,
+  getClockControlFeedback,
+  getClockControlLinks
+} from "./lib/clockControl";
 
 type Route =
   | { name: "home" }
@@ -54,6 +64,7 @@ type Route =
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
+  | { name: "operator-clock"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -72,6 +83,11 @@ function parseRoute(pathname: string): Route {
   const operatorFoulsMatchId = operatorFoulsMatch?.[1];
   if (operatorFoulsMatchId) {
     return { name: "operator-fouls", matchId: decodeURIComponent(operatorFoulsMatchId) };
+  }
+  const operatorClockMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/clock$/);
+  const operatorClockMatchId = operatorClockMatch?.[1];
+  if (operatorClockMatchId) {
+    return { name: "operator-clock", matchId: decodeURIComponent(operatorClockMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -398,6 +414,16 @@ function OperatorMatchesPage() {
                     {card.foulControl.label}
                   </a>
                   <a
+                    className="button-link"
+                    href={card.clockControl.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.clockControl.href);
+                    }}
+                  >
+                    {card.clockControl.label}
+                  </a>
+                  <a
                     className="button-link secondary"
                     href={card.publicScoreboard.href}
                     onClick={(event) => {
@@ -696,6 +722,229 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   );
 }
 
+function OperatorClockPage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [gameMinutes, setGameMinutes] = useState(10);
+  const [gameSeconds, setGameSeconds] = useState(0);
+  const [shotSeconds, setShotSeconds] = useState(24);
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const canSubmitClock = canOperateScore(currentUser);
+
+  async function loadState() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const nextProjection = await api.getMatchProjection(matchId);
+      setProjection(nextProjection);
+      setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
+      setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
+      setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadState();
+  }, [matchId]);
+
+  async function refreshAfterCommand(lastSeq: number) {
+    const sync = await api.syncMatch(matchId, lastSeq);
+    const nextProjection = sync.projection ?? await api.getMatchProjection(matchId);
+    setProjection(nextProjection);
+    setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
+    setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
+    setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
+  }
+
+  async function runClockCommand(key: string, command: () => Promise<CommandResult>) {
+    if (!projection || !canSubmitClock) return;
+    setPendingKey(key);
+    setMessage(null);
+    const previousSeq = projection.currentSeq;
+
+    try {
+      const result = await command();
+      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        setMessage(getClockControlFeedback(result));
+        await refreshAfterCommand(previousSeq);
+        return;
+      }
+
+      await refreshAfterCommand(previousSeq);
+      setMessage(getClockControlFeedback(result));
+      setReason("");
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  const clockState = projection ? buildClockControlState(projection) : null;
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Clock Control</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!canSubmitClock ? <ErrorMessage code="FORBIDDEN" message="Clock operation permission is required." /> : null}
+        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
+      {!loading && !projection ? (
+        <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
+      ) : null}
+      {projection && clockState ? (
+        <section className="panel score-control">
+          <div className="clock-display" aria-label="Clock state">
+            <div>
+              <span>Game Clock</span>
+              <strong>{clockState.gameClockLabel}</strong>
+              <small>{clockState.gameClockRunning ? "Running" : "Stopped"}</small>
+            </div>
+            <div>
+              <span>Shot Clock</span>
+              <strong>{clockState.shotClockLabel}</strong>
+              <small>{clockState.shotClockRunning ? "Running" : "Stopped"}</small>
+            </div>
+          </div>
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{projection.status}</dd></div>
+            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
+            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
+            <div><dt>Expected Seq</dt><dd>{clockState.expectedSeq}</dd></div>
+          </dl>
+          <div className="button-row">
+            <button
+              type="button"
+              className="score-button"
+              disabled={!canSubmitClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("game-start", () =>
+                api.startGameClock(matchId, { expectedSeq: projection.currentSeq })
+              )}
+            >
+              Start Game Clock
+            </button>
+            <button
+              type="button"
+              className="score-button"
+              disabled={!canSubmitClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("game-stop", () =>
+                api.stopGameClock(matchId, { expectedSeq: projection.currentSeq })
+              )}
+            >
+              Stop Game Clock
+            </button>
+            <button
+              type="button"
+              className="score-button"
+              disabled={!canSubmitClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("shot-24", () =>
+                api.resetShotClock(matchId, buildShotClockResetPayload(projection, 24000, reason))
+              )}
+            >
+              Reset Shot 24
+            </button>
+            <button
+              type="button"
+              className="score-button"
+              disabled={!canSubmitClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("shot-14", () =>
+                api.resetShotClock(matchId, buildShotClockResetPayload(projection, 14000, reason))
+              )}
+            >
+              Reset Shot 14
+            </button>
+          </div>
+          <div className="form-grid compact">
+            <label>
+              Game minutes
+              <input
+                type="number"
+                min="0"
+                max="10"
+                value={gameMinutes}
+                onChange={(event) => setGameMinutes(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Game seconds
+              <input
+                type="number"
+                min="0"
+                max="59"
+                value={gameSeconds}
+                onChange={(event) => setGameSeconds(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Shot seconds
+              <input
+                type="number"
+                min="0"
+                max="24"
+                value={shotSeconds}
+                onChange={(event) => setShotSeconds(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Reason
+              <input value={reason} onChange={(event) => setReason(event.target.value)} />
+            </label>
+          </div>
+          <div className="button-row">
+            <button
+              type="button"
+              disabled={!canSubmitClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("game-set", () =>
+                api.setGameClock(matchId, buildGameClockSetPayload(projection, {
+                  minutes: gameMinutes,
+                  seconds: gameSeconds,
+                  reason
+                }))
+              )}
+            >
+              Set Game Clock
+            </button>
+            <button
+              type="button"
+              disabled={!canSubmitClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("shot-set", () =>
+                api.setShotClock(matchId, buildShotClockSetPayload(projection, { seconds: shotSeconds, reason }))
+              )}
+            >
+              Set Shot Clock
+            </button>
+          </div>
+          <div className="button-row">
+            {Object.values(getClockControlLinks(matchId)).map((link) => (
+              <a
+                key={link.href}
+                className="button-link secondary"
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(link.href);
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -741,6 +990,18 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
                 <small>{panel.teamName}</small>
               </div>
             ))}
+          </div>
+          <div className="clock-display public-clock" aria-label="Public clock">
+            <div>
+              <span>Game Clock</span>
+              <strong>{buildClockControlState(projection).gameClockLabel}</strong>
+              <small>{buildClockControlState(projection).gameClockRunning ? "Running" : "Stopped"}</small>
+            </div>
+            <div>
+              <span>Shot Clock</span>
+              <strong>{buildClockControlState(projection).shotClockLabel}</strong>
+              <small>{buildClockControlState(projection).shotClockRunning ? "Running" : "Stopped"}</small>
+            </div>
           </div>
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
@@ -812,6 +1073,15 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                       }}
                     >
                       Fouls
+                    </a>
+                    <a
+                      href={buildOperatorMatchClockLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchClockLink(match.matchId));
+                      }}
+                    >
+                      Clock
                     </a>
                   </span>
                 )}
@@ -1063,6 +1333,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorFoulPage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-clock":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorClockPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "public-scoreboard":

@@ -24,6 +24,17 @@ function createProjectionFakePool(options: { found?: boolean } = {}) {
                     teamFouls: { home: 2, away: 1 },
                     teamFoulsByPeriod: { "2": { home: 2, away: 1 } },
                     playerFouls: [],
+                    gameClock: {
+                      remainingMs: 430000,
+                      running: true,
+                      lastStartedAt: "2026-07-01T09:59:00.000Z"
+                    },
+                    shotClock: {
+                      remainingMs: 18000,
+                      running: false,
+                      lastStartedAt: null
+                    },
+                    clockUpdatedAt: "2026-07-01T10:00:00.000Z",
                     periodNumber: 2,
                     gameClockRemainingMs: 430000,
                     shotClockRemainingMs: 18000,
@@ -128,6 +139,16 @@ describe("alpha score control routes", () => {
         awayScore: 9,
         teamFouls: { home: 2, away: 1 },
         playerFouls: [],
+        gameClock: {
+          remainingMs: 430000,
+          running: true,
+          lastStartedAt: "2026-07-01T09:59:00.000Z"
+        },
+        shotClock: {
+          remainingMs: 18000,
+          running: false,
+          lastStartedAt: null
+        },
         periodNumber: 2,
         status: "LIVE",
         currentSeq: 7,
@@ -158,6 +179,8 @@ describe("alpha score control routes", () => {
         homeScore: 12,
         awayScore: 9,
         teamFouls: { home: 2, away: 1 },
+        gameClockRemainingMs: 430000,
+        shotClockRemainingMs: 18000,
         lastEventSeq: 7
       });
       expect(JSON.stringify(body)).not.toContain("actor");
@@ -212,6 +235,10 @@ describe("alpha score control routes", () => {
         awayScore: 0,
         teamFouls: { home: 0, away: 0 },
         playerFouls: [],
+        gameClock: { remainingMs: 600000, running: false, lastStartedAt: null },
+        shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
+        gameClockRemainingMs: 600000,
+        shotClockRemainingMs: 24000,
         periodNumber: 1,
         status: "SCHEDULED",
         currentSeq: 0,
@@ -242,6 +269,10 @@ describe("alpha score control routes", () => {
         awayScore: 0,
         teamFouls: { home: 0, away: 0 },
         playerFouls: [],
+        gameClock: { remainingMs: 600000, running: false, lastStartedAt: null },
+        shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
+        gameClockRemainingMs: 600000,
+        shotClockRemainingMs: 24000,
         status: "SCHEDULED",
         lastEventSeq: 0
       });
@@ -391,6 +422,65 @@ describe("alpha score control routes", () => {
             foulType: "PERSONAL",
             reason: null
           }
+        }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_ASSIGNED" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects invalid game clock set payloads before appending an event", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const app = buildApiApp({ pool: {} as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/clock/game/set`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId,
+          expectedSeq: 0,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {
+            remainingMs: 700000,
+            reason: null
+          }
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: { reasonCode: "VALIDATION_ERROR" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("denies unassigned scorers for clock writes", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const app = buildApiApp({ pool: {} as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/clock/game/start`,
+        headers: {
+          "x-dev-user-role": "SCORER",
+          "x-dev-user-id": "00000000-0000-4000-8000-0000000000bb",
+          "x-dev-match-ids": "99999999-9999-4999-8999-999999999999"
+        },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId,
+          expectedSeq: 0,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {}
         }
       });
 

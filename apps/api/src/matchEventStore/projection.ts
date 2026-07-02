@@ -5,6 +5,11 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 
 type TeamFoulCount = { home: number; away: number };
+type ClockState = {
+  remainingMs: number;
+  running: boolean;
+  lastStartedAt: string | null;
+};
 
 export type PlayerFoulProjection = {
   playerId: string;
@@ -24,6 +29,9 @@ export type ScoreboardProjection = {
   periodNumber: number;
   gameClockRemainingMs: number;
   shotClockRemainingMs: number;
+  gameClock: ClockState;
+  shotClock: ClockState;
+  clockUpdatedAt: string | null;
   status: "READY" | "LIVE" | "FINAL";
   currentSeq: number;
   projectionVersion: "scoreboard-v1";
@@ -40,6 +48,9 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     periodNumber: 1,
     gameClockRemainingMs: 600000,
     shotClockRemainingMs: 24000,
+    gameClock: { remainingMs: 600000, running: false, lastStartedAt: null },
+    shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
+    clockUpdatedAt: null,
     status: "READY",
     currentSeq: 0,
     projectionVersion: "scoreboard-v1"
@@ -50,6 +61,8 @@ export function normalizeScoreboardProjection(
   projection: Partial<ScoreboardProjection> & { matchId: string }
 ): ScoreboardProjection {
   const periodNumber = numberOrDefault(projection.periodNumber, 1);
+  const gameClock = normalizeClockState(projection.gameClock, numberOrDefault(projection.gameClockRemainingMs, 600000));
+  const shotClock = normalizeClockState(projection.shotClock, numberOrDefault(projection.shotClockRemainingMs, 24000));
   return {
     matchId: projection.matchId,
     homeScore: numberOrDefault(projection.homeScore, 0),
@@ -70,8 +83,11 @@ export function normalizeScoreboardProjection(
           }))
       : [],
     periodNumber,
-    gameClockRemainingMs: numberOrDefault(projection.gameClockRemainingMs, 600000),
-    shotClockRemainingMs: numberOrDefault(projection.shotClockRemainingMs, 24000),
+    gameClockRemainingMs: gameClock.remainingMs,
+    shotClockRemainingMs: shotClock.remainingMs,
+    gameClock,
+    shotClock,
+    clockUpdatedAt: typeof projection.clockUpdatedAt === "string" ? projection.clockUpdatedAt : null,
     status:
       projection.status === "LIVE" || projection.status === "FINAL" || projection.status === "READY"
         ? projection.status
@@ -94,7 +110,102 @@ export function applyScoreAdded(
       payload.teamSide === "AWAY" ? projection.awayScore + payload.points : projection.awayScore,
     periodNumber: payload.periodNumber,
     gameClockRemainingMs: payload.gameClockRemainingMs,
+    gameClock: {
+      ...projection.gameClock,
+      remainingMs: payload.gameClockRemainingMs
+    },
     status: "LIVE",
+    currentSeq: seqNo
+  };
+}
+
+export function applyGameClockStarted(
+  projection: ScoreboardProjection,
+  payload: { startedAt: string; remainingMsBeforeStart: number },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    gameClockRemainingMs: payload.remainingMsBeforeStart,
+    gameClock: {
+      remainingMs: payload.remainingMsBeforeStart,
+      running: true,
+      lastStartedAt: payload.startedAt
+    },
+    clockUpdatedAt: payload.startedAt,
+    status: "LIVE",
+    currentSeq: seqNo
+  };
+}
+
+export function applyGameClockStopped(
+  projection: ScoreboardProjection,
+  payload: { stoppedAt: string; remainingMsAfterStop: number },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    gameClockRemainingMs: payload.remainingMsAfterStop,
+    gameClock: {
+      remainingMs: payload.remainingMsAfterStop,
+      running: false,
+      lastStartedAt: null
+    },
+    clockUpdatedAt: payload.stoppedAt,
+    currentSeq: seqNo
+  };
+}
+
+export function applyGameClockSet(
+  projection: ScoreboardProjection,
+  payload: { remainingMs: number; setAt: string },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    gameClockRemainingMs: payload.remainingMs,
+    gameClock: {
+      remainingMs: payload.remainingMs,
+      running: false,
+      lastStartedAt: null
+    },
+    clockUpdatedAt: payload.setAt,
+    currentSeq: seqNo
+  };
+}
+
+export function applyShotClockReset(
+  projection: ScoreboardProjection,
+  payload: { resetToMs: 24000 | 14000; resetAt: string },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    shotClockRemainingMs: payload.resetToMs,
+    shotClock: {
+      remainingMs: payload.resetToMs,
+      running: false,
+      lastStartedAt: null
+    },
+    clockUpdatedAt: payload.resetAt,
+    currentSeq: seqNo
+  };
+}
+
+export function applyShotClockSet(
+  projection: ScoreboardProjection,
+  payload: { remainingMs: number; setAt: string },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    shotClockRemainingMs: payload.remainingMs,
+    shotClock: {
+      remainingMs: payload.remainingMs,
+      running: false,
+      lastStartedAt: null
+    },
+    clockUpdatedAt: payload.setAt,
     currentSeq: seqNo
   };
 }
@@ -212,4 +323,21 @@ function normalizeTeamFoulsByPeriod(value: unknown): Record<string, TeamFoulCoun
       normalizeTeamFoulCount(fouls)
     ])
   );
+}
+
+function normalizeClockState(value: unknown, fallbackRemainingMs: number): ClockState {
+  if (!value || typeof value !== "object") {
+    return {
+      remainingMs: fallbackRemainingMs,
+      running: false,
+      lastStartedAt: null
+    };
+  }
+
+  const candidate = value as { remainingMs?: unknown; running?: unknown; lastStartedAt?: unknown };
+  return {
+    remainingMs: numberOrDefault(candidate.remainingMs, fallbackRemainingMs),
+    running: candidate.running === true,
+    lastStartedAt: typeof candidate.lastStartedAt === "string" ? candidate.lastStartedAt : null
+  };
 }

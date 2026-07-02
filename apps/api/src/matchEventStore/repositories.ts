@@ -190,6 +190,8 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
   const projection = row.projection_data ? parseProjectionJson(row.projection_data) : {};
   const currentSeq = numberOrDefault(projection.currentSeq, numberOrDefault(row.last_event_seq, 0));
   const periodNumber = numberOrDefault(projection.periodNumber, 1);
+  const gameClock = normalizeClockState(projection.gameClock, numberOrDefault(projection.gameClockRemainingMs, 600000));
+  const shotClock = normalizeClockState(projection.shotClock, numberOrDefault(projection.shotClockRemainingMs, 24000));
   const updatedAt =
     row.updated_at instanceof Date
       ? row.updated_at.toISOString()
@@ -207,11 +209,11 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
     playerFouls: Array.isArray(projection.playerFouls) ? projection.playerFouls : [],
     period: periodNumber,
     periodNumber,
-    gameClockRemainingMs: numberOrDefault(projection.gameClockRemainingMs, 600000),
-    shotClockRemainingMs:
-      projection.shotClockRemainingMs === null
-        ? null
-        : numberOrDefault(projection.shotClockRemainingMs, 24000),
+    gameClockRemainingMs: gameClock.remainingMs,
+    shotClockRemainingMs: shotClock.remainingMs,
+    gameClock,
+    shotClock,
+    clockUpdatedAt: typeof projection.clockUpdatedAt === "string" ? projection.clockUpdatedAt : updatedAt,
     status:
       typeof projection.status === "string"
         ? projection.status
@@ -223,7 +225,8 @@ export async function getScoreboardProjectionView(connection: PoolConnection, ma
     awayTeamId: row.away_team_id,
     awayTeamName: row.away_team_name ?? "AWAY",
     lastEventSeq: numberOrDefault(row.last_event_seq, currentSeq),
-    updatedAt
+    updatedAt,
+    serverTime: new Date().toISOString()
   } satisfies ApiScoreboardProjection;
 }
 
@@ -292,6 +295,23 @@ function normalizeTeamFoulsByPeriod(value: unknown) {
       normalizeTeamFoulCount(fouls)
     ])
   );
+}
+
+function normalizeClockState(value: unknown, fallbackRemainingMs: number) {
+  if (!value || typeof value !== "object") {
+    return {
+      remainingMs: fallbackRemainingMs,
+      running: false,
+      lastStartedAt: null
+    };
+  }
+
+  const candidate = value as { remainingMs?: unknown; running?: unknown; lastStartedAt?: unknown };
+  return {
+    remainingMs: numberOrDefault(candidate.remainingMs, fallbackRemainingMs),
+    running: candidate.running === true,
+    lastStartedAt: typeof candidate.lastStartedAt === "string" ? candidate.lastStartedAt : null
+  };
 }
 
 function parseProjectionJson(value: unknown): Partial<ScoreboardProjection> {

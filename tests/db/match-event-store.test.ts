@@ -93,6 +93,22 @@ function teamFoulCommand(
   };
 }
 
+function clockCommand(
+  matchId: string,
+  expectedSeq: number,
+  payload: Record<string, unknown> = {},
+  commandId = randomUUID()
+) {
+  return {
+    commandId,
+    matchId,
+    expectedSeq,
+    correlationId: randomUUID(),
+    clientTimestamp: new Date().toISOString(),
+    payload
+  };
+}
+
 function correctionRequestCommand(matchId: string, expectedSeq: number, targetSeq: number, commandId = randomUUID()) {
   return {
     commandId,
@@ -159,6 +175,122 @@ function rejectCorrectionCommand(
 }
 
 describeDb("match event store MVP", () => {
+  it("appends clock events, updates projection, deduplicates commands, and rejects stale expectedSeq", async () => {
+    const { app, pool } = await buildMigratedApp();
+
+    try {
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        headers: adminHeaders,
+        payload: {
+          matchCode: `CLOCK-${randomUUID()}`,
+          ruleProfileId: "FIBA_2024"
+        }
+      });
+      expect(createResponse.statusCode).toBe(201);
+      const created = createResponse.json<{ matchId: string }>();
+
+      const start = clockCommand(created.matchId, 0);
+      const startResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`,
+        headers: scorerHeaders(created.matchId),
+        payload: start
+      });
+      expect(startResponse.statusCode).toBe(200);
+      expect(startResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 1,
+        appendedEvents: [{ seqNo: 1, eventType: "GAME_CLOCK_STARTED" }]
+      });
+
+      const duplicateStart = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`,
+        headers: scorerHeaders(created.matchId),
+        payload: start
+      });
+      expect(duplicateStart.json()).toMatchObject({
+        status: "DUPLICATE_ACCEPTED",
+        currentSeq: 1,
+        appendedEvents: []
+      });
+
+      const stopResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/game/stop`,
+        headers: scorerHeaders(created.matchId),
+        payload: clockCommand(created.matchId, 1)
+      });
+      expect(stopResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 2,
+        appendedEvents: [{ seqNo: 2, eventType: "GAME_CLOCK_STOPPED" }]
+      });
+
+      const resetShotResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/shot/reset`,
+        headers: scorerHeaders(created.matchId),
+        payload: clockCommand(created.matchId, 2, { resetToMs: 14000, reason: null })
+      });
+      expect(resetShotResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 3,
+        appendedEvents: [{ seqNo: 3, eventType: "SHOT_CLOCK_RESET" }]
+      });
+
+      const staleResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/shot/set`,
+        headers: scorerHeaders(created.matchId),
+        payload: clockCommand(created.matchId, 1, { remainingMs: 12000, reason: null })
+      });
+      expect(staleResponse.json()).toMatchObject({
+        status: "SYNC_REQUIRED",
+        currentSeq: 3,
+        reasonCode: "INVALID_EXPECTED_SEQ"
+      });
+
+      const [eventRows] = await pool.query<RowDataPacket[]>(
+        "SELECT seq_no, event_type FROM match_events WHERE match_id = ? ORDER BY seq_no ASC",
+        [created.matchId]
+      );
+      expect(eventRows.map((event) => event.event_type)).toEqual([
+        "GAME_CLOCK_STARTED",
+        "GAME_CLOCK_STOPPED",
+        "SHOT_CLOCK_RESET"
+      ]);
+
+      const projectionResponse = await app.inject({
+        method: "GET",
+        url: `/api/v1/matches/${created.matchId}/projection`,
+        headers: scorerHeaders(created.matchId)
+      });
+      expect(projectionResponse.json()).toMatchObject({
+        currentSeq: 3,
+        lastEventSeq: 3,
+        gameClock: { running: false },
+        shotClock: { remainingMs: 14000, running: false },
+        shotClockRemainingMs: 14000
+      });
+
+      const publicResponse = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${created.matchId}/scoreboard`
+      });
+      expect(publicResponse.json()).toMatchObject({
+        gameClock: { running: false },
+        shotClock: { remainingMs: 14000 },
+        shotClockRemainingMs: 14000
+      });
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
   it("appends team foul events, updates projection, deduplicates commands, and rejects stale expectedSeq", async () => {
     const { app, pool } = await buildMigratedApp();
 
