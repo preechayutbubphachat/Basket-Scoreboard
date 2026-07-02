@@ -1,0 +1,160 @@
+import { createHash, randomUUID } from "node:crypto";
+import type { Pool } from "mysql2/promise";
+import type { AddScoreCommand, CommandResult } from "@basket-scoreboard/api-contracts";
+import { reasonCodes } from "@basket-scoreboard/api-contracts";
+import type { AuthenticatedUser } from "../auth/sessionAuth.js";
+import { insertAuditLog } from "./auditRepository.js";
+import {
+  ensurePlaceholderUser,
+  findDuplicateCommand,
+  getScoreboardProjection,
+  insertCommandResult,
+  lockMatchStream,
+  updateScoreboardProjection
+} from "./repositories.js";
+import { applyScoreAdded } from "./projection.js";
+
+function requestHash(command: AddScoreCommand) {
+  return createHash("sha256").update(JSON.stringify(command)).digest("hex");
+}
+
+export async function appendScoreAddedCommand(options: {
+  pool: Pool;
+  command: AddScoreCommand;
+  user: AuthenticatedUser;
+}): Promise<CommandResult> {
+  const connection = await options.pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+    await ensurePlaceholderUser(connection, options.user);
+
+    const duplicate = await findDuplicateCommand(
+      connection,
+      options.command.matchId,
+      options.command.commandId
+    );
+
+    if (duplicate) {
+      await connection.rollback();
+      return {
+        ...duplicate,
+        status: "DUPLICATE_ACCEPTED",
+        appendedEvents: []
+      };
+    }
+
+    const currentSeq = await lockMatchStream(connection, options.command.matchId);
+
+    if (currentSeq === null) {
+      await connection.rollback();
+      return rejected(options.command, reasonCodes.MATCH_NOT_FOUND, "Match stream was not found", 0);
+    }
+
+    if (currentSeq !== options.command.expectedSeq) {
+      await connection.rollback();
+      return {
+        status: "SYNC_REQUIRED",
+        commandId: options.command.commandId,
+        matchId: options.command.matchId,
+        currentSeq,
+        appendedEvents: [],
+        reasonCode: reasonCodes.INVALID_EXPECTED_SEQ,
+        message: `Expected seq ${options.command.expectedSeq}, current seq ${currentSeq}`
+      };
+    }
+
+    const nextSeq = currentSeq + 1;
+    const eventId = randomUUID();
+    const occurredAt = new Date(options.command.clientTimestamp);
+
+    await connection.query(
+      "INSERT INTO match_events (event_id, match_id, seq_no, event_type, payload, actor_user_id, actor_role, device_id, occurred_at, command_id, expected_seq, correlation_id, causation_id, reason, rule_profile_id) VALUES (?, ?, ?, 'SCORE_ADDED', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'FIBA_2024')",
+      [
+        eventId,
+        options.command.matchId,
+        nextSeq,
+        JSON.stringify(options.command.payload),
+        options.user.userId,
+        options.user.role,
+        options.user.deviceId,
+        occurredAt,
+        options.command.commandId,
+        options.command.expectedSeq,
+        options.command.correlationId,
+        options.command.payload.note
+      ]
+    );
+
+    await connection.query("UPDATE match_streams SET last_seq_no = ? WHERE match_id = ?", [
+      nextSeq,
+      options.command.matchId
+    ]);
+
+    const projection = await getScoreboardProjection(connection, options.command.matchId);
+
+    if (!projection) {
+      throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
+    }
+
+    const updatedProjection = applyScoreAdded(projection, options.command.payload, nextSeq);
+    await updateScoreboardProjection(connection, updatedProjection);
+    await insertAuditLog(connection, {
+      entityType: "match",
+      entityId: options.command.matchId,
+      action: "SCORE_ADDED",
+      actorUserId: options.user.userId,
+      actorRole: options.user.role,
+      deviceId: options.user.deviceId,
+      oldValue: projection,
+      newValue: updatedProjection,
+      reason: options.command.payload.note,
+      correlationId: options.command.correlationId,
+      causationId: eventId,
+      eventSeq: nextSeq
+    });
+
+    const result: CommandResult = {
+      status: "ACCEPTED",
+      commandId: options.command.commandId,
+      matchId: options.command.matchId,
+      currentSeq: nextSeq,
+      appendedEvents: [{ eventId, seqNo: nextSeq, eventType: "SCORE_ADDED" }],
+      reasonCode: null,
+      message: null
+    };
+
+    await insertCommandResult(connection, {
+      commandId: options.command.commandId,
+      matchId: options.command.matchId,
+      commandType: "score/add",
+      requestHash: requestHash(options.command),
+      result
+    });
+
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+function rejected(
+  command: AddScoreCommand,
+  reasonCode: string,
+  message: string,
+  currentSeq: number
+): CommandResult {
+  return {
+    status: "REJECTED",
+    commandId: command.commandId,
+    matchId: command.matchId,
+    currentSeq,
+    appendedEvents: [],
+    reasonCode,
+    message
+  };
+}

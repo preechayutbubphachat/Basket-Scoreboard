@@ -1,0 +1,89 @@
+import type {
+  AuthenticatedUser,
+  CommandResult,
+  ScoreAddedPayload,
+  ScoreboardProjection
+} from "@basket-scoreboard/api-contracts";
+import { buildPublicScoreboardLink } from "./operatorMatches";
+
+export const scorePointOptions = [1, 2, 3] as const;
+
+export type ScoreControlTeamSide = ScoreAddedPayload["teamSide"];
+export type ScoreControlPoint = ScoreAddedPayload["points"];
+
+export function buildScorePendingKey(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
+  return `${teamSide}-${points}`;
+}
+
+export function buildScoreControlPanels(projection: ScoreboardProjection) {
+  return (["HOME", "AWAY"] as const).map((teamSide) => ({
+    teamSide,
+    label: teamSide,
+    teamName:
+      teamSide === "HOME"
+        ? projection.homeTeamName ?? projection.homeTeamId ?? "Home"
+        : projection.awayTeamName ?? projection.awayTeamId ?? "Away",
+    score: teamSide === "HOME" ? projection.homeScore : projection.awayScore,
+    buttons: scorePointOptions.map((points) => ({
+      points,
+      label: `+${points}`,
+      pendingKey: buildScorePendingKey(teamSide, points)
+    }))
+  }));
+}
+
+export function buildScoreCommandPayload(
+  projection: ScoreboardProjection,
+  teamSide: ScoreControlTeamSide,
+  points: ScoreControlPoint
+) {
+  return {
+    expectedSeq: projection.currentSeq,
+    payload: {
+      teamSide,
+      points,
+      playerId: null,
+      periodNumber: projection.periodNumber,
+      gameClockRemainingMs: projection.gameClockRemainingMs,
+      note: null
+    }
+  };
+}
+
+export function getScoreControlPendingLabel(buttonKey: string, pendingKey: string | null) {
+  return pendingKey === buttonKey ? "Saving..." : `+${buttonKey.split("-")[1]}`;
+}
+
+export function getScoreControlFeedback(result: CommandResult) {
+  if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+    return {
+      tone: "error" as const,
+      code: "INVALID_EXPECTED_SEQ",
+      text: "Conflict: scoreboard refreshed, please try again."
+    };
+  }
+
+  if (result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED") {
+    return {
+      tone: "success" as const,
+      text: `Score updated. Current seq ${result.currentSeq}.`
+    };
+  }
+
+  return {
+    tone: "error" as const,
+    code: result.reasonCode ?? "INTERNAL_ERROR",
+    text: result.message ?? "Score command was rejected."
+  };
+}
+
+export function getScoreControlLinks(matchId: string, user: AuthenticatedUser | null) {
+  return {
+    operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
+    publicScoreboard: {
+      href: buildPublicScoreboardLink(matchId),
+      label: "Open Public Scoreboard"
+    },
+    adminMatches: user?.role === "ADMIN" ? { href: "/admin/matches", label: "Admin Match List" } : null
+  };
+}
