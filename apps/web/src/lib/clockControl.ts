@@ -2,6 +2,11 @@ import type { CommandResult, ScoreboardProjection } from "@basket-scoreboard/api
 import { buildOperatorMatchFoulsLink, buildOperatorMatchScoreLink, buildPublicScoreboardLink } from "./operatorMatches";
 
 export type ClockCommandKind = "game-start" | "game-stop" | "game-set" | "shot-reset-24" | "shot-reset-14" | "shot-set";
+type DisplayClock = {
+  remainingMs: number;
+  running: boolean;
+  lastStartedAt: string | null;
+};
 
 export function formatClockMs(remainingMs: number) {
   const safeMs = Math.max(0, Math.floor(remainingMs));
@@ -15,11 +20,57 @@ export function formatShotClockMs(remainingMs: number) {
   return String(Math.ceil(Math.max(0, remainingMs) / 1000));
 }
 
-export function buildClockControlState(projection: ScoreboardProjection) {
+export function deriveDisplayClockMs(input: {
+  clock: DisplayClock | null | undefined;
+  fallbackRemainingMs: number | null | undefined;
+  nowMs: number;
+  serverTime?: string | null | undefined;
+  receivedAtMs?: number | null | undefined;
+}) {
+  const remainingMs = input.clock?.remainingMs ?? input.fallbackRemainingMs ?? 0;
+
+  if (!input.clock?.running || !input.clock.lastStartedAt) {
+    return Math.max(0, remainingMs);
+  }
+
+  const startedAtMs = Date.parse(input.clock.lastStartedAt);
+  if (!Number.isFinite(startedAtMs)) {
+    return Math.max(0, remainingMs);
+  }
+
+  const serverTimeMs = input.serverTime ? Date.parse(input.serverTime) : NaN;
+  const effectiveServerNowMs =
+    Number.isFinite(serverTimeMs) && typeof input.receivedAtMs === "number"
+      ? serverTimeMs + Math.max(0, input.nowMs - input.receivedAtMs)
+      : input.nowMs;
+
+  return Math.max(0, remainingMs - Math.max(0, effectiveServerNowMs - startedAtMs));
+}
+
+export function buildClockControlState(
+  projection: ScoreboardProjection,
+  options: { nowMs?: number; receivedAtMs?: number | null } = {}
+) {
+  const nowMs = options.nowMs ?? Date.now();
+  const gameClockRemainingMs = deriveDisplayClockMs({
+    clock: projection.gameClock,
+    fallbackRemainingMs: projection.gameClockRemainingMs,
+    nowMs,
+    serverTime: projection.serverTime,
+    receivedAtMs: options.receivedAtMs
+  });
+  const shotClockRemainingMs = deriveDisplayClockMs({
+    clock: projection.shotClock,
+    fallbackRemainingMs: projection.shotClockRemainingMs ?? 24000,
+    nowMs,
+    serverTime: projection.serverTime,
+    receivedAtMs: options.receivedAtMs
+  });
+
   return {
-    gameClockLabel: formatClockMs(projection.gameClock?.remainingMs ?? projection.gameClockRemainingMs),
+    gameClockLabel: formatClockMs(gameClockRemainingMs),
     gameClockRunning: projection.gameClock?.running ?? false,
-    shotClockLabel: formatShotClockMs(projection.shotClock?.remainingMs ?? projection.shotClockRemainingMs ?? 24000),
+    shotClockLabel: formatShotClockMs(shotClockRemainingMs),
     shotClockRunning: projection.shotClock?.running ?? false,
     expectedSeq: projection.currentSeq
   };

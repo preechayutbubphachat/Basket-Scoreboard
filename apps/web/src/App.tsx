@@ -119,6 +119,18 @@ function useRoute() {
   return route;
 }
 
+function useLiveClockNow(enabled: boolean) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
+
+  return nowMs;
+}
+
 function ProtectedRoute({
   children,
   requireAdmin = false,
@@ -725,6 +737,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
 function OperatorClockPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [gameMinutes, setGameMinutes] = useState(10);
@@ -733,6 +746,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitClock = canOperateScore(currentUser);
+  const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
 
   async function loadState() {
     setLoading(true);
@@ -740,6 +754,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     try {
       const nextProjection = await api.getMatchProjection(matchId);
       setProjection(nextProjection);
+      setProjectionReceivedAtMs(Date.now());
       setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
       setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
       setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
@@ -758,6 +773,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     const sync = await api.syncMatch(matchId, lastSeq);
     const nextProjection = sync.projection ?? await api.getMatchProjection(matchId);
     setProjection(nextProjection);
+    setProjectionReceivedAtMs(Date.now());
     setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
     setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
     setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
@@ -787,7 +803,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     }
   }
 
-  const clockState = projection ? buildClockControlState(projection) : null;
+  const clockState = projection ? buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }) : null;
 
   return (
     <section className="stack">
@@ -948,7 +964,9 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
 function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
 
   useEffect(() => {
     let cancelled = false;
@@ -958,6 +976,7 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
         const next = await api.getPublicScoreboard(matchId);
         if (!cancelled) {
           setProjection(next);
+          setProjectionReceivedAtMs(Date.now());
           setMessage(null);
         }
       } catch (error) {
@@ -994,13 +1013,13 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
           <div className="clock-display public-clock" aria-label="Public clock">
             <div>
               <span>Game Clock</span>
-              <strong>{buildClockControlState(projection).gameClockLabel}</strong>
-              <small>{buildClockControlState(projection).gameClockRunning ? "Running" : "Stopped"}</small>
+              <strong>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).gameClockLabel}</strong>
+              <small>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).gameClockRunning ? "Running" : "Stopped"}</small>
             </div>
             <div>
               <span>Shot Clock</span>
-              <strong>{buildClockControlState(projection).shotClockLabel}</strong>
-              <small>{buildClockControlState(projection).shotClockRunning ? "Running" : "Stopped"}</small>
+              <strong>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockLabel}</strong>
+              <small>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockRunning ? "Running" : "Stopped"}</small>
             </div>
           </div>
           <dl className="state-strip">

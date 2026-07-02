@@ -43,6 +43,7 @@ import {
   buildGameClockSetPayload,
   buildShotClockResetPayload,
   buildShotClockSetPayload,
+  deriveDisplayClockMs,
   getClockControlFeedback
 } from "../../apps/web/src/lib/clockControl";
 import type {
@@ -921,6 +922,64 @@ describe("clock control UI policy", () => {
       shotClockRunning: false,
       expectedSeq: 3
     });
+  });
+
+  test("derives stopped clock display from authoritative remaining time", () => {
+    expect(
+      deriveDisplayClockMs({
+        clock: { remainingMs: 512000, running: false, lastStartedAt: null },
+        fallbackRemainingMs: 600000,
+        nowMs: Date.parse("2026-07-01T10:00:05.000Z")
+      })
+    ).toBe(512000);
+  });
+
+  test("derives running clock display using server time and client receipt time", () => {
+    expect(
+      deriveDisplayClockMs({
+        clock: {
+          remainingMs: 600000,
+          running: true,
+          lastStartedAt: "2026-07-01T10:00:00.000Z"
+        },
+        fallbackRemainingMs: 600000,
+        serverTime: "2026-07-01T10:00:01.000Z",
+        receivedAtMs: Date.parse("2026-07-01T10:00:02.000Z"),
+        nowMs: Date.parse("2026-07-01T10:00:04.500Z")
+      })
+    ).toBe(596500);
+  });
+
+  test("derived running clock display never goes below zero and resyncs with new polling projection", () => {
+    const firstProjection: ScoreboardProjection = {
+      ...scoreboardProjection,
+      gameClock: {
+        remainingMs: 1000,
+        running: true,
+        lastStartedAt: "2026-07-01T10:00:00.000Z"
+      },
+      gameClockRemainingMs: 1000,
+      serverTime: "2026-07-01T10:00:00.000Z"
+    };
+    const resyncedProjection: ScoreboardProjection = {
+      ...scoreboardProjection,
+      gameClock: {
+        remainingMs: 9000,
+        running: true,
+        lastStartedAt: "2026-07-01T10:01:00.000Z"
+      },
+      gameClockRemainingMs: 9000,
+      serverTime: "2026-07-01T10:01:00.000Z"
+    };
+
+    expect(buildClockControlState(firstProjection, {
+      nowMs: Date.parse("2026-07-01T10:00:05.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z")
+    }).gameClockLabel).toBe("0:00");
+    expect(buildClockControlState(resyncedProjection, {
+      nowMs: Date.parse("2026-07-01T10:01:02.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:01:00.000Z")
+    }).gameClockLabel).toBe("0:07");
   });
 
   test("builds game and shot clock command payloads from current projection", () => {
