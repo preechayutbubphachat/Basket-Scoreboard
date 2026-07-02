@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { io as createSocketClient, type Socket } from "socket.io-client";
 import { buildApiApp } from "../../apps/api/src/app";
+import { parseRealtimeSocketTransports } from "../../apps/api/src/realtime/projectionRealtime";
 import type { ScoreboardProjection } from "../../packages/api-contracts/src";
 
 const matchId = "11111111-1111-4111-8111-111111111111";
@@ -122,6 +123,12 @@ afterEach(() => {
 });
 
 describe("realtime projection sync", () => {
+  it("parses server transport env for Plesk polling-only compatibility", () => {
+    expect(parseRealtimeSocketTransports("polling")).toEqual(["polling"]);
+    expect(parseRealtimeSocketTransports("polling,websocket")).toEqual(["polling", "websocket"]);
+    expect(parseRealtimeSocketTransports(undefined)).toEqual(["polling", "websocket"]);
+  });
+
   it("allows public scoreboard clients to join a match room and receive a snapshot", async () => {
     const { pool } = createRealtimeFakePool();
     const { app, address } = await startRealtimeApp(pool);
@@ -140,6 +147,46 @@ describe("realtime projection sync", () => {
           awayTeamName: "AWAY",
           currentSeq: 0
         }
+      });
+    } finally {
+      socket.close();
+      await app.close();
+    }
+  });
+
+  it("allows public scoreboard clients to connect with polling transport only", async () => {
+    process.env.REALTIME_SOCKET_TRANSPORTS = "polling";
+    const { pool } = createRealtimeFakePool();
+    const { app, address } = await startRealtimeApp(pool);
+    const socket = createSocketClient(address, { transports: ["polling"], forceNew: true });
+
+    try {
+      await waitForSocketEvent(socket, "connect");
+      const snapshotPromise = waitForSocketEvent(socket, "match:snapshot");
+      socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
+      await expect(snapshotPromise).resolves.toMatchObject({
+        matchId,
+        publicScoreboard: { matchId }
+      });
+    } finally {
+      delete process.env.REALTIME_SOCKET_TRANSPORTS;
+      socket.close();
+      await app.close();
+    }
+  });
+
+  it("rejects socket write commands and keeps realtime notification-only", async () => {
+    const { pool } = createRealtimeFakePool();
+    const { app, address } = await startRealtimeApp(pool);
+    const socket = createSocketClient(address, { transports: ["websocket"], forceNew: true });
+
+    try {
+      await waitForSocketEvent(socket, "connect");
+      const rejectedPromise = waitForSocketEvent(socket, "COMMAND_REJECTED");
+      socket.emit("COMMAND_SUBMIT", { type: "score/add" });
+      await expect(rejectedPromise).resolves.toMatchObject({
+        reasonCode: "FORBIDDEN",
+        message: "Socket commands are disabled; use REST command endpoints"
       });
     } finally {
       socket.close();

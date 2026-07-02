@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Pool } from "mysql2/promise";
 import { Server as SocketIoServer } from "socket.io";
+import type { ServerOptions } from "socket.io";
 import {
   matchJoinPayloadSchema,
   reasonCodes,
@@ -20,7 +21,9 @@ export const noopProjectionRealtime: ProjectionRealtime = {
 
 export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): ProjectionRealtime {
   const io = new SocketIoServer(app.server, {
-    cors: buildSocketCorsOptions()
+    cors: buildSocketCorsOptions(),
+    path: "/socket.io",
+    transports: parseRealtimeSocketTransports(process.env.REALTIME_SOCKET_TRANSPORTS)
   });
 
   app.addHook("onClose", async () => {
@@ -92,6 +95,16 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
 
 export function matchRoom(matchId: string) {
   return `match:${matchId}`;
+}
+
+export function parseRealtimeSocketTransports(rawValue: string | undefined): NonNullable<ServerOptions["transports"]> {
+  const allowed = new Set(["polling", "websocket"] as const);
+  const parsed = (rawValue ?? "")
+    .split(",")
+    .map((transport) => transport.trim())
+    .filter((transport): transport is "polling" | "websocket" => allowed.has(transport as "polling" | "websocket"));
+
+  return parsed.length > 0 ? parsed : ["polling", "websocket"];
 }
 
 async function loadPublicProjection(pool: Pool, matchId: string) {
