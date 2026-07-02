@@ -28,6 +28,14 @@ import {
   createEmptyOperatorMatchesMessage
 } from "../../apps/web/src/lib/operatorMatches";
 import {
+  buildAdminRosterLink,
+  buildCreatePlayerPayload,
+  buildPlayerFoulCommandPayload,
+  buildScorePlayerOptions,
+  createPlayerFormState,
+  getRosterPlayersForSide
+} from "../../apps/web/src/lib/rosterControl";
+import {
   buildScoreCommandPayload,
   buildScoreControlPanels,
   getScoreControlFeedback,
@@ -75,6 +83,7 @@ import {
 } from "../../apps/web/src/lib/realtimeProjectionSync";
 import type {
   AuthenticatedUser,
+  MatchRostersResponse,
   ScoreAddedPayload,
   ScoreboardProjection
 } from "../../packages/api-contracts/src";
@@ -151,6 +160,28 @@ const scorePayload: ScoreAddedPayload = {
   periodNumber: 1,
   gameClockRemainingMs: 512000,
   note: null
+};
+
+const matchRosters: MatchRostersResponse = {
+  matchId: scoreboardProjection.matchId,
+  rosters: {
+    HOME: [
+      {
+        rosterPlayerId: "roster-home-1",
+        matchId: scoreboardProjection.matchId,
+        teamSide: "HOME",
+        teamId: "home-team",
+        playerId: "11111111-2222-4333-8444-555555555555",
+        displayNameSnapshot: "Narin Guard",
+        jerseyNumberSnapshot: "7",
+        position: "GUARD",
+        status: "ACTIVE",
+        isStarter: false,
+        isCaptain: false
+      }
+    ],
+    AWAY: []
+  }
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -561,6 +592,91 @@ describe("web API client", () => {
     expect(body.correlationId).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
+  test("loads rosters and posts player/roster mutations with CSRF", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: matchRosters }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { players: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { player: { playerId: "player-1" } } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { rosterPlayer: matchRosters.rosters.HOME[0] } }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getMatchRosters(scoreboardProjection.matchId)).resolves.toMatchObject(matchRosters);
+    await expect(client.listTeamPlayers("home-team")).resolves.toEqual([]);
+    await client.createPlayer("home-team", { displayName: "Narin Guard", jerseyNumber: "7", position: "GUARD", active: true });
+    await client.assignRosterPlayer(scoreboardProjection.matchId, "HOME", matchRosters.rosters.HOME[0].playerId);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/v1/matches/${scoreboardProjection.matchId}/rosters`,
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/v1/teams/home-team/players",
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      `/api/v1/matches/${scoreboardProjection.matchId}/rosters/HOME/players`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+  });
+
+  test("posts player foul commands with roster player id and CSRF", async () => {
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ACCEPTED",
+          commandId: "22222222-2222-4222-8222-222222222222",
+          matchId: scoreboardProjection.matchId,
+          currentSeq: 4,
+          appendedEvents: [{ eventId: "event", seqNo: 4, eventType: "PLAYER_FOUL_ADDED" }],
+          reasonCode: null,
+          message: null
+        })
+      );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await client.addPlayerFoul(scoreboardProjection.matchId, {
+      expectedSeq: 3,
+      payload: {
+        teamSide: "HOME",
+        playerId: matchRosters.rosters.HOME[0].playerId,
+        foulType: "PERSONAL",
+        reason: null
+      }
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/commands/foul/player/add`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(body).toMatchObject({
+      expectedSeq: 3,
+      payload: {
+        teamSide: "HOME",
+        playerId: matchRosters.rosters.HOME[0].playerId
+      }
+    });
+  });
+
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -912,12 +1028,41 @@ describe("operator match landing UI policy", () => {
     expect(buildAdminMatchLink("match-1")).toBe("/admin/matches/match-1/officials");
     expect(buildAdminMatchActions("match-1")).toEqual({
       officials: { href: "/admin/matches/match-1/officials", label: "Officials" },
+      rosters: { href: "/admin/matches/match-1/rosters", label: "Rosters" },
       operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
       timeouts: { href: "/operator/matches/match-1/timeouts", label: "Operator Timeouts" },
       lifecycle: { href: "/operator/matches/match-1/lifecycle", label: "Operator Lifecycle" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
+    });
+  });
+});
+
+describe("roster control UI policy", () => {
+  test("builds roster links and player form payloads", () => {
+    expect(buildAdminRosterLink("match 1")).toBe("/admin/matches/match%201/rosters");
+    expect(createPlayerFormState()).toEqual({ displayName: "", jerseyNumber: "", position: "UNKNOWN" });
+    expect(buildCreatePlayerPayload({ displayName: " Narin Guard ", jerseyNumber: " 7 ", position: "GUARD" }))
+      .toEqual({ displayName: "Narin Guard", jerseyNumber: "7", position: "GUARD", active: true });
+  });
+
+  test("builds roster-backed player foul and score attribution options", () => {
+    expect(getRosterPlayersForSide(matchRosters, "HOME")).toHaveLength(1);
+    expect(buildScorePlayerOptions(matchRosters, "HOME")).toEqual([
+      { playerId: matchRosters.rosters.HOME[0].playerId, label: "#7 Narin Guard" }
+    ]);
+    expect(buildPlayerFoulCommandPayload(scoreboardProjection, matchRosters.rosters.HOME[0], {
+      foulType: "PERSONAL",
+      reason: " reach "
+    })).toEqual({
+      expectedSeq: 3,
+      payload: {
+        teamSide: "HOME",
+        playerId: matchRosters.rosters.HOME[0].playerId,
+        foulType: "PERSONAL",
+        reason: "reach"
+      }
     });
   });
 });

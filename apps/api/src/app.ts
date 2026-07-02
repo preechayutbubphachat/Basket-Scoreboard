@@ -11,6 +11,7 @@ import { registerDeployDiagnosticsRoutes } from "./routes/deployDiagnosticsRoute
 import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
+import { registerRosterRoutes } from "./routes/rosterRoutes.js";
 import {
   noopProjectionRealtime,
   registerProjectionRealtime,
@@ -47,6 +48,7 @@ export function buildApiApp(options: {
   registerAuthRoutes(app, pool, auth);
   registerMatchRoutes(app, pool, auth, realtime);
   registerMatchOfficialRoutes(app, pool, auth);
+  registerRosterRoutes(app, pool, auth);
   registerOperatorRoutes(app, pool, auth);
   registerSpaFallback(
     app,

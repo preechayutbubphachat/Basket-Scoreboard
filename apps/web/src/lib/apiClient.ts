@@ -1,10 +1,15 @@
 import type {
   AuthenticatedUser,
   CommandResult,
+  CreatePlayerRequest,
   MatchAssignment,
   MatchOfficialRoleCode,
+  MatchRosterPlayer,
+  MatchRostersResponse,
   MatchSyncResponse,
   OperatorMatchSummary,
+  PlayerFoulAddedPayload,
+  PlayerRecord,
   ReasonCode,
   ScoreAddedPayload,
   ScoreboardProjection,
@@ -214,13 +219,42 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       const data = await request<{ matches: OperatorMatchSummary[] }>("/operator/matches");
       return data.matches;
     },
-    async getAdminMatches() {
+  async getAdminMatches() {
       const data = await request<{ matches: OperatorMatchSummary[] }>("/matches");
       return data.matches;
     },
     async createSmokeMatch() {
       const data = await request<SmokeMatchResponse>("/matches/smoke", { method: "POST" });
       return data;
+    },
+    async listTeamPlayers(teamId: string) {
+      const data = await request<{ players: PlayerRecord[] }>(`/teams/${encodeURIComponent(teamId)}/players`);
+      return data.players;
+    },
+    async createPlayer(teamId: string, input: CreatePlayerRequest) {
+      const data = await request<{ player: PlayerRecord }>(`/teams/${encodeURIComponent(teamId)}/players`, {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data.player;
+    },
+    async getMatchRosters(matchId: string) {
+      return request<MatchRostersResponse>(
+        `/matches/${encodeURIComponent(matchId)}/rosters`,
+        {},
+        false,
+        { acceptRawSuccess: false }
+      );
+    },
+    async assignRosterPlayer(matchId: string, teamSide: "HOME" | "AWAY", playerId: string) {
+      const data = await request<{ rosterPlayer: MatchRosterPlayer }>(
+        `/matches/${encodeURIComponent(matchId)}/rosters/${teamSide}/players`,
+        {
+          method: "POST",
+          body: JSON.stringify({ playerId })
+        }
+      );
+      return data.rosterPlayer;
     },
     async getMatchState(matchId: string) {
       return request<ScoreboardProjection | null>(
@@ -267,6 +301,24 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async addTeamFoul(matchId: string, input: { expectedSeq: number; payload: TeamFoulAddedPayload }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/foul/team/add`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            commandId: createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: createCommandId(),
+            clientTimestamp: new Date().toISOString(),
+            payload: input.payload
+          })
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async addPlayerFoul(matchId: string, input: { expectedSeq: number; payload: PlayerFoulAddedPayload }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/foul/player/add`,
         {
           method: "POST",
           body: JSON.stringify({

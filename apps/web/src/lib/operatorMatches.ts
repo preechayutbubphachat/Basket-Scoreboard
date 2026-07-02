@@ -22,6 +22,10 @@ export function buildAdminMatchActions(matchId: string) {
       href: buildAdminMatchLink(matchId),
       label: "Officials"
     },
+    rosters: {
+      href: `/admin/matches/${encodeURIComponent(matchId)}/rosters`,
+      label: "Rosters"
+    },
     operator: {
       href: buildOperatorMatchScoreLink(matchId),
       label: "Operator Score"
