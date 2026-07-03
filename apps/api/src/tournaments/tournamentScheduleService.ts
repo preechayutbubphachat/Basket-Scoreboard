@@ -115,7 +115,7 @@ export async function getTournamentSchedule(
   };
 }
 
-async function getTournamentSummary(
+export async function getTournamentSummary(
   pool: Pool,
   tournamentId: string,
   options: { publicOnly?: boolean }

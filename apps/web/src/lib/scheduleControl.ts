@@ -1,4 +1,4 @@
-import type { TournamentScheduleMatch } from "@basket-scoreboard/api-contracts";
+import type { TournamentScheduleMatch, TournamentStandingsRow } from "@basket-scoreboard/api-contracts";
 
 export type ScheduleStatusFilter = "all" | "scheduled" | "live" | "finished";
 
@@ -6,8 +6,16 @@ export function buildAdminTournamentScheduleLink(tournamentId: string) {
   return `/admin/tournaments/${encodeURIComponent(tournamentId)}/schedule`;
 }
 
+export function buildAdminTournamentStandingsLink(tournamentId: string) {
+  return `/admin/tournaments/${encodeURIComponent(tournamentId)}/standings`;
+}
+
 export function buildPublicTournamentScheduleLink(tournamentId: string) {
   return `/public/tournaments/${encodeURIComponent(tournamentId)}/schedule`;
+}
+
+export function buildPublicTournamentStandingsLink(tournamentId: string) {
+  return `/public/tournaments/${encodeURIComponent(tournamentId)}/standings`;
 }
 
 export function buildScheduleStatusFilters(): Array<{ value: ScheduleStatusFilter; label: string }> {
@@ -54,5 +62,30 @@ export function getPublicScheduleLinks(match: TournamentScheduleMatch) {
 }
 
 export function hasPublicScheduleMutationControls() {
+  return false;
+}
+
+export function buildStandingsRowMeta(row: TournamentStandingsRow, provisionalRank: number) {
+  return {
+    provisionalRank,
+    recordLabel: `${row.wins}-${row.losses}`,
+    pointDifferentialLabel: row.pointDifferential > 0 ? `+${row.pointDifferential}` : String(row.pointDifferential),
+    tieLabel: row.tieStatus === "TIE_UNRESOLVED" ? "Tie unresolved" : "Clear"
+  };
+}
+
+export function getPublicStandingsLinks(tournamentId: string) {
+  return {
+    schedule: {
+      href: buildPublicTournamentScheduleLink(tournamentId),
+      label: "Open Public Schedule"
+    },
+    auditLog: null,
+    replay: null,
+    operator: null
+  };
+}
+
+export function hasPublicStandingsMutationControls() {
   return false;
 }

@@ -95,11 +95,16 @@ import {
 } from "../../apps/web/src/lib/auditLogControl";
 import {
   buildAdminTournamentScheduleLink,
+  buildAdminTournamentStandingsLink,
   buildPublicTournamentScheduleLink,
+  buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  buildStandingsRowMeta,
   getPublicScheduleLinks,
-  hasPublicScheduleMutationControls
+  getPublicStandingsLinks,
+  hasPublicScheduleMutationControls,
+  hasPublicStandingsMutationControls
 } from "../../apps/web/src/lib/scheduleControl";
 import {
   buildLifecycleCommandPayload,
@@ -126,7 +131,8 @@ import type {
   ScoreAddedPayload,
   ScoreboardProjection,
   TournamentListResponse,
-  TournamentScheduleResponse
+  TournamentScheduleResponse,
+  TournamentStandingsResponse
 } from "../../packages/api-contracts/src";
 
 const memoryStorage = () => {
@@ -431,6 +437,36 @@ const tournamentSchedule: TournamentScheduleResponse = {
     }
   ],
   generatedAt: "2026-07-03T10:05:00.000Z"
+};
+
+const tournamentStandings: TournamentStandingsResponse = {
+  tournamentId: "tournament-1",
+  tournamentName: "Alpha Cup",
+  status: "ACTIVE",
+  isOfficial: false,
+  rulesNotice: "[NEEDS SOURCE] Missing governing document: official tournament standings and tiebreak rules.",
+  generatedAt: "2026-07-03T10:06:00.000Z",
+  rows: [
+    {
+      teamId: "home-team",
+      teamName: "Bangkok HOME",
+      played: 1,
+      wins: 1,
+      losses: 0,
+      pointsFor: 10,
+      pointsAgainst: 8,
+      pointDifferential: 2,
+      finishedMatchesCounted: 1,
+      liveMatchesExcluded: 0,
+      scheduledMatchesExcluded: 0,
+      tieStatus: "CLEAR"
+    }
+  ],
+  summary: {
+    teamCount: 1,
+    finishedMatchCount: 1,
+    excludedMatchCount: 1
+  }
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -1032,6 +1068,28 @@ describe("web API client", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       "/api/v1/public/tournaments/tournament-1/schedule",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock.mock.calls.some(([, init]) => "x-csrf-token" in ((init?.headers as Record<string, string>) ?? {}))).toBe(false);
+  });
+
+  test("reads protected and public tournament standings without CSRF", async () => {
+    const fetchMock = vi.fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentStandings }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentStandings }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getTournamentStandings("tournament-1")).resolves.toEqual(tournamentStandings);
+    await expect(client.getPublicTournamentStandings("tournament-1")).resolves.toEqual(tournamentStandings);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/tournaments/tournament-1/standings",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/public/tournaments/tournament-1/standings",
       expect.objectContaining({ credentials: "include" })
     );
     expect(fetchMock.mock.calls.some(([, init]) => "x-csrf-token" in ((init?.headers as Record<string, string>) ?? {}))).toBe(false);
@@ -1771,7 +1829,9 @@ describe("match audit log UI policy", () => {
 describe("tournament schedule UI policy", () => {
   test("builds schedule links, filters, and public-safe row metadata", () => {
     expect(buildAdminTournamentScheduleLink("tournament 1")).toBe("/admin/tournaments/tournament%201/schedule");
+    expect(buildAdminTournamentStandingsLink("tournament 1")).toBe("/admin/tournaments/tournament%201/standings");
     expect(buildPublicTournamentScheduleLink("tournament 1")).toBe("/public/tournaments/tournament%201/schedule");
+    expect(buildPublicTournamentStandingsLink("tournament 1")).toBe("/public/tournaments/tournament%201/standings");
     expect(buildScheduleStatusFilters()).toEqual([
       { value: "all", label: "All" },
       { value: "scheduled", label: "Scheduled" },
@@ -1799,6 +1859,25 @@ describe("tournament schedule UI policy", () => {
 
   test("public schedule dashboard is read-only", () => {
     expect(hasPublicScheduleMutationControls()).toBe(false);
+  });
+
+  test("builds provisional standings row metadata and public-safe links", () => {
+    expect(buildStandingsRowMeta(tournamentStandings.rows[0], 1)).toEqual({
+      provisionalRank: 1,
+      recordLabel: "1-0",
+      pointDifferentialLabel: "+2",
+      tieLabel: "Clear"
+    });
+    expect(getPublicStandingsLinks("tournament-1")).toEqual({
+      schedule: {
+        href: "/public/tournaments/tournament-1/schedule",
+        label: "Open Public Schedule"
+      },
+      auditLog: null,
+      replay: null,
+      operator: null
+    });
+    expect(hasPublicStandingsMutationControls()).toBe(false);
   });
 });
 
