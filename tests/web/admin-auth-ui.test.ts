@@ -94,6 +94,14 @@ import {
   hasAuditLogMutationControls
 } from "../../apps/web/src/lib/auditLogControl";
 import {
+  buildAdminTournamentScheduleLink,
+  buildPublicTournamentScheduleLink,
+  buildScheduleRowMeta,
+  buildScheduleStatusFilters,
+  getPublicScheduleLinks,
+  hasPublicScheduleMutationControls
+} from "../../apps/web/src/lib/scheduleControl";
+import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
   getLifecycleActionPlan,
@@ -116,7 +124,9 @@ import type {
   MatchRostersResponse,
   MatchSummaryResponse,
   ScoreAddedPayload,
-  ScoreboardProjection
+  ScoreboardProjection,
+  TournamentListResponse,
+  TournamentScheduleResponse
 } from "../../packages/api-contracts/src";
 
 const memoryStorage = () => {
@@ -382,6 +392,45 @@ const matchAuditLog: MatchAuditLogResponse = {
     missingReasonRows: 1
   },
   generatedAt: "2026-07-01T10:10:00.000Z"
+};
+
+const tournamentList: TournamentListResponse = {
+  tournaments: [
+    {
+      tournamentId: "tournament-1",
+      name: "Alpha Cup",
+      status: "ACTIVE",
+      matchCount: 2,
+      liveMatchCount: 1,
+      finishedMatchCount: 1
+    }
+  ]
+};
+
+const tournamentSchedule: TournamentScheduleResponse = {
+  tournament: tournamentList.tournaments[0],
+  matches: [
+    {
+      matchId: scoreboardProjection.matchId,
+      tournamentId: "tournament-1",
+      stageName: null,
+      groupName: null,
+      roundLabel: "Round 1",
+      courtLabel: null,
+      venueLabel: "Court A",
+      scheduledAt: "2026-07-03T10:00:00.000Z",
+      homeTeamId: "home-team",
+      homeTeamName: "Bangkok HOME",
+      awayTeamId: "away-team",
+      awayTeamName: "Chiang Mai AWAY",
+      status: "LIVE",
+      homeScore: 10,
+      awayScore: 8,
+      currentSeq: 3,
+      publicScoreboardPath: `/public/scoreboard/${scoreboardProjection.matchId}`
+    }
+  ],
+  generatedAt: "2026-07-03T10:05:00.000Z"
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -950,6 +999,42 @@ describe("web API client", () => {
         method: "GET"
       })
     );
+  });
+
+  test("reads protected and public tournament schedules without CSRF", async () => {
+    const fetchMock = vi.fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentList }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentSchedule }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentList }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentSchedule }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getTournaments()).resolves.toEqual(tournamentList.tournaments);
+    await expect(client.getTournamentSchedule("tournament-1")).resolves.toEqual(tournamentSchedule);
+    await expect(client.getPublicTournaments()).resolves.toEqual(tournamentList.tournaments);
+    await expect(client.getPublicTournamentSchedule("tournament-1")).resolves.toEqual(tournamentSchedule);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/tournaments",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/tournaments/tournament-1/schedule",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/public/tournaments",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/v1/public/tournaments/tournament-1/schedule",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock.mock.calls.some(([, init]) => "x-csrf-token" in ((init?.headers as Record<string, string>) ?? {}))).toBe(false);
   });
 
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
@@ -1680,6 +1765,40 @@ describe("match audit log UI policy", () => {
 
   test("audit log dashboard is read-only", () => {
     expect(hasAuditLogMutationControls()).toBe(false);
+  });
+});
+
+describe("tournament schedule UI policy", () => {
+  test("builds schedule links, filters, and public-safe row metadata", () => {
+    expect(buildAdminTournamentScheduleLink("tournament 1")).toBe("/admin/tournaments/tournament%201/schedule");
+    expect(buildPublicTournamentScheduleLink("tournament 1")).toBe("/public/tournaments/tournament%201/schedule");
+    expect(buildScheduleStatusFilters()).toEqual([
+      { value: "all", label: "All" },
+      { value: "scheduled", label: "Scheduled" },
+      { value: "live", label: "Live" },
+      { value: "finished", label: "Finished" }
+    ]);
+    expect(buildScheduleRowMeta(tournamentSchedule.matches[0])).toEqual({
+      matchupLabel: "Bangkok HOME vs Chiang Mai AWAY",
+      scoreLabel: "10 - 8",
+      scheduleLabel: expect.any(String),
+      locationLabel: "Court A",
+      statusGroup: "live"
+    });
+    expect(getPublicScheduleLinks(tournamentSchedule.matches[0])).toEqual({
+      scoreboard: {
+        href: `/public/scoreboard/${scoreboardProjection.matchId}`,
+        label: "Open Scoreboard"
+      },
+      summary: null,
+      auditLog: null,
+      replay: null,
+      operator: null
+    });
+  });
+
+  test("public schedule dashboard is read-only", () => {
+    expect(hasPublicScheduleMutationControls()).toBe(false);
   });
 });
 
