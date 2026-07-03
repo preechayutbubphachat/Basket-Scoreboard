@@ -28,6 +28,8 @@ function requestHash(command: FoulCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
 }
 
+const finishedMatchLiveControlMessage = "Finished matches cannot be changed through live controls";
+
 export async function appendTeamFoulAddedCommand(options: {
   pool: Pool;
   command: AddTeamFoulCommand;
@@ -104,6 +106,11 @@ async function appendFoulCommand(options: {
 
     if (!projection) {
       throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
+    }
+
+    if (isFinishedMatchStatus(projection.status)) {
+      await connection.rollback();
+      return rejected(options.command, reasonCodes.VALIDATION_ERROR, finishedMatchLiveControlMessage, currentSeq);
     }
 
     const nextSeq = currentSeq + 1;
@@ -268,4 +275,9 @@ function rejected(
     reasonCode,
     message
   };
+}
+
+function isFinishedMatchStatus(status: string) {
+  const normalized = status.toUpperCase();
+  return normalized === "FINISHED" || normalized === "FINAL";
 }

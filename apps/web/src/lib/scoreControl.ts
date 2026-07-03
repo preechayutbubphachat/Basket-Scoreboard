@@ -7,6 +7,7 @@ import type {
 import { buildPublicScoreboardLink } from "./operatorMatches";
 
 export const scorePointOptions = [1, 2, 3] as const;
+export const finishedMatchLiveControlWarning = "Match is finished. Use correction workflow for post-game edits.";
 
 export type ScoreControlTeamSide = ScoreAddedPayload["teamSide"];
 export type ScoreControlPoint = ScoreAddedPayload["points"];
@@ -82,6 +83,20 @@ export function getAcceptedScoreProjection(result: CommandResult) {
     return null;
   }
   return result.projection ?? null;
+}
+
+export function isFinishedMatchStatus(status: string) {
+  const normalized = status.toUpperCase();
+  return normalized === "FINISHED" || normalized === "FINAL";
+}
+
+export function canUseLiveMatchControls(
+  projection: Pick<ScoreboardProjection, "status"> | null,
+  hasPermission: boolean,
+  commandPending: boolean
+) {
+  if (!projection) return false;
+  return hasPermission && !commandPending && !isFinishedMatchStatus(projection.status);
 }
 
 export function getScoreControlLinks(matchId: string, user: AuthenticatedUser | null) {

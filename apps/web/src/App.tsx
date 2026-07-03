@@ -39,10 +39,13 @@ import {
 import {
   buildScoreCommandPayload,
   buildScoreControlPanels,
+  canUseLiveMatchControls,
+  finishedMatchLiveControlWarning,
   getAcceptedScoreProjection,
   getScoreControlFeedback,
   getScoreControlLinks,
   getScoreControlPendingLabel,
+  isFinishedMatchStatus,
   type ScoreControlPoint,
   type ScoreControlTeamSide
 } from "./lib/scoreControl";
@@ -710,7 +713,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   }
 
   async function addScore(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
-    if (!projection || !canSubmitScore) return;
+    if (!projection || !canUseLiveMatchControls(projection, canSubmitScore, Boolean(pendingKey))) return;
     const key = `${teamSide}-${points}`;
     setPendingKey(key);
     setMessage(null);
@@ -762,6 +765,9 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
       ) : null}
       {projection ? (
         <section className="panel score-control">
+          {isFinishedMatchStatus(projection.status) ? (
+            <Notice tone="error" text={finishedMatchLiveControlWarning} />
+          ) : null}
           <div className="score-display" aria-label="Current score">
             {buildScoreControlPanels(projection).map((panel) => (
               <div key={panel.teamSide}>
@@ -806,7 +812,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                         key={button.pendingKey}
                         type="button"
                         className="score-button"
-                        disabled={!canSubmitScore || Boolean(pendingKey)}
+                        disabled={!canUseLiveMatchControls(projection, canSubmitScore, Boolean(pendingKey))}
                         onClick={() => void addScore(panel.teamSide, button.points)}
                       >
                         {getScoreControlPendingLabel(button.pendingKey, pendingKey)}
@@ -899,7 +905,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }
 
   async function addTeamFoul(teamSide: FoulControlTeamSide) {
-    if (!projection || !canSubmitFoul) return;
+    if (!projection || !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))) return;
     const key = `TEAM-${teamSide}`;
     setPendingKey(key);
     setMessage(null);
@@ -928,7 +934,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }
 
   async function addPlayerFoul(player: MatchRosterPlayer) {
-    if (!projection || !canSubmitFoul) return;
+    if (!projection || !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))) return;
     const key = `PLAYER-${player.playerId}`;
     setPendingKey(key);
     setMessage(null);
@@ -971,6 +977,9 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       ) : null}
       {projection ? (
         <section className="panel score-control">
+          {isFinishedMatchStatus(projection.status) ? (
+            <Notice tone="error" text={finishedMatchLiveControlWarning} />
+          ) : null}
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
@@ -1005,7 +1014,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                 <button
                   type="button"
                   className="score-button"
-                  disabled={!canSubmitFoul || Boolean(pendingKey)}
+                  disabled={!canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))}
                   onClick={() => void addTeamFoul(panel.teamSide)}
                 >
                   {pendingKey === panel.pendingKey ? "Saving..." : "Add Team Foul"}
@@ -1030,7 +1039,10 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                         key={player.playerId}
                         type="button"
                         className="score-button"
-                        disabled={!canSubmitFoul || Boolean(pendingKey) || player.status === "INACTIVE"}
+                        disabled={
+                          !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey)) ||
+                          player.status === "INACTIVE"
+                        }
                         onClick={() => void addPlayerFoul(player)}
                       >
                         {pendingKey === `PLAYER-${player.playerId}`
