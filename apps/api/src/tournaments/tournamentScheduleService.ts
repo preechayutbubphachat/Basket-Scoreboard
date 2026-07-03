@@ -86,7 +86,7 @@ export async function getTournamentSchedule(
       NULL AS stage_name,
       NULL AS group_name,
       m.match_code AS round_label,
-      NULL AS court_label,
+      JSON_UNQUOTE(JSON_EXTRACT(m.metadata, '$.courtLabel')) AS court_label,
       m.venue_name AS venue_label,
       m.scheduled_at,
       m.home_team_id,
@@ -148,7 +148,10 @@ function serializeTournamentSummary(row: TournamentRow): TournamentSummary {
 
 function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
   const projection = row.projection_data ? parseJsonField<ProjectionLike>(row.projection_data) ?? {} : {};
-  const status = stringOrNull(projection.status) ?? row.match_status ?? "SCHEDULED";
+  const projectedStatus = stringOrNull(projection.status);
+  const status = projectedStatus === "READY" && row.match_status
+    ? row.match_status
+    : projectedStatus ?? row.match_status ?? "SCHEDULED";
   const currentSeq = numberOrDefault(projection.currentSeq, numberOrDefault(row.last_event_seq, 0));
 
   return {

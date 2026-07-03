@@ -23,6 +23,7 @@ import type {
   TournamentScheduleResponse,
   TournamentStandingsResponse,
   TournamentStandingsRow,
+  TournamentSetupTeam,
   TournamentSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
@@ -129,10 +130,17 @@ import {
   buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  createScheduledMatchFormState,
+  createTeamFormState,
+  createTeamPayload,
+  createTournamentFormState,
+  createTournamentMatchPayload,
+  createTournamentPayload,
   buildStandingsRowMeta,
   getPublicScheduleLinks,
   getPublicStandingsLinks,
   getScheduleStatusGroup,
+  type ScheduledMatchFormState,
   type ScheduleStatusFilter
 } from "./lib/scheduleControl";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
@@ -552,7 +560,9 @@ function AdminMatchesPage() {
 function AdminTournamentsPage() {
   const { api } = useCurrentUser();
   const [tournaments, setTournaments] = useState<TournamentSummary[]>([]);
+  const [form, setForm] = useState(createTournamentFormState);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
 
   async function loadTournaments() {
@@ -571,11 +581,68 @@ function AdminTournamentsPage() {
     void loadTournaments();
   }, [api]);
 
+  async function handleCreateTournament(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage({ tone: "success", text: "Saving tournament..." });
+    try {
+      await api.createTournament(createTournamentPayload(form));
+      setForm(createTournamentFormState());
+      await loadTournaments();
+      setMessage({ tone: "success", text: "Tournament created." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="panel">
       <h1>Tournaments</h1>
-      <p className="muted">Review tournament schedules using existing match setup and projection state.</p>
+      <p className="muted">Create tournament containers and review schedules using projection state.</p>
       {message ? <Notice {...message} /> : null}
+      <form className="stacked-form" onSubmit={(event) => void handleCreateTournament(event)}>
+        <label>
+          Tournament name
+          <input
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="Alpha Cup"
+            required
+            maxLength={200}
+          />
+        </label>
+        <label>
+          Status
+          <select
+            value={form.status}
+            onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as typeof current.status }))}
+          >
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="DRAFT">DRAFT</option>
+          </select>
+        </label>
+        <label>
+          Starts at
+          <input
+            type="datetime-local"
+            value={form.startsAt}
+            onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))}
+          />
+        </label>
+        <label>
+          Ends at
+          <input
+            type="datetime-local"
+            value={form.endsAt}
+            onChange={(event) => setForm((current) => ({ ...current, endsAt: event.target.value }))}
+          />
+        </label>
+        <button type="submit" disabled={saving || form.name.trim().length === 0}>
+          {saving ? "Saving..." : "Create Tournament"}
+        </button>
+      </form>
       {loading ? <p>Loading tournaments...</p> : null}
       {!loading && tournaments.length === 0 ? <p className="muted">No tournaments found.</p> : null}
       {tournaments.length > 0 ? (
@@ -595,6 +662,8 @@ function AdminTournamentsPage() {
               {tournaments.map((tournament) => {
                 const scheduleHref = buildAdminTournamentScheduleLink(tournament.tournamentId);
                 const standingsHref = buildAdminTournamentStandingsLink(tournament.tournamentId);
+                const publicScheduleHref = buildPublicTournamentScheduleLink(tournament.tournamentId);
+                const publicStandingsHref = buildPublicTournamentStandingsLink(tournament.tournamentId);
                 return (
                   <tr key={tournament.tournamentId}>
                     <td>{tournament.name}</td>
@@ -622,6 +691,24 @@ function AdminTournamentsPage() {
                         >
                           Open Standings
                         </a>
+                        <a
+                          href={publicScheduleHref}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            navigate(publicScheduleHref);
+                          }}
+                        >
+                          Public Schedule
+                        </a>
+                        <a
+                          href={publicStandingsHref}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            navigate(publicStandingsHref);
+                          }}
+                        >
+                          Public Standings
+                        </a>
                       </span>
                     </td>
                   </tr>
@@ -638,15 +725,24 @@ function AdminTournamentsPage() {
 function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string }) {
   const { api } = useCurrentUser();
   const [schedule, setSchedule] = useState<TournamentScheduleResponse | null>(null);
+  const [teams, setTeams] = useState<TournamentSetupTeam[]>([]);
+  const [teamForm, setTeamForm] = useState(() => createTeamFormState(tournamentId));
+  const [matchForm, setMatchForm] = useState(createScheduledMatchFormState);
   const [filter, setFilter] = useState<ScheduleStatusFilter>("all");
   const [loading, setLoading] = useState(true);
+  const [savingSetup, setSavingSetup] = useState<"team" | "match" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
 
   async function loadSchedule() {
     setLoading(true);
     setMessage(null);
     try {
-      setSchedule(await api.getTournamentSchedule(tournamentId));
+      const [nextSchedule, nextTeams] = await Promise.all([
+        api.getTournamentSchedule(tournamentId),
+        api.listTeams()
+      ]);
+      setSchedule(nextSchedule);
+      setTeams(nextTeams);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -655,10 +751,45 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
   }
 
   useEffect(() => {
+    setTeamForm(createTeamFormState(tournamentId));
+    setMatchForm(createScheduledMatchFormState());
     void loadSchedule();
   }, [api, tournamentId]);
 
   const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
+  const tournamentTeams = teams.filter((team) => team.tournamentId === null || team.tournamentId === tournamentId);
+
+  async function handleCreateTeam(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingSetup("team");
+    setMessage({ tone: "success", text: "Saving team..." });
+    try {
+      await api.createTeam(createTeamPayload(teamForm));
+      setTeamForm(createTeamFormState(tournamentId));
+      await loadSchedule();
+      setMessage({ tone: "success", text: "Team created." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSavingSetup(null);
+    }
+  }
+
+  async function handleCreateMatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingSetup("match");
+    setMessage({ tone: "success", text: "Saving match..." });
+    try {
+      await api.createTournamentMatch(tournamentId, createTournamentMatchPayload(matchForm));
+      setMatchForm(createScheduledMatchFormState());
+      await loadSchedule();
+      setMessage({ tone: "success", text: "Scheduled match created." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSavingSetup(null);
+    }
+  }
 
   return (
     <section className="panel">
@@ -679,6 +810,104 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
       </div>
       {message ? <Notice {...message} /> : null}
       {schedule ? <TournamentSummaryStrip tournament={schedule.tournament} /> : null}
+      <div className="setup-grid">
+        <form className="stacked-form" onSubmit={(event) => void handleCreateTeam(event)}>
+          <h2>Create Team</h2>
+          <label>
+            Team name
+            <input
+              value={teamForm.name}
+              onChange={(event) => setTeamForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Bangkok Home"
+              required
+              maxLength={200}
+            />
+          </label>
+          <label>
+            Short name
+            <input
+              value={teamForm.shortName}
+              onChange={(event) => setTeamForm((current) => ({ ...current, shortName: event.target.value }))}
+              placeholder="BKK"
+              maxLength={40}
+            />
+          </label>
+          <button type="submit" disabled={savingSetup !== null || teamForm.name.trim().length === 0}>
+            {savingSetup === "team" ? "Saving..." : "Create Team"}
+          </button>
+        </form>
+        <form className="stacked-form" onSubmit={(event) => void handleCreateMatch(event)}>
+          <h2>Create Scheduled Match</h2>
+          <label>
+            Home team
+            <select
+              value={matchForm.homeTeamId}
+              onChange={(event) => setMatchForm((current) => ({ ...current, homeTeamId: event.target.value }))}
+              required
+            >
+              <option value="">Select home team</option>
+              {tournamentTeams.map((team) => <option key={team.teamId} value={team.teamId}>{team.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Away team
+            <select
+              value={matchForm.awayTeamId}
+              onChange={(event) => setMatchForm((current) => ({ ...current, awayTeamId: event.target.value }))}
+              required
+            >
+              <option value="">Select away team</option>
+              {tournamentTeams.map((team) => <option key={team.teamId} value={team.teamId}>{team.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Scheduled at
+            <input
+              type="datetime-local"
+              value={matchForm.scheduledAt}
+              onChange={(event) => setMatchForm((current) => ({ ...current, scheduledAt: event.target.value }))}
+            />
+          </label>
+          <label>
+            Round
+            <input
+              value={matchForm.roundLabel}
+              onChange={(event) => setMatchForm((current) => ({ ...current, roundLabel: event.target.value }))}
+              placeholder="Round 1"
+              maxLength={80}
+            />
+          </label>
+          <label>
+            Court
+            <input
+              value={matchForm.courtLabel}
+              onChange={(event) => setMatchForm((current) => ({ ...current, courtLabel: event.target.value }))}
+              placeholder="Court A"
+              maxLength={80}
+            />
+          </label>
+          <label>
+            Venue
+            <input
+              value={matchForm.venueLabel}
+              onChange={(event) => setMatchForm((current) => ({ ...current, venueLabel: event.target.value }))}
+              placeholder="Main Hall"
+              maxLength={200}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={
+              savingSetup !== null ||
+              matchForm.homeTeamId.length === 0 ||
+              matchForm.awayTeamId.length === 0 ||
+              matchForm.homeTeamId === matchForm.awayTeamId
+            }
+          >
+            {savingSetup === "match" ? "Saving..." : "Create Scheduled Match"}
+          </button>
+        </form>
+      </div>
       <ScheduleFilterBar value={filter} onChange={setFilter} />
       {loading ? <p>Loading schedule...</p> : null}
       {!loading && matches.length === 0 ? <p className="muted">No matches for this filter.</p> : null}

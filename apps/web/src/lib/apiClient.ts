@@ -1,6 +1,9 @@
 import type {
   AuthenticatedUser,
   CommandResult,
+  CreateTeamRequest,
+  CreateTournamentMatchRequest,
+  CreateTournamentRequest,
   CreatePlayerRequest,
   MatchAssignment,
   MatchAuditLogResponse,
@@ -25,6 +28,7 @@ import type {
   TimeoutGrantedPayload,
   TournamentScheduleResponse,
   TournamentStandingsResponse,
+  TournamentSetupTeam,
   TournamentSummary,
   TeamFoulAddedPayload,
   SmokeMatchResponse
@@ -233,6 +237,35 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async getTournaments() {
       const data = await request<{ tournaments: TournamentSummary[] }>("/tournaments");
       return data.tournaments;
+    },
+    async createTournament(input: CreateTournamentRequest) {
+      const data = await request<{ tournament: TournamentSummary }>("/tournaments", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data.tournament;
+    },
+    async listTeams() {
+      const data = await request<{ teams: TournamentSetupTeam[] }>("/teams");
+      return data.teams;
+    },
+    async createTeam(input: CreateTeamRequest) {
+      const data = await request<{ team: TournamentSetupTeam }>("/teams", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data.team;
+    },
+    async createTournamentMatch(tournamentId: string, input: CreateTournamentMatchRequest) {
+      const data = await request<{
+        matchId: string;
+        currentSeq: number;
+        scheduleMatch: TournamentScheduleResponse["matches"][number];
+      }>(`/tournaments/${encodeURIComponent(tournamentId)}/matches`, {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data;
     },
     async getTournamentSchedule(tournamentId: string) {
       const data = await request<TournamentScheduleResponse>(`/tournaments/${encodeURIComponent(tournamentId)}/schedule`);

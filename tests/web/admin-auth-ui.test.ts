@@ -100,6 +100,11 @@ import {
   buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  createScheduledMatchFormState,
+  createTeamFormState,
+  createTournamentFormState,
+  createTournamentMatchPayload,
+  createTournamentPayload,
   buildStandingsRowMeta,
   getPublicScheduleLinks,
   getPublicStandingsLinks,
@@ -1073,6 +1078,58 @@ describe("web API client", () => {
     expect(fetchMock.mock.calls.some(([, init]) => "x-csrf-token" in ((init?.headers as Record<string, string>) ?? {}))).toBe(false);
   });
 
+  test("writes tournament setup data with CSRF", async () => {
+    const fetchMock = vi.fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { tournament: tournamentList.tournaments[0] } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { team: { teamId: "team-1", tournamentId: "tournament-1", name: "Bangkok Home", shortName: "BKK", status: "ACTIVE" } } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { matchId: "match-1", currentSeq: 0, scheduleMatch: tournamentSchedule.matches[0] } }, 201));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.createTournament({ name: "Alpha Cup", status: "ACTIVE", startsAt: null, endsAt: null })).resolves.toEqual(tournamentList.tournaments[0]);
+    await expect(client.createTeam({ tournamentId: "tournament-1", name: "Bangkok Home", shortName: "BKK" })).resolves.toMatchObject({
+      teamId: "team-1",
+      name: "Bangkok Home"
+    });
+    await expect(
+      client.createTournamentMatch("tournament-1", {
+        homeTeamId: "home-team",
+        awayTeamId: "away-team",
+        roundLabel: "Round 1",
+        courtLabel: "Court A",
+        venueLabel: "Main Hall",
+        scheduledAt: "2026-07-03T10:00:00.000Z"
+      })
+    ).resolves.toMatchObject({ matchId: "match-1", currentSeq: 0 });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/v1/auth/csrf", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/tournaments",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }),
+        body: JSON.stringify({ name: "Alpha Cup", status: "ACTIVE", startsAt: null, endsAt: null })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/v1/teams",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/v1/tournaments/tournament-1/matches",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+  });
+
   test("reads protected and public tournament standings without CSRF", async () => {
     const fetchMock = vi.fn<FetchLike>()
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentStandings }))
@@ -1832,6 +1889,37 @@ describe("tournament schedule UI policy", () => {
     expect(buildAdminTournamentStandingsLink("tournament 1")).toBe("/admin/tournaments/tournament%201/standings");
     expect(buildPublicTournamentScheduleLink("tournament 1")).toBe("/public/tournaments/tournament%201/schedule");
     expect(buildPublicTournamentStandingsLink("tournament 1")).toBe("/public/tournaments/tournament%201/standings");
+    expect(createTournamentFormState()).toEqual({ name: "", status: "ACTIVE", startsAt: "", endsAt: "" });
+    expect(createTeamFormState("tournament-1")).toEqual({ tournamentId: "tournament-1", name: "", shortName: "" });
+    expect(createScheduledMatchFormState()).toEqual({
+      homeTeamId: "",
+      awayTeamId: "",
+      scheduledAt: "",
+      roundLabel: "",
+      courtLabel: "",
+      venueLabel: ""
+    });
+    expect(createTournamentPayload({ name: " Alpha Cup ", status: "ACTIVE", startsAt: "", endsAt: "" })).toEqual({
+      name: "Alpha Cup",
+      status: "ACTIVE",
+      startsAt: null,
+      endsAt: null
+    });
+    expect(createTournamentMatchPayload({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      scheduledAt: "",
+      roundLabel: " Round 1 ",
+      courtLabel: "",
+      venueLabel: " Main Hall "
+    })).toEqual({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      roundLabel: "Round 1",
+      courtLabel: null,
+      venueLabel: "Main Hall",
+      scheduledAt: null
+    });
     expect(buildScheduleStatusFilters()).toEqual([
       { value: "all", label: "All" },
       { value: "scheduled", label: "Scheduled" },

@@ -1,6 +1,34 @@
-import type { TournamentScheduleMatch, TournamentStandingsRow } from "@basket-scoreboard/api-contracts";
+import type {
+  CreateTeamRequest,
+  CreateTournamentMatchRequest,
+  CreateTournamentRequest,
+  TournamentScheduleMatch,
+  TournamentStandingsRow
+} from "@basket-scoreboard/api-contracts";
 
 export type ScheduleStatusFilter = "all" | "scheduled" | "live" | "finished";
+
+export type TournamentFormState = {
+  name: string;
+  status: "ACTIVE" | "DRAFT";
+  startsAt: string;
+  endsAt: string;
+};
+
+export type TeamFormState = {
+  tournamentId: string;
+  name: string;
+  shortName: string;
+};
+
+export type ScheduledMatchFormState = {
+  homeTeamId: string;
+  awayTeamId: string;
+  scheduledAt: string;
+  roundLabel: string;
+  courtLabel: string;
+  venueLabel: string;
+};
 
 export function buildAdminTournamentScheduleLink(tournamentId: string) {
   return `/admin/tournaments/${encodeURIComponent(tournamentId)}/schedule`;
@@ -16,6 +44,53 @@ export function buildPublicTournamentScheduleLink(tournamentId: string) {
 
 export function buildPublicTournamentStandingsLink(tournamentId: string) {
   return `/public/tournaments/${encodeURIComponent(tournamentId)}/standings`;
+}
+
+export function createTournamentFormState(): TournamentFormState {
+  return { name: "", status: "ACTIVE", startsAt: "", endsAt: "" };
+}
+
+export function createTeamFormState(tournamentId: string): TeamFormState {
+  return { tournamentId, name: "", shortName: "" };
+}
+
+export function createScheduledMatchFormState(): ScheduledMatchFormState {
+  return {
+    homeTeamId: "",
+    awayTeamId: "",
+    scheduledAt: "",
+    roundLabel: "",
+    courtLabel: "",
+    venueLabel: ""
+  };
+}
+
+export function createTournamentPayload(state: TournamentFormState): CreateTournamentRequest {
+  return {
+    name: state.name.trim(),
+    status: state.status,
+    startsAt: toIsoDateTimeOrNull(state.startsAt),
+    endsAt: toIsoDateTimeOrNull(state.endsAt)
+  };
+}
+
+export function createTeamPayload(state: TeamFormState): CreateTeamRequest {
+  return {
+    tournamentId: emptyToNull(state.tournamentId),
+    name: state.name.trim(),
+    shortName: emptyToNull(state.shortName)
+  };
+}
+
+export function createTournamentMatchPayload(state: ScheduledMatchFormState): CreateTournamentMatchRequest {
+  return {
+    homeTeamId: state.homeTeamId,
+    awayTeamId: state.awayTeamId,
+    scheduledAt: toIsoDateTimeOrNull(state.scheduledAt),
+    roundLabel: emptyToNull(state.roundLabel),
+    courtLabel: emptyToNull(state.courtLabel),
+    venueLabel: emptyToNull(state.venueLabel)
+  };
 }
 
 export function buildScheduleStatusFilters(): Array<{ value: ScheduleStatusFilter; label: string }> {
@@ -88,4 +163,19 @@ export function getPublicStandingsLinks(tournamentId: string) {
 
 export function hasPublicStandingsMutationControls() {
   return false;
+}
+
+function emptyToNull(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function toIsoDateTimeOrNull(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
 }
