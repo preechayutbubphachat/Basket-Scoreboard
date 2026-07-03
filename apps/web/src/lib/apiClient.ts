@@ -3,6 +3,7 @@ import type {
   CommandResult,
   CreatePlayerRequest,
   MatchAssignment,
+  MatchAuditLogResponse,
   MatchLineupResponse,
   MatchOfficialRoleCode,
   MatchReplayResponse,
@@ -314,6 +315,34 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       return request<MatchReplayResponse>(
         `/matches/${encodeURIComponent(matchId)}/replay${query ? `?${query}` : ""}`,
         {},
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async getMatchAuditLog(
+      matchId: string,
+      options: {
+        group?: string;
+        limit?: number;
+        afterSeq?: number;
+        beforeSeq?: number;
+        actorId?: string;
+        eventType?: string;
+        hasReason?: boolean;
+      } = {}
+    ) {
+      const params = new URLSearchParams();
+      if (options.group) params.set("group", options.group);
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.afterSeq !== undefined) params.set("afterSeq", String(options.afterSeq));
+      if (options.beforeSeq !== undefined) params.set("beforeSeq", String(options.beforeSeq));
+      if (options.actorId) params.set("actorId", options.actorId);
+      if (options.eventType) params.set("eventType", options.eventType);
+      if (options.hasReason !== undefined) params.set("hasReason", String(options.hasReason));
+      const query = params.toString();
+      return request<MatchAuditLogResponse>(
+        `/matches/${encodeURIComponent(matchId)}/audit-log${query ? `?${query}` : ""}`,
+        { method: "GET" },
         false,
         { acceptRawSuccess: true }
       );

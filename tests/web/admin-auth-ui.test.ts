@@ -17,6 +17,7 @@ import {
 import {
   buildAdminMatchActions,
   buildAdminMatchLink,
+  buildOperatorMatchAuditLogLink,
   buildOperatorMatchClockLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchLifecycleLink,
@@ -26,6 +27,7 @@ import {
   buildOperatorMatchTimeoutsLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
+  canReadAuditLog,
   canOperateScore,
   createEmptyOperatorMatchesMessage
 } from "../../apps/web/src/lib/operatorMatches";
@@ -86,6 +88,12 @@ import {
   hasReplayMutationControls
 } from "../../apps/web/src/lib/replayControl";
 import {
+  buildAuditLogFilterOptions,
+  buildAuditLogRowMeta,
+  getAuditCorrectionRows,
+  hasAuditLogMutationControls
+} from "../../apps/web/src/lib/auditLogControl";
+import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
   getLifecycleActionPlan,
@@ -103,6 +111,7 @@ import {
 } from "../../apps/web/src/lib/realtimeProjectionSync";
 import type {
   AuthenticatedUser,
+  MatchAuditLogResponse,
   MatchReplayResponse,
   MatchRostersResponse,
   MatchSummaryResponse,
@@ -320,6 +329,58 @@ const matchReplay: MatchReplayResponse = {
       createdAt: "2026-07-01T10:00:02.000Z"
     }
   ],
+  generatedAt: "2026-07-01T10:10:00.000Z"
+};
+
+const matchAuditLog: MatchAuditLogResponse = {
+  matchId: scoreboardProjection.matchId,
+  status: "FINISHED",
+  currentSeq: 9,
+  group: "all",
+  limit: 300,
+  rows: [
+    {
+      matchId: scoreboardProjection.matchId,
+      seq: 1,
+      source: "MATCH_EVENT",
+      group: "SCORE",
+      eventType: "SCORE_ADDED",
+      status: "APPENDED",
+      title: "SCORE_ADDED",
+      description: "HOME score event for 2 points.",
+      actor: { userId: "actor-1", displayName: null, role: "SCORER" },
+      device: { label: "browser-terminal-1", ipMasked: null, userAgentSummary: null },
+      reason: null,
+      commandId: "command-1",
+      correlationId: "correlation-1",
+      causationId: null,
+      createdAt: "2026-07-01T10:00:01.000Z"
+    },
+    {
+      matchId: scoreboardProjection.matchId,
+      seq: 3,
+      source: "MATCH_EVENT",
+      group: "CORRECTION",
+      eventType: "SCORE_REMOVED_BY_CORRECTION",
+      status: "CORRECTED",
+      title: "Correction review item",
+      description: "Correction-related event recorded.",
+      actor: { userId: "actor-3", displayName: null, role: "ADMIN" },
+      device: { label: "admin-laptop", ipMasked: null, userAgentSummary: null },
+      reason: "wrong team",
+      commandId: "command-3",
+      correlationId: "correlation-3",
+      causationId: "event-1",
+      createdAt: "2026-07-01T10:00:03.000Z"
+    }
+  ],
+  summary: {
+    totalRows: 2,
+    eventRows: 2,
+    correctionRows: 1,
+    rejectedRows: 0,
+    missingReasonRows: 1
+  },
   generatedAt: "2026-07-01T10:10:00.000Z"
 };
 
@@ -877,6 +938,20 @@ describe("web API client", () => {
     );
   });
 
+  test("reads match audit log without CSRF because it is read-only", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValueOnce(jsonResponse(matchAuditLog));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getMatchAuditLog(scoreboardProjection.matchId, { group: "correction", limit: 50 })).resolves.toEqual(matchAuditLog);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/audit-log?group=correction&limit=50`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "GET"
+      })
+    );
+  });
+
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -1223,6 +1298,8 @@ describe("operator match landing UI policy", () => {
 
     expect(canOperateScore(scorerUser)).toBe(true);
     expect(canOperateScore(viewerUser)).toBe(false);
+    expect(canReadAuditLog(adminUser)).toBe(true);
+    expect(canReadAuditLog(scorerUser)).toBe(false);
     expect(buildOperatorMatchScoreLink("match 1")).toBe("/operator/matches/match%201/score");
     expect(buildOperatorMatchFoulsLink("match 1")).toBe("/operator/matches/match%201/fouls");
     expect(buildOperatorMatchClockLink("match 1")).toBe("/operator/matches/match%201/clock");
@@ -1230,6 +1307,7 @@ describe("operator match landing UI policy", () => {
     expect(buildOperatorMatchLifecycleLink("match 1")).toBe("/operator/matches/match%201/lifecycle");
     expect(buildOperatorMatchSummaryLink("match 1")).toBe("/operator/matches/match%201/summary");
     expect(buildOperatorMatchReplayLink("match 1")).toBe("/operator/matches/match%201/replay");
+    expect(buildOperatorMatchAuditLogLink("match 1")).toBe("/operator/matches/match%201/audit-log");
   });
 
   test("empty operator match state is explicit", () => {
@@ -1244,6 +1322,7 @@ describe("operator match landing UI policy", () => {
       lineup: { href: "/admin/matches/match-1/lineup", label: "Lineup" },
       summary: { href: "/admin/matches/match-1/summary", label: "Summary" },
       replay: { href: "/admin/matches/match-1/replay", label: "Replay" },
+      auditLog: { href: "/admin/matches/match-1/audit-log", label: "Audit Log" },
       operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
@@ -1442,6 +1521,10 @@ describe("score control UI policy", () => {
         href: `/operator/matches/${scoreboardProjection.matchId}/replay`,
         label: "Open Replay"
       },
+      auditLog: {
+        href: `/operator/matches/${scoreboardProjection.matchId}/audit-log`,
+        label: "Open Audit Log"
+      },
       publicScoreboard: {
         href: `/public/scoreboard/${scoreboardProjection.matchId}`,
         label: "Open Public Scoreboard"
@@ -1449,6 +1532,7 @@ describe("score control UI policy", () => {
       adminMatches: { href: "/admin/matches", label: "Admin Match List" }
     });
     expect(getScoreControlLinks(scoreboardProjection.matchId, viewerUser).adminMatches).toBeNull();
+    expect(getScoreControlLinks(scoreboardProjection.matchId, viewerUser).auditLog).toBeNull();
   });
 });
 
@@ -1566,6 +1650,36 @@ describe("match replay UI policy", () => {
     expect(getReplayScoreAfterLabel(matchReplay.items[0], matchReplay)).toBe("Score after: Bangkok HOME 2 - 0 Chiang Mai AWAY");
     expect(getReplayScoreAfterLabel(matchReplay.items[1], matchReplay)).toBeNull();
     expect(hasReplayMutationControls()).toBe(false);
+  });
+});
+
+describe("match audit log UI policy", () => {
+  test("builds audit filters, row metadata, and correction review rows", () => {
+    expect(buildAuditLogFilterOptions()).toEqual([
+      { value: "all", label: "All" },
+      { value: "score", label: "Score" },
+      { value: "foul", label: "Fouls" },
+      { value: "clock", label: "Clock" },
+      { value: "shot_clock", label: "Shot Clock" },
+      { value: "timeout", label: "Timeouts" },
+      { value: "lifecycle", label: "Lifecycle" },
+      { value: "roster_lineup", label: "Roster/Lineup" },
+      { value: "correction", label: "Corrections" },
+      { value: "rejected", label: "Rejected" },
+      { value: "other", label: "Other" }
+    ]);
+    expect(buildAuditLogRowMeta(matchAuditLog.rows[1])).toEqual({
+      badge: "CORRECTION",
+      title: "Correction review item",
+      actorLabel: "actor-3",
+      reasonLabel: "wrong team",
+      timestamp: expect.any(String)
+    });
+    expect(getAuditCorrectionRows(matchAuditLog)).toEqual([matchAuditLog.rows[1]]);
+  });
+
+  test("audit log dashboard is read-only", () => {
+    expect(hasAuditLogMutationControls()).toBe(false);
   });
 });
 

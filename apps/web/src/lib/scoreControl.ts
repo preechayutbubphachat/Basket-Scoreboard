@@ -5,9 +5,11 @@ import type {
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 import {
+  buildOperatorMatchAuditLogLink,
   buildOperatorMatchReplayLink,
   buildOperatorMatchSummaryLink,
-  buildPublicScoreboardLink
+  buildPublicScoreboardLink,
+  canReadAuditLog
 } from "./operatorMatches";
 
 export const scorePointOptions = [1, 2, 3] as const;
@@ -108,6 +110,7 @@ export function getScoreControlLinks(matchId: string, user: AuthenticatedUser | 
     operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
     summary: { href: buildOperatorMatchSummaryLink(matchId), label: "Open Match Summary" },
     replay: { href: buildOperatorMatchReplayLink(matchId), label: "Open Replay" },
+    auditLog: canReadAuditLog(user) ? { href: buildOperatorMatchAuditLogLink(matchId), label: "Open Audit Log" } : null,
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Open Public Scoreboard"
