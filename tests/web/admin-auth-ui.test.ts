@@ -100,14 +100,19 @@ import {
   buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  buildTournamentQuickLinks,
   createScheduledMatchFormState,
   createTeamFormState,
   createTournamentFormState,
   createTournamentMatchPayload,
   createTournamentPayload,
   buildStandingsRowMeta,
+  getPublicScheduleEmptyState,
+  getPublicStandingsEmptyState,
   getPublicScheduleLinks,
   getPublicStandingsLinks,
+  getScheduledMatchFormFeedback,
+  getTournamentEmptyState,
   hasPublicScheduleMutationControls,
   hasPublicStandingsMutationControls
 } from "../../apps/web/src/lib/scheduleControl";
@@ -1884,6 +1889,53 @@ describe("match audit log UI policy", () => {
 });
 
 describe("tournament schedule UI policy", () => {
+  test("builds actionable tournament setup empty states and quick links", () => {
+    expect(getTournamentEmptyState()).toEqual({
+      title: "No tournaments yet",
+      description: "Create a tournament to start scheduling matches.",
+      helperText: "After creating a tournament, add teams and scheduled matches.",
+      primaryActionLabel: "Create Tournament"
+    });
+    expect(buildTournamentQuickLinks("tournament 1")).toEqual([
+      { href: "/admin/tournaments/tournament%201/schedule", label: "Schedule", private: true },
+      { href: "/admin/tournaments/tournament%201/standings", label: "Standings", private: true },
+      { href: "/public/tournaments/tournament%201/schedule", label: "Public Schedule", private: false },
+      { href: "/public/tournaments/tournament%201/standings", label: "Public Standings", private: false }
+    ]);
+  });
+
+  test("builds scheduled match form feedback for missing and duplicate team choices", () => {
+    expect(getScheduledMatchFormFeedback(createScheduledMatchFormState(), 0)).toEqual({
+      disabled: true,
+      warning: "Create at least two teams before scheduling a match."
+    });
+    expect(getScheduledMatchFormFeedback({ ...createScheduledMatchFormState(), homeTeamId: "home-team" }, 2)).toEqual({
+      disabled: true,
+      warning: "Select both Home and Away teams."
+    });
+    expect(getScheduledMatchFormFeedback({
+      ...createScheduledMatchFormState(),
+      homeTeamId: "home-team",
+      awayTeamId: "home-team"
+    }, 2)).toEqual({
+      disabled: true,
+      warning: "Home and Away teams must be different."
+    });
+    expect(getScheduledMatchFormFeedback({
+      ...createScheduledMatchFormState(),
+      homeTeamId: "home-team",
+      awayTeamId: "away-team"
+    }, 2)).toEqual({ disabled: false, warning: null });
+    expect(getScheduledMatchFormFeedback({
+      ...createScheduledMatchFormState(),
+      homeTeamId: "home-team",
+      awayTeamId: "away-team"
+    }, 2, true)).toEqual({
+      disabled: true,
+      warning: "Saving scheduled match..."
+    });
+  });
+
   test("builds schedule links, filters, and public-safe row metadata", () => {
     expect(buildAdminTournamentScheduleLink("tournament 1")).toBe("/admin/tournaments/tournament%201/schedule");
     expect(buildAdminTournamentStandingsLink("tournament 1")).toBe("/admin/tournaments/tournament%201/standings");
@@ -1947,6 +1999,10 @@ describe("tournament schedule UI policy", () => {
 
   test("public schedule dashboard is read-only", () => {
     expect(hasPublicScheduleMutationControls()).toBe(false);
+    expect(getPublicScheduleEmptyState(0)).toEqual({
+      title: "No scheduled matches",
+      description: "This tournament does not have scheduled matches yet."
+    });
   });
 
   test("builds provisional standings row metadata and public-safe links", () => {
@@ -1966,6 +2022,10 @@ describe("tournament schedule UI policy", () => {
       operator: null
     });
     expect(hasPublicStandingsMutationControls()).toBe(false);
+    expect(getPublicStandingsEmptyState(0, 0)).toEqual({
+      title: "No finished matches",
+      description: "Standings are provisional and will update after finished matches are available."
+    });
   });
 });
 

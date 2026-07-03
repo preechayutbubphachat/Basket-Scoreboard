@@ -130,6 +130,7 @@ import {
   buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  buildTournamentQuickLinks,
   createScheduledMatchFormState,
   createTeamFormState,
   createTeamPayload,
@@ -137,9 +138,13 @@ import {
   createTournamentMatchPayload,
   createTournamentPayload,
   buildStandingsRowMeta,
+  getPublicScheduleEmptyState,
+  getPublicStandingsEmptyState,
   getPublicScheduleLinks,
   getPublicStandingsLinks,
+  getScheduledMatchFormFeedback,
   getScheduleStatusGroup,
+  getTournamentEmptyState,
   type ScheduledMatchFormState,
   type ScheduleStatusFilter
 } from "./lib/scheduleControl";
@@ -581,6 +586,8 @@ function AdminTournamentsPage() {
     void loadTournaments();
   }, [api]);
 
+  const emptyState = getTournamentEmptyState();
+
   async function handleCreateTournament(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -603,6 +610,7 @@ function AdminTournamentsPage() {
       <p className="muted">Create tournament containers and review schedules using projection state.</p>
       {message ? <Notice {...message} /> : null}
       <form className="stacked-form" onSubmit={(event) => void handleCreateTournament(event)}>
+        <h2>{emptyState.primaryActionLabel}</h2>
         <label>
           Tournament name
           <input
@@ -644,7 +652,13 @@ function AdminTournamentsPage() {
         </button>
       </form>
       {loading ? <p>Loading tournaments...</p> : null}
-      {!loading && tournaments.length === 0 ? <p className="muted">No tournaments found.</p> : null}
+      {!loading && tournaments.length === 0 ? (
+        <section className="empty-state">
+          <h2>{emptyState.title}</h2>
+          <p>{emptyState.description}</p>
+          <p className="muted">{emptyState.helperText}</p>
+        </section>
+      ) : null}
       {tournaments.length > 0 ? (
         <div className="table-wrap">
           <table>
@@ -660,10 +674,7 @@ function AdminTournamentsPage() {
             </thead>
             <tbody>
               {tournaments.map((tournament) => {
-                const scheduleHref = buildAdminTournamentScheduleLink(tournament.tournamentId);
-                const standingsHref = buildAdminTournamentStandingsLink(tournament.tournamentId);
-                const publicScheduleHref = buildPublicTournamentScheduleLink(tournament.tournamentId);
-                const publicStandingsHref = buildPublicTournamentStandingsLink(tournament.tournamentId);
+                const links = buildTournamentQuickLinks(tournament.tournamentId);
                 return (
                   <tr key={tournament.tournamentId}>
                     <td>{tournament.name}</td>
@@ -673,42 +684,19 @@ function AdminTournamentsPage() {
                     <td>{tournament.finishedMatchCount}</td>
                     <td>
                       <span className="inline-actions">
-                        <a
-                          href={scheduleHref}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            navigate(scheduleHref);
-                          }}
-                        >
-                          Open Schedule
-                        </a>
-                        <a
-                          href={standingsHref}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            navigate(standingsHref);
-                          }}
-                        >
-                          Open Standings
-                        </a>
-                        <a
-                          href={publicScheduleHref}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            navigate(publicScheduleHref);
-                          }}
-                        >
-                          Public Schedule
-                        </a>
-                        <a
-                          href={publicStandingsHref}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            navigate(publicStandingsHref);
-                          }}
-                        >
-                          Public Standings
-                        </a>
+                        {links.map((link) => (
+                          <a
+                            key={link.href}
+                            className={link.private ? undefined : "public-link"}
+                            href={link.href}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              navigate(link.href);
+                            }}
+                          >
+                            {link.label}
+                          </a>
+                        ))}
                       </span>
                     </td>
                   </tr>
@@ -758,6 +746,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
 
   const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
   const tournamentTeams = teams.filter((team) => team.tournamentId === null || team.tournamentId === tournamentId);
+  const matchFormFeedback = getScheduledMatchFormFeedback(matchForm, tournamentTeams.length, savingSetup === "match");
 
   async function handleCreateTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -805,6 +794,12 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           <a className="button-link secondary" href={buildAdminTournamentStandingsLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentStandingsLink(tournamentId)); }}>
             Open Standings
           </a>
+          <a className="button-link secondary public-link" href={buildPublicTournamentScheduleLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentScheduleLink(tournamentId)); }}>
+            Public Schedule
+          </a>
+          <a className="button-link secondary public-link" href={buildPublicTournamentStandingsLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentStandingsLink(tournamentId)); }}>
+            Public Standings
+          </a>
           <button type="button" onClick={() => void loadSchedule()}>Refresh</button>
         </div>
       </div>
@@ -838,6 +833,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
         </form>
         <form className="stacked-form" onSubmit={(event) => void handleCreateMatch(event)}>
           <h2>Create Scheduled Match</h2>
+          {matchFormFeedback.warning ? <p className="muted">{matchFormFeedback.warning}</p> : null}
           <label>
             Home team
             <select
@@ -897,12 +893,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           </label>
           <button
             type="submit"
-            disabled={
-              savingSetup !== null ||
-              matchForm.homeTeamId.length === 0 ||
-              matchForm.awayTeamId.length === 0 ||
-              matchForm.homeTeamId === matchForm.awayTeamId
-            }
+            disabled={matchFormFeedback.disabled}
           >
             {savingSetup === "match" ? "Saving..." : "Create Scheduled Match"}
           </button>
@@ -910,7 +901,12 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
       </div>
       <ScheduleFilterBar value={filter} onChange={setFilter} />
       {loading ? <p>Loading schedule...</p> : null}
-      {!loading && matches.length === 0 ? <p className="muted">No matches for this filter.</p> : null}
+      {!loading && matches.length === 0 ? (
+        <section className="empty-state">
+          <h2>No scheduled matches</h2>
+          <p>{schedule?.matches.length ? "No matches match the current filter." : "Create a scheduled match to populate this tournament schedule."}</p>
+        </section>
+      ) : null}
       {matches.length > 0 ? <ScheduleTable matches={matches} mode="admin" /> : null}
     </section>
   );
@@ -944,7 +940,12 @@ function PublicTournamentsPage() {
       <p className="muted">Read-only tournament schedule.</p>
       {message ? <Notice {...message} /> : null}
       {loading ? <p>Loading tournaments...</p> : null}
-      {!loading && tournaments.length === 0 ? <p className="muted">No public tournaments found.</p> : null}
+      {!loading && tournaments.length === 0 ? (
+        <section className="empty-state">
+          <h2>No public tournaments</h2>
+          <p>No active tournament schedule is available yet.</p>
+        </section>
+      ) : null}
       <div className="match-grid">
         {tournaments.map((tournament) => {
           const scheduleHref = buildPublicTournamentScheduleLink(tournament.tournamentId);
@@ -998,6 +999,7 @@ function PublicTournamentSchedulePage({ tournamentId }: { tournamentId: string }
   }, [api, tournamentId]);
 
   const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
+  const publicScheduleEmptyState = getPublicScheduleEmptyState(schedule?.matches.length ?? 0);
 
   return (
     <section className="panel">
@@ -1016,7 +1018,12 @@ function PublicTournamentSchedulePage({ tournamentId }: { tournamentId: string }
       {message ? <Notice {...message} /> : null}
       <ScheduleFilterBar value={filter} onChange={setFilter} />
       {loading ? <p>Loading public schedule...</p> : null}
-      {!loading && matches.length === 0 ? <p className="muted">No matches for this filter.</p> : null}
+      {!loading && matches.length === 0 ? (
+        <section className="empty-state">
+          <h2>{publicScheduleEmptyState?.title ?? "No matches for this filter"}</h2>
+          <p>{publicScheduleEmptyState?.description ?? "Try another schedule filter."}</p>
+        </section>
+      ) : null}
       {matches.length > 0 ? <ScheduleTable matches={matches} mode="public" /> : null}
     </section>
   );
@@ -3020,6 +3027,10 @@ function filterScheduleMatches(matches: TournamentScheduleMatch[], filter: Sched
 }
 
 function StandingsContent({ standings, mode }: { standings: TournamentStandingsResponse; mode: "admin" | "public" }) {
+  const publicEmptyState = mode === "public"
+    ? getPublicStandingsEmptyState(standings.summary.finishedMatchCount, standings.rows.length)
+    : null;
+
   return (
     <>
       <Notice
@@ -3047,7 +3058,12 @@ function StandingsContent({ standings, mode }: { standings: TournamentStandingsR
           </>
         )}
       </div>
-      {standings.rows.length === 0 ? <p className="muted">Standings unavailable because no tournament match data has teams yet.</p> : null}
+      {standings.rows.length === 0 ? (
+        <section className="empty-state">
+          <h2>{publicEmptyState?.title ?? "No standings rows"}</h2>
+          <p>{publicEmptyState?.description ?? "Standings unavailable because no tournament match data has teams yet."}</p>
+        </section>
+      ) : null}
       {standings.rows.length > 0 ? <StandingsTable rows={standings.rows} /> : null}
     </>
   );
