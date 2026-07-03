@@ -20,6 +20,8 @@ function requestHash(command: AddScoreCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
 }
 
+const finishedMatchLiveControlMessage = "Finished matches cannot be changed through live controls";
+
 export async function appendScoreAddedCommand(options: {
   pool: Pool;
   command: AddScoreCommand;
@@ -78,6 +80,17 @@ export async function appendScoreAddedCommand(options: {
     const nextSeq = currentSeq + 1;
     const eventId = randomUUID();
     const occurredAt = new Date(options.command.clientTimestamp);
+    const projection = await getScoreboardProjection(connection, options.command.matchId);
+
+    if (!projection) {
+      throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
+    }
+
+    if (isFinishedMatchStatus(projection.status)) {
+      await connection.rollback();
+      return rejected(options.command, reasonCodes.VALIDATION_ERROR, finishedMatchLiveControlMessage, currentSeq);
+    }
+
     const rosterValidationStartedAt = performance.now();
     const payload = await buildScoreEventPayload({
       connection,
@@ -116,12 +129,6 @@ export async function appendScoreAddedCommand(options: {
     appendEventMs = performance.now() - appendEventStartedAt;
 
     const projectionUpdateStartedAt = performance.now();
-    const projection = await getScoreboardProjection(connection, options.command.matchId);
-
-    if (!projection) {
-      throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
-    }
-
     const updatedProjection = applyScoreAdded(projection, payload.value, nextSeq);
     await updateScoreboardProjection(connection, updatedProjection);
     await insertAuditLog(connection, {
@@ -216,6 +223,11 @@ function logScoreCommandTiming(
 
 function roundMs(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function isFinishedMatchStatus(status: string) {
+  const normalized = status.toUpperCase();
+  return normalized === "FINISHED" || normalized === "FINAL";
 }
 
 async function buildScoreEventPayload(options: {

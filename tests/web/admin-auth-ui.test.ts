@@ -41,10 +41,13 @@ import {
 import {
   buildScoreCommandPayload,
   buildScoreControlPanels,
+  canUseLiveMatchControls,
+  finishedMatchLiveControlWarning,
   getAcceptedScoreProjection,
   getScoreControlFeedback,
   getScoreControlLinks,
   getScoreControlPendingLabel,
+  isFinishedMatchStatus,
   scorePointOptions
 } from "../../apps/web/src/lib/scoreControl";
 import {
@@ -1232,6 +1235,16 @@ describe("score control UI policy", () => {
     ).toBeNull();
   });
 
+  test("disables live score controls and shows correction warning after match is finished", () => {
+    expect(isFinishedMatchStatus("FINISHED")).toBe(true);
+    expect(isFinishedMatchStatus("FINAL")).toBe(true);
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "FINISHED" }, true, false)).toBe(false);
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "FINAL" }, true, false)).toBe(false);
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "LIVE" }, true, false)).toBe(true);
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "PERIOD_BREAK" }, true, false)).toBe(true);
+    expect(finishedMatchLiveControlWarning).toBe("Match is finished. Use correction workflow for post-game edits.");
+  });
+
   test("score command response projection does not require a roster refetch", async () => {
     const nextProjection = { ...scoreboardProjection, currentSeq: 4, homeScore: 12 };
     const fetchMock = vi
@@ -1337,6 +1350,13 @@ describe("foul control UI policy", () => {
       code: "INVALID_EXPECTED_SEQ",
       text: "Conflict: refreshed, please try again."
     });
+  });
+
+  test("disables live foul controls and shows correction warning after match is finished", () => {
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "FINISHED" }, true, false)).toBe(false);
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "FINAL" }, true, false)).toBe(false);
+    expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "LIVE" }, true, false)).toBe(true);
+    expect(finishedMatchLiveControlWarning).toBe("Match is finished. Use correction workflow for post-game edits.");
   });
 });
 

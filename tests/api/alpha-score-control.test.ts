@@ -115,6 +115,61 @@ function createLegacySmokeProjectionPool(options: { projectionExists?: boolean; 
   };
 }
 
+function createFinishedMatchCommandPool() {
+  const events: string[] = [];
+  const connection = {
+    beginTransaction: vi.fn(),
+    commit: vi.fn(),
+    rollback: vi.fn(),
+    release: vi.fn(),
+    async query(sql: string) {
+      if (sql.includes("FROM command_deduplication")) {
+        return [[], []];
+      }
+
+      if (sql.includes("SELECT last_seq_no FROM match_streams")) {
+        return [[{ last_seq_no: 3 }], []];
+      }
+
+      if (sql.includes("SELECT projection_data, last_event_seq FROM match_projections")) {
+        return [[{
+          projection_data: JSON.stringify({
+            matchId,
+            homeScore: 12,
+            awayScore: 9,
+            teamFouls: { home: 2, away: 1 },
+            teamFoulsByPeriod: { "1": { home: 2, away: 1 } },
+            playerFouls: [],
+            periodNumber: 4,
+            gameClockRemainingMs: 0,
+            shotClockRemainingMs: 0,
+            gameClock: { remainingMs: 0, running: false, lastStartedAt: null },
+            shotClock: { remainingMs: 0, running: false, lastStartedAt: null },
+            clockUpdatedAt: null,
+            status: "FINISHED",
+            currentSeq: 3,
+            projectionVersion: "scoreboard-v1"
+          }),
+          last_event_seq: 3
+        }], []];
+      }
+
+      if (sql.includes("INSERT INTO match_events")) {
+        events.push(sql);
+      }
+
+      return [{ affectedRows: 1 }, []];
+    }
+  };
+
+  return {
+    events,
+    pool: {
+      getConnection: vi.fn().mockResolvedValue(connection)
+    }
+  };
+}
+
 afterEach(() => {
   delete process.env.AUTH_TEST_DISABLE_CSRF;
 });
@@ -433,6 +488,124 @@ describe("alpha score control routes", () => {
 
       expect(response.statusCode).toBe(403);
       expect(response.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_ASSIGNED" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects score commands after a match is finished without appending an event", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const fake = createFinishedMatchCommandPool();
+    const app = buildApiApp({ pool: fake.pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/score/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222231",
+          matchId,
+          expectedSeq: 3,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {
+            teamSide: "HOME",
+            points: 2,
+            playerId: null,
+            periodNumber: 4,
+            gameClockRemainingMs: 0,
+            note: null
+          }
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "REJECTED",
+        currentSeq: 3,
+        appendedEvents: [],
+        reasonCode: "VALIDATION_ERROR",
+        message: "Finished matches cannot be changed through live controls"
+      });
+      expect(fake.events).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects team foul commands after a match is finished without appending an event", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const fake = createFinishedMatchCommandPool();
+    const app = buildApiApp({ pool: fake.pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/foul/team/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222232",
+          matchId,
+          expectedSeq: 3,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {
+            teamSide: "HOME",
+            foulType: "PERSONAL",
+            reason: null
+          }
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "REJECTED",
+        currentSeq: 3,
+        appendedEvents: [],
+        reasonCode: "VALIDATION_ERROR",
+        message: "Finished matches cannot be changed through live controls"
+      });
+      expect(fake.events).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects player foul commands after a match is finished without appending an event", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const fake = createFinishedMatchCommandPool();
+    const app = buildApiApp({ pool: fake.pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/foul/player/add`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          commandId: "22222222-2222-4222-8222-222222222233",
+          matchId,
+          expectedSeq: 3,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+          clientTimestamp: "2026-07-01T10:00:00.000Z",
+          payload: {
+            teamSide: "HOME",
+            playerId: "11111111-2222-4333-8444-555555555555",
+            foulType: "PERSONAL",
+            reason: null
+          }
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "REJECTED",
+        currentSeq: 3,
+        appendedEvents: [],
+        reasonCode: "VALIDATION_ERROR",
+        message: "Finished matches cannot be changed through live controls"
+      });
+      expect(fake.events).toHaveLength(0);
     } finally {
       await app.close();
     }
