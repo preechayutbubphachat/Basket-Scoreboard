@@ -7,6 +7,7 @@ import type {
   MatchOfficialRoleCode,
   MatchRosterPlayer,
   MatchRostersResponse,
+  MatchSummaryResponse,
   MatchSyncResponse,
   OperatorMatchSummary,
   PlayerFoulAddedPayload,
@@ -286,6 +287,14 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async getMatchProjection(matchId: string) {
       return request<ScoreboardProjection>(
         `/matches/${encodeURIComponent(matchId)}/projection`,
+        {},
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async getMatchSummary(matchId: string) {
+      return request<MatchSummaryResponse>(
+        `/matches/${encodeURIComponent(matchId)}/summary`,
         {},
         false,
         { acceptRawSuccess: true }

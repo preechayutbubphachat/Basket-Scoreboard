@@ -30,6 +30,10 @@ export function buildAdminMatchActions(matchId: string) {
       href: `/admin/matches/${encodeURIComponent(matchId)}/lineup`,
       label: "Lineup"
     },
+    summary: {
+      href: `/admin/matches/${encodeURIComponent(matchId)}/summary`,
+      label: "Summary"
+    },
     operator: {
       href: buildOperatorMatchScoreLink(matchId),
       label: "Operator Score"
@@ -77,6 +81,10 @@ export function buildOperatorMatchLifecycleLink(matchId: string) {
   return `/operator/matches/${encodeURIComponent(matchId)}/lifecycle`;
 }
 
+export function buildOperatorMatchSummaryLink(matchId: string) {
+  return `/operator/matches/${encodeURIComponent(matchId)}/summary`;
+}
+
 export function buildPublicScoreboardLink(matchId: string) {
   return `/public/scoreboard/${encodeURIComponent(matchId)}`;
 }
@@ -119,6 +127,11 @@ export function buildOperatorMatchCard(match: OperatorMatchSummary) {
       enabled: true,
       href: buildOperatorMatchLifecycleLink(match.matchId),
       label: "Open Lifecycle Control"
+    },
+    summary: {
+      enabled: true,
+      href: buildOperatorMatchSummaryLink(match.matchId),
+      label: "Open Match Summary"
     },
     publicScoreboard: {
       enabled: true,

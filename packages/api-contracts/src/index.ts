@@ -179,6 +179,48 @@ export type MatchLineupResponse = {
   away: LineupTeamResponse;
 };
 
+export type MatchSummaryPlayer = {
+  playerId: string;
+  jerseyNumber: string | null;
+  displayName: string;
+  teamSide: "HOME" | "AWAY";
+  isStarter: boolean;
+  isCaptain: boolean;
+  status: RosterStatus | string;
+  points: number;
+  personalFouls: number;
+};
+
+export type MatchSummaryTeam = {
+  teamId: string | null;
+  teamName: string;
+  score: number;
+  teamFouls: number;
+  timeoutsUsed: number;
+  timeoutsRemaining: number;
+  unattributedPoints: number;
+  players: MatchSummaryPlayer[];
+};
+
+export type MatchSummaryResponse = {
+  matchId: string;
+  status: string;
+  periodNumber: number;
+  periodType: string;
+  currentSeq: number;
+  home: MatchSummaryTeam;
+  away: MatchSummaryTeam;
+  events: {
+    total: number;
+    scoreEvents: number;
+    foulEvents: number;
+    timeoutEvents: number;
+    lifecycleEvents: number;
+    correctionEvents: number;
+  };
+  generatedAt: string;
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;
