@@ -13,6 +13,7 @@ import {
   gameClockStopCommandSchema,
   lifecycleCommandSchema,
   reasonCodes,
+  replayQuerySchema,
   rejectCorrectionCommandSchema,
   shotClockResetCommandSchema,
   shotClockSetCommandSchema,
@@ -56,6 +57,7 @@ import {
   listMatchEvents
 } from "../matchEventStore/repositories.js";
 import { getMatchSummary } from "../matchEventStore/summaryService.js";
+import { getMatchReplay } from "../matchEventStore/replayService.js";
 import { getMatchSync } from "../matchEventStore/syncService.js";
 import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
@@ -202,6 +204,26 @@ export function registerMatchRoutes(
       }
 
       return summary;
+    }
+  );
+
+  app.get<{ Params: { matchId: string }; Querystring: { group?: string; limit?: string; afterSeq?: string; beforeSeq?: string } }>(
+    "/api/v1/matches/:matchId/replay",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request, reply) => {
+      const query = replayQuerySchema.parse(request.query);
+      const replay = await getMatchReplay({ pool, matchId: request.params.matchId, query });
+
+      if (!replay) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match replay was not found"));
+      }
+
+      return replay;
     }
   );
 

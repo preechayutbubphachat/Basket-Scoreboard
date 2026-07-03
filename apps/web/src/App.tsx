@@ -3,6 +3,7 @@ import type {
   CommandResult,
   FoulType,
   MatchLineupResponse,
+  MatchReplayResponse,
   MatchRosterPlayer,
   MatchRostersResponse,
   MatchSummaryPlayer,
@@ -11,6 +12,8 @@ import type {
   MatchOfficialRoleCode,
   OperatorMatchSummary,
   PlayerPosition,
+  ReplayGroupFilter,
+  ReplayItem,
   ScoreboardProjection,
   TimeoutRequestedBy
 } from "@basket-scoreboard/api-contracts";
@@ -31,6 +34,7 @@ import {
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchLifecycleLink,
+  buildOperatorMatchReplayLink,
   buildOperatorMatchSummaryLink,
   buildOperatorMatchTimeoutsLink,
   buildPublicScoreboardLink,
@@ -99,6 +103,11 @@ import {
   getRosterTeamLabel,
   type CreatePlayerFormState
 } from "./lib/rosterControl";
+import {
+  buildReplayEventGroupOptions,
+  buildReplayEventMeta,
+  getReplayScoreAfterLabel
+} from "./lib/replayControl";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
   applyRealtimeProjectionUpdate,
@@ -119,6 +128,7 @@ type Route =
   | { name: "admin-rosters"; matchId: string }
   | { name: "admin-lineup"; matchId: string }
   | { name: "admin-summary"; matchId: string }
+  | { name: "admin-replay"; matchId: string }
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
@@ -126,6 +136,7 @@ type Route =
   | { name: "operator-timeouts"; matchId: string }
   | { name: "operator-lifecycle"; matchId: string }
   | { name: "operator-summary"; matchId: string }
+  | { name: "operator-replay"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -149,6 +160,11 @@ function parseRoute(pathname: string): Route {
   const adminSummaryMatchId = adminSummaryMatch?.[1];
   if (adminSummaryMatchId) {
     return { name: "admin-summary", matchId: decodeURIComponent(adminSummaryMatchId) };
+  }
+  const adminReplayMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/replay$/);
+  const adminReplayMatchId = adminReplayMatch?.[1];
+  if (adminReplayMatchId) {
+    return { name: "admin-replay", matchId: decodeURIComponent(adminReplayMatchId) };
   }
   const operatorScoreMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/score$/);
   const operatorMatchId = operatorScoreMatch?.[1];
@@ -179,6 +195,11 @@ function parseRoute(pathname: string): Route {
   const operatorSummaryMatchId = operatorSummaryMatch?.[1];
   if (operatorSummaryMatchId) {
     return { name: "operator-summary", matchId: decodeURIComponent(operatorSummaryMatchId) };
+  }
+  const operatorReplayMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/replay$/);
+  const operatorReplayMatchId = operatorReplayMatch?.[1];
+  if (operatorReplayMatchId) {
+    return { name: "operator-replay", matchId: decodeURIComponent(operatorReplayMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -555,6 +576,16 @@ function OperatorMatchesPage() {
                     }}
                   >
                     {card.summary.label}
+                  </a>
+                  <a
+                    className="button-link"
+                    href={card.replay.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.replay.href);
+                    }}
+                  >
+                    {card.replay.label}
                   </a>
                   <a
                     className="button-link secondary"
@@ -1760,6 +1791,16 @@ function MatchSummaryPage({ matchId, backHref }: { matchId: string; backHref: st
           >
             Back
           </a>
+          <a
+            className="button-link"
+            href={buildOperatorMatchReplayLink(matchId)}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(buildOperatorMatchReplayLink(matchId));
+            }}
+          >
+            Open Replay
+          </a>
         </div>
         {message ? <Notice {...message} /> : null}
       </div>
@@ -1868,6 +1909,148 @@ function SummaryPlayerTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: string }) {
+  const { api } = useCurrentUser();
+  const [replay, setReplay] = useState<MatchReplayResponse | null>(null);
+  const [group, setGroup] = useState<ReplayGroupFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadReplay(nextGroup = group) {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setReplay(await api.getMatchReplay(matchId, { group: nextGroup, limit: 300 }));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadReplay(group);
+  }, [api, matchId, group]);
+
+  function selectGroup(nextGroup: ReplayGroupFilter) {
+    setGroup(nextGroup);
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Replay Timeline</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        <div className="button-row">
+          <a
+            className="button-link secondary"
+            href={backHref}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(backHref);
+            }}
+          >
+            Back
+          </a>
+          <button type="button" onClick={() => void loadReplay(group)} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {replay ? (
+        <section className="panel">
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{replay.status}</dd></div>
+            <div><dt>Current Seq</dt><dd>{replay.currentSeq}</dd></div>
+            <div><dt>Events</dt><dd>{replay.items.length}</dd></div>
+            <div><dt>Generated</dt><dd>{formatDate(replay.generatedAt)}</dd></div>
+          </dl>
+          <div className="score-display">
+            <div>
+              <span>{replay.homeTeamName}</span>
+              <strong>{replay.items.at(-1)?.scoreAfter?.home ?? "-"}</strong>
+            </div>
+            <div>
+              <span>{replay.awayTeamName}</span>
+              <strong>{replay.items.at(-1)?.scoreAfter?.away ?? "-"}</strong>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      <section className="panel">
+        <div className="button-row" role="group" aria-label="Replay event filters">
+          {buildReplayEventGroupOptions().map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={group === option.value ? "score-button" : undefined}
+              disabled={loading}
+              onClick={() => selectGroup(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+      {loading ? <section className="panel"><p>Loading replay timeline...</p></section> : null}
+      {!loading && replay && replay.items.length === 0 ? (
+        <section className="panel"><p className="muted">No replay events found for this filter.</p></section>
+      ) : null}
+      {replay && replay.items.length > 0 ? (
+        <section className="panel">
+          <h2>Timeline</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Group</th>
+                  <th>Time</th>
+                  <th>Event</th>
+                  <th>Detail</th>
+                  <th>Score</th>
+                  <th>Actor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {replay.items.map((item) => (
+                  <ReplayTimelineRow key={`${item.seq}-${item.eventType}`} item={item} replay={replay} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function ReplayTimelineRow({ item, replay }: { item: ReplayItem; replay: MatchReplayResponse }) {
+  const meta = buildReplayEventMeta(item);
+  const scoreAfter = getReplayScoreAfterLabel(item, replay);
+  const playerLabel = item.player
+    ? `${item.player.jerseyNumber ? `#${item.player.jerseyNumber} ` : ""}${item.player.displayName}`
+    : null;
+  return (
+    <tr>
+      <td>{item.seq}</td>
+      <td>{meta.badge}</td>
+      <td>{meta.timestamp}</td>
+      <td>
+        <strong>{meta.title}</strong>
+        <div className="muted">{item.eventType}</div>
+      </td>
+      <td>
+        <span>{meta.description}</span>
+        {playerLabel ? <div className="muted">{playerLabel}</div> : null}
+      </td>
+      <td>{scoreAfter ?? "-"}</td>
+      <td>{item.actor?.role ?? "-"}</td>
+    </tr>
   );
 }
 
@@ -2062,6 +2245,15 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                       }}
                     >
                       Summary
+                    </a>
+                    <a
+                      href={buildOperatorMatchReplayLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchReplayLink(match.matchId));
+                      }}
+                    >
+                      Replay
                     </a>
                   </span>
                 )}
@@ -2640,6 +2832,12 @@ function RoutedApp() {
             <MatchSummaryPage matchId={route.matchId} backHref="/admin/matches" />
           </ProtectedRoute>
         );
+      case "admin-replay":
+        return (
+          <ProtectedRoute requireAdmin>
+            <MatchReplayPage matchId={route.matchId} backHref="/admin/matches" />
+          </ProtectedRoute>
+        );
       case "operator-matches":
         return (
           <ProtectedRoute requireOperator>
@@ -2680,6 +2878,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <MatchSummaryPage matchId={route.matchId} backHref="/operator/matches" />
+          </ProtectedRoute>
+        );
+      case "operator-replay":
+        return (
+          <ProtectedRoute requireOperator>
+            <MatchReplayPage matchId={route.matchId} backHref="/operator/matches" />
           </ProtectedRoute>
         );
       case "public-scoreboard":

@@ -6,6 +6,7 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 import {
   buildOperatorMatchScoreLink,
+  buildOperatorMatchReplayLink,
   buildOperatorMatchSummaryLink,
   buildPublicScoreboardLink
 } from "./operatorMatches";
@@ -83,6 +84,7 @@ export function getFoulControlLinks(matchId: string) {
     operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
     scoreControl: { href: buildOperatorMatchScoreLink(matchId), label: "Open Score Control" },
     summary: { href: buildOperatorMatchSummaryLink(matchId), label: "Open Match Summary" },
+    replay: { href: buildOperatorMatchReplayLink(matchId), label: "Open Replay" },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Open Public Scoreboard"
