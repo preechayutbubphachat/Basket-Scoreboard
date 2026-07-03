@@ -18,7 +18,10 @@ import type {
   ReplayGroupFilter,
   ReplayItem,
   ScoreboardProjection,
-  TimeoutRequestedBy
+  TimeoutRequestedBy,
+  TournamentScheduleMatch,
+  TournamentScheduleResponse,
+  TournamentSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
@@ -117,6 +120,15 @@ import {
   buildAuditLogRowMeta,
   getAuditCorrectionRows
 } from "./lib/auditLogControl";
+import {
+  buildAdminTournamentScheduleLink,
+  buildPublicTournamentScheduleLink,
+  buildScheduleRowMeta,
+  buildScheduleStatusFilters,
+  getPublicScheduleLinks,
+  getScheduleStatusGroup,
+  type ScheduleStatusFilter
+} from "./lib/scheduleControl";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
   applyRealtimeProjectionUpdate,
@@ -133,6 +145,8 @@ type Route =
   | { name: "login" }
   | { name: "admin" }
   | { name: "admin-matches" }
+  | { name: "admin-tournaments" }
+  | { name: "admin-tournament-schedule"; tournamentId: string }
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
   | { name: "admin-lineup"; matchId: string }
@@ -149,6 +163,8 @@ type Route =
   | { name: "operator-replay"; matchId: string }
   | { name: "operator-audit-log"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
+  | { name: "public-tournaments" }
+  | { name: "public-tournament-schedule"; tournamentId: string }
   | { name: "unauthorized" };
 
 function parseRoute(pathname: string): Route {
@@ -156,6 +172,11 @@ function parseRoute(pathname: string): Route {
   const matchId = officialMatch?.[1];
   if (matchId) {
     return { name: "admin-officials", matchId: decodeURIComponent(matchId) };
+  }
+  const adminTournamentScheduleMatch = pathname.match(/^\/admin\/tournaments\/([^/]+)\/schedule$/);
+  const adminTournamentId = adminTournamentScheduleMatch?.[1];
+  if (adminTournamentId) {
+    return { name: "admin-tournament-schedule", tournamentId: decodeURIComponent(adminTournamentId) };
   }
   const rosterMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/rosters$/);
   const rosterMatchId = rosterMatch?.[1];
@@ -227,10 +248,17 @@ function parseRoute(pathname: string): Route {
   if (publicMatchId) {
     return { name: "public-scoreboard", matchId: decodeURIComponent(publicMatchId) };
   }
+  const publicTournamentScheduleMatch = pathname.match(/^\/public\/tournaments\/([^/]+)\/schedule$/);
+  const publicTournamentId = publicTournamentScheduleMatch?.[1];
+  if (publicTournamentId) {
+    return { name: "public-tournament-schedule", tournamentId: decodeURIComponent(publicTournamentId) };
+  }
   if (pathname === "/login") return { name: "login" };
   if (pathname === "/admin") return { name: "admin" };
   if (pathname === "/admin/matches") return { name: "admin-matches" };
+  if (pathname === "/admin/tournaments") return { name: "admin-tournaments" };
   if (pathname === "/operator/matches") return { name: "operator-matches" };
+  if (pathname === "/public/tournaments" || pathname === "/public/schedule") return { name: "public-tournaments" };
   if (pathname === "/unauthorized") return { name: "unauthorized" };
   return { name: "home" };
 }
@@ -324,6 +352,14 @@ function Shell({ children }: { children: React.ReactNode }) {
               Admin
             </a>
           ) : null}
+          {currentUser && canManageAssignments(currentUser) ? (
+            <a href="/admin/tournaments" onClick={(event) => { event.preventDefault(); navigate("/admin/tournaments"); }}>
+              Tournaments
+            </a>
+          ) : null}
+          <a href="/public/tournaments" onClick={(event) => { event.preventDefault(); navigate("/public/tournaments"); }}>
+            Public Schedule
+          </a>
           {currentUser && canAccessOperatorMatches(currentUser) ? (
             <a href="/operator/matches" onClick={(event) => { event.preventDefault(); navigate("/operator/matches"); }}>
               Operator Matches
@@ -416,6 +452,11 @@ function AdminHome() {
           Browse matches
         </a>
       </p>
+      <p>
+        <a href="/admin/tournaments" onClick={(event) => { event.preventDefault(); navigate("/admin/tournaments"); }}>
+          Browse tournaments
+        </a>
+      </p>
       <form className="inline-form" onSubmit={openMatch}>
         <label>
           Match ID
@@ -486,6 +527,224 @@ function AdminMatchesPage() {
       {loading ? <p>Loading matches...</p> : null}
       {!loading && matches.length === 0 ? <p className="muted">No matches found.</p> : null}
       {matches.length > 0 ? <MatchTable matches={matches} mode="admin" /> : null}
+    </section>
+  );
+}
+
+function AdminTournamentsPage() {
+  const { api } = useCurrentUser();
+  const [tournaments, setTournaments] = useState<TournamentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadTournaments() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setTournaments(await api.getTournaments());
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadTournaments();
+  }, [api]);
+
+  return (
+    <section className="panel">
+      <h1>Tournaments</h1>
+      <p className="muted">Review tournament schedules using existing match setup and projection state.</p>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading tournaments...</p> : null}
+      {!loading && tournaments.length === 0 ? <p className="muted">No tournaments found.</p> : null}
+      {tournaments.length > 0 ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tournament</th>
+                <th>Status</th>
+                <th>Matches</th>
+                <th>Live</th>
+                <th>Finished</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tournaments.map((tournament) => {
+                const scheduleHref = buildAdminTournamentScheduleLink(tournament.tournamentId);
+                return (
+                  <tr key={tournament.tournamentId}>
+                    <td>{tournament.name}</td>
+                    <td>{tournament.status}</td>
+                    <td>{tournament.matchCount}</td>
+                    <td>{tournament.liveMatchCount}</td>
+                    <td>{tournament.finishedMatchCount}</td>
+                    <td>
+                      <a
+                        href={scheduleHref}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigate(scheduleHref);
+                        }}
+                      >
+                        Open Schedule
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string }) {
+  const { api } = useCurrentUser();
+  const [schedule, setSchedule] = useState<TournamentScheduleResponse | null>(null);
+  const [filter, setFilter] = useState<ScheduleStatusFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadSchedule() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setSchedule(await api.getTournamentSchedule(tournamentId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadSchedule();
+  }, [api, tournamentId]);
+
+  const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <h1>Tournament Schedule</h1>
+          <p className="muted">{schedule ? schedule.tournament.name : `Tournament ID: ${tournamentId}`}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href="/admin/tournaments" onClick={(event) => { event.preventDefault(); navigate("/admin/tournaments"); }}>
+            Back
+          </a>
+          <button type="button" onClick={() => void loadSchedule()}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {schedule ? <TournamentSummaryStrip tournament={schedule.tournament} /> : null}
+      <ScheduleFilterBar value={filter} onChange={setFilter} />
+      {loading ? <p>Loading schedule...</p> : null}
+      {!loading && matches.length === 0 ? <p className="muted">No matches for this filter.</p> : null}
+      {matches.length > 0 ? <ScheduleTable matches={matches} mode="admin" /> : null}
+    </section>
+  );
+}
+
+function PublicTournamentsPage() {
+  const { api } = useCurrentUser();
+  const [tournaments, setTournaments] = useState<TournamentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        setTournaments(await api.getPublicTournaments());
+      } catch (error) {
+        setMessage(toUiMessage(error));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void load();
+  }, [api]);
+
+  return (
+    <section className="panel">
+      <h1>Public Schedule</h1>
+      <p className="muted">Read-only tournament schedule.</p>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading tournaments...</p> : null}
+      {!loading && tournaments.length === 0 ? <p className="muted">No public tournaments found.</p> : null}
+      <div className="match-grid">
+        {tournaments.map((tournament) => {
+          const href = buildPublicTournamentScheduleLink(tournament.tournamentId);
+          return (
+            <article className="match-card" key={tournament.tournamentId}>
+              <h2>{tournament.name}</h2>
+              <dl>
+                <div><dt>Status</dt><dd>{tournament.status}</dd></div>
+                <div><dt>Matches</dt><dd>{tournament.matchCount}</dd></div>
+                <div><dt>Live</dt><dd>{tournament.liveMatchCount}</dd></div>
+                <div><dt>Finished</dt><dd>{tournament.finishedMatchCount}</dd></div>
+              </dl>
+              <a className="button-link" href={href} onClick={(event) => { event.preventDefault(); navigate(href); }}>
+                Open Schedule
+              </a>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PublicTournamentSchedulePage({ tournamentId }: { tournamentId: string }) {
+  const { api } = useCurrentUser();
+  const [schedule, setSchedule] = useState<TournamentScheduleResponse | null>(null);
+  const [filter, setFilter] = useState<ScheduleStatusFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadSchedule() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setSchedule(await api.getPublicTournamentSchedule(tournamentId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadSchedule();
+  }, [api, tournamentId]);
+
+  const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <h1>Public Schedule</h1>
+          <p className="muted">{schedule ? schedule.tournament.name : `Tournament ID: ${tournamentId}`}</p>
+        </div>
+        <button type="button" onClick={() => void loadSchedule()}>Refresh</button>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      <ScheduleFilterBar value={filter} onChange={setFilter} />
+      {loading ? <p>Loading public schedule...</p> : null}
+      {!loading && matches.length === 0 ? <p className="muted">No matches for this filter.</p> : null}
+      {matches.length > 0 ? <ScheduleTable matches={matches} mode="public" /> : null}
     </section>
   );
 }
@@ -2361,6 +2620,128 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
   );
 }
 
+function TournamentSummaryStrip({ tournament }: { tournament: TournamentSummary }) {
+  return (
+    <dl className="state-strip">
+      <div><dt>Status</dt><dd>{tournament.status}</dd></div>
+      <div><dt>Matches</dt><dd>{tournament.matchCount}</dd></div>
+      <div><dt>Live</dt><dd>{tournament.liveMatchCount}</dd></div>
+      <div><dt>Finished</dt><dd>{tournament.finishedMatchCount}</dd></div>
+    </dl>
+  );
+}
+
+function ScheduleFilterBar({
+  value,
+  onChange
+}: {
+  value: ScheduleStatusFilter;
+  onChange: (value: ScheduleStatusFilter) => void;
+}) {
+  return (
+    <div className="button-row" role="group" aria-label="Schedule filter">
+      {buildScheduleStatusFilters().map((filter) => (
+        <button
+          key={filter.value}
+          type="button"
+          className={filter.value === value ? "active" : undefined}
+          onClick={() => onChange(filter.value)}
+        >
+          {filter.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function filterScheduleMatches(matches: TournamentScheduleMatch[], filter: ScheduleStatusFilter) {
+  if (filter === "all") {
+    return matches;
+  }
+
+  return matches.filter((match) => getScheduleStatusGroup(match.status) === filter);
+}
+
+function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; mode: "admin" | "public" }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Court</th>
+            <th>Match</th>
+            <th>Score</th>
+            <th>Status</th>
+            <th>Links</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matches.map((match) => {
+            const meta = buildScheduleRowMeta(match);
+            return (
+              <tr key={match.matchId}>
+                <td>{meta.scheduleLabel}</td>
+                <td>{meta.locationLabel}</td>
+                <td>{meta.matchupLabel}</td>
+                <td>{meta.scoreLabel}</td>
+                <td>{match.status}</td>
+                <td>
+                  {mode === "admin" ? <AdminScheduleLinks match={match} /> : <PublicScheduleLinks match={match} />}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AdminScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
+  const links = [
+    { href: buildOperatorMatchScoreLink(match.matchId), label: "Operator Score" },
+    { href: match.publicScoreboardPath, label: "Public Scoreboard" },
+    { href: buildOperatorMatchSummaryLink(match.matchId), label: "Summary" },
+    { href: buildOperatorMatchReplayLink(match.matchId), label: "Replay" },
+    { href: buildOperatorMatchAuditLogLink(match.matchId), label: "Audit Log" }
+  ];
+
+  return (
+    <span className="inline-actions">
+      {links.map((link) => (
+        <a
+          key={link.href}
+          href={link.href}
+          onClick={(event) => {
+            event.preventDefault();
+            navigate(link.href);
+          }}
+        >
+          {link.label}
+        </a>
+      ))}
+    </span>
+  );
+}
+
+function PublicScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
+  const links = getPublicScheduleLinks(match);
+  return (
+    <span className="inline-actions">
+      <a
+        href={links.scoreboard.href}
+        onClick={(event) => {
+          event.preventDefault();
+          navigate(links.scoreboard.href);
+        }}
+      >
+        {links.scoreboard.label}
+      </a>
+    </span>
+  );
+}
+
 function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: "admin" | "operator" }) {
   return (
     <div className="table-wrap">
@@ -3017,6 +3398,18 @@ function RoutedApp() {
             <AdminMatchesPage />
           </ProtectedRoute>
         );
+      case "admin-tournaments":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminTournamentsPage />
+          </ProtectedRoute>
+        );
+      case "admin-tournament-schedule":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminTournamentSchedulePage tournamentId={route.tournamentId} />
+          </ProtectedRoute>
+        );
       case "admin-officials":
         return (
           <ProtectedRoute requireAdmin>
@@ -3109,6 +3502,10 @@ function RoutedApp() {
         );
       case "public-scoreboard":
         return <PublicScoreboardPage matchId={route.matchId} />;
+      case "public-tournaments":
+        return <PublicTournamentsPage />;
+      case "public-tournament-schedule":
+        return <PublicTournamentSchedulePage tournamentId={route.tournamentId} />;
       case "unauthorized":
         return <UnauthorizedPage />;
       case "home":

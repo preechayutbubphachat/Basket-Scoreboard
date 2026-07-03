@@ -367,6 +367,45 @@ export type MatchAuditLogResponse = {
   generatedAt: string;
 };
 
+export type TournamentSummary = {
+  tournamentId: string;
+  name: string;
+  status: string;
+  matchCount: number;
+  liveMatchCount: number;
+  finishedMatchCount: number;
+};
+
+export type TournamentScheduleMatch = {
+  matchId: string;
+  tournamentId: string | null;
+  stageName: string | null;
+  groupName: string | null;
+  roundLabel: string | null;
+  courtLabel: string | null;
+  venueLabel: string | null;
+  scheduledAt: string | null;
+  homeTeamId: string | null;
+  homeTeamName: string;
+  awayTeamId: string | null;
+  awayTeamName: string;
+  status: string;
+  homeScore: number;
+  awayScore: number;
+  currentSeq: number;
+  publicScoreboardPath: string;
+};
+
+export type TournamentListResponse = {
+  tournaments: TournamentSummary[];
+};
+
+export type TournamentScheduleResponse = {
+  tournament: TournamentSummary;
+  matches: TournamentScheduleMatch[];
+  generatedAt: string;
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;

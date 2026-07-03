@@ -23,6 +23,8 @@ import type {
   ShotClockSetPayload,
   TimeoutEndedPayload,
   TimeoutGrantedPayload,
+  TournamentScheduleResponse,
+  TournamentSummary,
   TeamFoulAddedPayload,
   SmokeMatchResponse
 } from "@basket-scoreboard/api-contracts";
@@ -223,9 +225,27 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       const data = await request<{ matches: OperatorMatchSummary[] }>("/operator/matches");
       return data.matches;
     },
-  async getAdminMatches() {
+    async getAdminMatches() {
       const data = await request<{ matches: OperatorMatchSummary[] }>("/matches");
       return data.matches;
+    },
+    async getTournaments() {
+      const data = await request<{ tournaments: TournamentSummary[] }>("/tournaments");
+      return data.tournaments;
+    },
+    async getTournamentSchedule(tournamentId: string) {
+      const data = await request<TournamentScheduleResponse>(`/tournaments/${encodeURIComponent(tournamentId)}/schedule`);
+      return data;
+    },
+    async getPublicTournaments() {
+      const data = await request<{ tournaments: TournamentSummary[] }>("/public/tournaments");
+      return data.tournaments;
+    },
+    async getPublicTournamentSchedule(tournamentId: string) {
+      const data = await request<TournamentScheduleResponse>(
+        `/public/tournaments/${encodeURIComponent(tournamentId)}/schedule`
+      );
+      return data;
     },
     async createSmokeMatch() {
       const data = await request<SmokeMatchResponse>("/matches/smoke", { method: "POST" });

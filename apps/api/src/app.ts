@@ -12,6 +12,7 @@ import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
 import { registerRosterRoutes } from "./routes/rosterRoutes.js";
+import { registerTournamentRoutes } from "./routes/tournamentRoutes.js";
 import {
   noopProjectionRealtime,
   registerProjectionRealtime,
@@ -49,6 +50,7 @@ export function buildApiApp(options: {
   registerMatchRoutes(app, pool, auth, realtime);
   registerMatchOfficialRoutes(app, pool, auth);
   registerRosterRoutes(app, pool, auth);
+  registerTournamentRoutes(app, pool, auth);
   registerOperatorRoutes(app, pool, auth);
   registerSpaFallback(
     app,
