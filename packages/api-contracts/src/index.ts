@@ -406,6 +406,38 @@ export type TournamentScheduleResponse = {
   generatedAt: string;
 };
 
+export type TournamentStandingsTieStatus = "CLEAR" | "TIE_UNRESOLVED";
+
+export type TournamentStandingsRow = {
+  teamId: string;
+  teamName: string;
+  played: number;
+  wins: number;
+  losses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  pointDifferential: number;
+  finishedMatchesCounted: number;
+  liveMatchesExcluded: number;
+  scheduledMatchesExcluded: number;
+  tieStatus: TournamentStandingsTieStatus;
+};
+
+export type TournamentStandingsResponse = {
+  tournamentId: string;
+  tournamentName: string;
+  status: string;
+  isOfficial: false;
+  rulesNotice: string;
+  generatedAt: string;
+  rows: TournamentStandingsRow[];
+  summary: {
+    teamCount: number;
+    finishedMatchCount: number;
+    excludedMatchCount: number;
+  };
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;

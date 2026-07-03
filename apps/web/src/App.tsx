@@ -21,6 +21,8 @@ import type {
   TimeoutRequestedBy,
   TournamentScheduleMatch,
   TournamentScheduleResponse,
+  TournamentStandingsResponse,
+  TournamentStandingsRow,
   TournamentSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
@@ -122,10 +124,14 @@ import {
 } from "./lib/auditLogControl";
 import {
   buildAdminTournamentScheduleLink,
+  buildAdminTournamentStandingsLink,
   buildPublicTournamentScheduleLink,
+  buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  buildStandingsRowMeta,
   getPublicScheduleLinks,
+  getPublicStandingsLinks,
   getScheduleStatusGroup,
   type ScheduleStatusFilter
 } from "./lib/scheduleControl";
@@ -147,6 +153,7 @@ type Route =
   | { name: "admin-matches" }
   | { name: "admin-tournaments" }
   | { name: "admin-tournament-schedule"; tournamentId: string }
+  | { name: "admin-tournament-standings"; tournamentId: string }
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
   | { name: "admin-lineup"; matchId: string }
@@ -165,6 +172,7 @@ type Route =
   | { name: "public-scoreboard"; matchId: string }
   | { name: "public-tournaments" }
   | { name: "public-tournament-schedule"; tournamentId: string }
+  | { name: "public-tournament-standings"; tournamentId: string }
   | { name: "unauthorized" };
 
 function parseRoute(pathname: string): Route {
@@ -177,6 +185,11 @@ function parseRoute(pathname: string): Route {
   const adminTournamentId = adminTournamentScheduleMatch?.[1];
   if (adminTournamentId) {
     return { name: "admin-tournament-schedule", tournamentId: decodeURIComponent(adminTournamentId) };
+  }
+  const adminTournamentStandingsMatch = pathname.match(/^\/admin\/tournaments\/([^/]+)\/standings$/);
+  const adminStandingsTournamentId = adminTournamentStandingsMatch?.[1];
+  if (adminStandingsTournamentId) {
+    return { name: "admin-tournament-standings", tournamentId: decodeURIComponent(adminStandingsTournamentId) };
   }
   const rosterMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/rosters$/);
   const rosterMatchId = rosterMatch?.[1];
@@ -252,6 +265,11 @@ function parseRoute(pathname: string): Route {
   const publicTournamentId = publicTournamentScheduleMatch?.[1];
   if (publicTournamentId) {
     return { name: "public-tournament-schedule", tournamentId: decodeURIComponent(publicTournamentId) };
+  }
+  const publicTournamentStandingsMatch = pathname.match(/^\/public\/tournaments\/([^/]+)\/standings$/);
+  const publicStandingsTournamentId = publicTournamentStandingsMatch?.[1];
+  if (publicStandingsTournamentId) {
+    return { name: "public-tournament-standings", tournamentId: decodeURIComponent(publicStandingsTournamentId) };
   }
   if (pathname === "/login") return { name: "login" };
   if (pathname === "/admin") return { name: "admin" };
@@ -576,6 +594,7 @@ function AdminTournamentsPage() {
             <tbody>
               {tournaments.map((tournament) => {
                 const scheduleHref = buildAdminTournamentScheduleLink(tournament.tournamentId);
+                const standingsHref = buildAdminTournamentStandingsLink(tournament.tournamentId);
                 return (
                   <tr key={tournament.tournamentId}>
                     <td>{tournament.name}</td>
@@ -584,15 +603,26 @@ function AdminTournamentsPage() {
                     <td>{tournament.liveMatchCount}</td>
                     <td>{tournament.finishedMatchCount}</td>
                     <td>
-                      <a
-                        href={scheduleHref}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          navigate(scheduleHref);
-                        }}
-                      >
-                        Open Schedule
-                      </a>
+                      <span className="inline-actions">
+                        <a
+                          href={scheduleHref}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            navigate(scheduleHref);
+                          }}
+                        >
+                          Open Schedule
+                        </a>
+                        <a
+                          href={standingsHref}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            navigate(standingsHref);
+                          }}
+                        >
+                          Open Standings
+                        </a>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -641,6 +671,9 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           <a className="button-link secondary" href="/admin/tournaments" onClick={(event) => { event.preventDefault(); navigate("/admin/tournaments"); }}>
             Back
           </a>
+          <a className="button-link secondary" href={buildAdminTournamentStandingsLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentStandingsLink(tournamentId)); }}>
+            Open Standings
+          </a>
           <button type="button" onClick={() => void loadSchedule()}>Refresh</button>
         </div>
       </div>
@@ -685,7 +718,8 @@ function PublicTournamentsPage() {
       {!loading && tournaments.length === 0 ? <p className="muted">No public tournaments found.</p> : null}
       <div className="match-grid">
         {tournaments.map((tournament) => {
-          const href = buildPublicTournamentScheduleLink(tournament.tournamentId);
+          const scheduleHref = buildPublicTournamentScheduleLink(tournament.tournamentId);
+          const standingsHref = buildPublicTournamentStandingsLink(tournament.tournamentId);
           return (
             <article className="match-card" key={tournament.tournamentId}>
               <h2>{tournament.name}</h2>
@@ -695,9 +729,14 @@ function PublicTournamentsPage() {
                 <div><dt>Live</dt><dd>{tournament.liveMatchCount}</dd></div>
                 <div><dt>Finished</dt><dd>{tournament.finishedMatchCount}</dd></div>
               </dl>
-              <a className="button-link" href={href} onClick={(event) => { event.preventDefault(); navigate(href); }}>
-                Open Schedule
-              </a>
+              <div className="button-row">
+                <a className="button-link" href={scheduleHref} onClick={(event) => { event.preventDefault(); navigate(scheduleHref); }}>
+                  Open Schedule
+                </a>
+                <a className="button-link secondary" href={standingsHref} onClick={(event) => { event.preventDefault(); navigate(standingsHref); }}>
+                  Open Standings
+                </a>
+              </div>
             </article>
           );
         })}
@@ -738,13 +777,102 @@ function PublicTournamentSchedulePage({ tournamentId }: { tournamentId: string }
           <h1>Public Schedule</h1>
           <p className="muted">{schedule ? schedule.tournament.name : `Tournament ID: ${tournamentId}`}</p>
         </div>
-        <button type="button" onClick={() => void loadSchedule()}>Refresh</button>
+        <div className="button-row">
+          <a className="button-link secondary" href={buildPublicTournamentStandingsLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentStandingsLink(tournamentId)); }}>
+            Open Standings
+          </a>
+          <button type="button" onClick={() => void loadSchedule()}>Refresh</button>
+        </div>
       </div>
       {message ? <Notice {...message} /> : null}
       <ScheduleFilterBar value={filter} onChange={setFilter} />
       {loading ? <p>Loading public schedule...</p> : null}
       {!loading && matches.length === 0 ? <p className="muted">No matches for this filter.</p> : null}
       {matches.length > 0 ? <ScheduleTable matches={matches} mode="public" /> : null}
+    </section>
+  );
+}
+
+function AdminTournamentStandingsPage({ tournamentId }: { tournamentId: string }) {
+  const { api } = useCurrentUser();
+  const [standings, setStandings] = useState<TournamentStandingsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadStandings() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setStandings(await api.getTournamentStandings(tournamentId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadStandings();
+  }, [api, tournamentId]);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <h1>Tournament Standings</h1>
+          <p className="muted">{standings ? standings.tournamentName : `Tournament ID: ${tournamentId}`}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href={buildAdminTournamentScheduleLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentScheduleLink(tournamentId)); }}>
+            Open Schedule
+          </a>
+          <a className="button-link secondary" href={buildPublicTournamentScheduleLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentScheduleLink(tournamentId)); }}>
+            Public Schedule
+          </a>
+          <button type="button" onClick={() => void loadStandings()}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {standings ? <StandingsContent standings={standings} mode="admin" /> : null}
+      {loading ? <p>Loading standings...</p> : null}
+    </section>
+  );
+}
+
+function PublicTournamentStandingsPage({ tournamentId }: { tournamentId: string }) {
+  const { api } = useCurrentUser();
+  const [standings, setStandings] = useState<TournamentStandingsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadStandings() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setStandings(await api.getPublicTournamentStandings(tournamentId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadStandings();
+  }, [api, tournamentId]);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <h1>Public Standings</h1>
+          <p className="muted">{standings ? standings.tournamentName : `Tournament ID: ${tournamentId}`}</p>
+        </div>
+        <button type="button" onClick={() => void loadStandings()}>Refresh</button>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {standings ? <StandingsContent standings={standings} mode="public" /> : null}
+      {loading ? <p>Loading public standings...</p> : null}
     </section>
   );
 }
@@ -2662,6 +2790,96 @@ function filterScheduleMatches(matches: TournamentScheduleMatch[], filter: Sched
   return matches.filter((match) => getScheduleStatusGroup(match.status) === filter);
 }
 
+function StandingsContent({ standings, mode }: { standings: TournamentStandingsResponse; mode: "admin" | "public" }) {
+  return (
+    <>
+      <Notice
+        tone="success"
+        text="Alpha standings are provisional. Official tiebreak rules are not implemented."
+      />
+      <p className="muted">{standings.rulesNotice}</p>
+      <dl className="state-strip">
+        <div><dt>Teams</dt><dd>{standings.summary.teamCount}</dd></div>
+        <div><dt>Finished counted</dt><dd>{standings.summary.finishedMatchCount}</dd></div>
+        <div><dt>Excluded matches</dt><dd>{standings.summary.excludedMatchCount}</dd></div>
+        <div><dt>Official</dt><dd>{standings.isOfficial ? "Yes" : "No"}</dd></div>
+      </dl>
+      <div className="button-row">
+        {mode === "public" ? (
+          <PublicStandingsLinks tournamentId={standings.tournamentId} />
+        ) : (
+          <>
+            <a className="button-link secondary" href={buildAdminTournamentScheduleLink(standings.tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentScheduleLink(standings.tournamentId)); }}>
+              Open Schedule
+            </a>
+            <a className="button-link secondary" href={buildPublicTournamentScheduleLink(standings.tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentScheduleLink(standings.tournamentId)); }}>
+              Public Schedule
+            </a>
+          </>
+        )}
+      </div>
+      {standings.rows.length === 0 ? <p className="muted">Standings unavailable because no tournament match data has teams yet.</p> : null}
+      {standings.rows.length > 0 ? <StandingsTable rows={standings.rows} /> : null}
+    </>
+  );
+}
+
+function StandingsTable({ rows }: { rows: TournamentStandingsRow[] }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Team</th>
+            <th>Played</th>
+            <th>W</th>
+            <th>L</th>
+            <th>PF</th>
+            <th>PA</th>
+            <th>Diff</th>
+            <th>Tie status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => {
+            const meta = buildStandingsRowMeta(row, index + 1);
+            return (
+              <tr key={row.teamId}>
+                <td>{meta.provisionalRank}</td>
+                <td>{row.teamName}</td>
+                <td>{row.played}</td>
+                <td>{row.wins}</td>
+                <td>{row.losses}</td>
+                <td>{row.pointsFor}</td>
+                <td>{row.pointsAgainst}</td>
+                <td>{meta.pointDifferentialLabel}</td>
+                <td>{meta.tieLabel}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PublicStandingsLinks({ tournamentId }: { tournamentId: string }) {
+  const links = getPublicStandingsLinks(tournamentId);
+  return (
+    <a
+      className="button-link secondary"
+      href={links.schedule.href}
+      onClick={(event) => {
+        event.preventDefault();
+        navigate(links.schedule.href);
+      }}
+    >
+      {links.schedule.label}
+    </a>
+  );
+}
+
 function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; mode: "admin" | "public" }) {
   return (
     <div className="table-wrap">
@@ -3410,6 +3628,12 @@ function RoutedApp() {
             <AdminTournamentSchedulePage tournamentId={route.tournamentId} />
           </ProtectedRoute>
         );
+      case "admin-tournament-standings":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminTournamentStandingsPage tournamentId={route.tournamentId} />
+          </ProtectedRoute>
+        );
       case "admin-officials":
         return (
           <ProtectedRoute requireAdmin>
@@ -3506,6 +3730,8 @@ function RoutedApp() {
         return <PublicTournamentsPage />;
       case "public-tournament-schedule":
         return <PublicTournamentSchedulePage tournamentId={route.tournamentId} />;
+      case "public-tournament-standings":
+        return <PublicTournamentStandingsPage tournamentId={route.tournamentId} />;
       case "unauthorized":
         return <UnauthorizedPage />;
       case "home":

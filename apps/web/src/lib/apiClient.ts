@@ -24,6 +24,7 @@ import type {
   TimeoutEndedPayload,
   TimeoutGrantedPayload,
   TournamentScheduleResponse,
+  TournamentStandingsResponse,
   TournamentSummary,
   TeamFoulAddedPayload,
   SmokeMatchResponse
@@ -237,6 +238,12 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       const data = await request<TournamentScheduleResponse>(`/tournaments/${encodeURIComponent(tournamentId)}/schedule`);
       return data;
     },
+    async getTournamentStandings(tournamentId: string) {
+      const data = await request<TournamentStandingsResponse>(
+        `/tournaments/${encodeURIComponent(tournamentId)}/standings`
+      );
+      return data;
+    },
     async getPublicTournaments() {
       const data = await request<{ tournaments: TournamentSummary[] }>("/public/tournaments");
       return data.tournaments;
@@ -244,6 +251,12 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async getPublicTournamentSchedule(tournamentId: string) {
       const data = await request<TournamentScheduleResponse>(
         `/public/tournaments/${encodeURIComponent(tournamentId)}/schedule`
+      );
+      return data;
+    },
+    async getPublicTournamentStandings(tournamentId: string) {
+      const data = await request<TournamentStandingsResponse>(
+        `/public/tournaments/${encodeURIComponent(tournamentId)}/standings`
       );
       return data;
     },

@@ -4,6 +4,7 @@ import { reasonCodes } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { apiError } from "../errors/apiErrors.js";
 import { getTournamentSchedule, listTournamentSummaries } from "../tournaments/tournamentScheduleService.js";
+import { getTournamentStandings } from "../tournaments/tournamentStandingsService.js";
 
 export function registerTournamentRoutes(
   app: FastifyInstance,
@@ -55,6 +56,29 @@ export function registerTournamentRoutes(
     }
   );
 
+  app.get<{ Params: { tournamentId: string } }>(
+    "/api/v1/tournaments/:tournamentId/standings",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      const user = request.user as AuthenticatedUser;
+      if (user.role !== "ADMIN") {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+
+      const standings = await getTournamentStandings(pool, request.params.tournamentId);
+      if (!standings) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Tournament standings were not found"));
+      }
+
+      return {
+        ok: true,
+        data: standings
+      };
+    }
+  );
+
   app.get("/api/v1/public/tournaments", async () => {
     return {
       ok: true,
@@ -75,6 +99,21 @@ export function registerTournamentRoutes(
       return {
         ok: true,
         data: schedule
+      };
+    }
+  );
+
+  app.get<{ Params: { tournamentId: string } }>(
+    "/api/v1/public/tournaments/:tournamentId/standings",
+    async (request, reply) => {
+      const standings = await getTournamentStandings(pool, request.params.tournamentId, { publicOnly: true });
+      if (!standings) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Public tournament standings were not found"));
+      }
+
+      return {
+        ok: true,
+        data: standings
       };
     }
   );
