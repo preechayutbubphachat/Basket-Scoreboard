@@ -4,7 +4,11 @@ import type {
   ScoreboardProjection,
   TeamFoulAddedPayload
 } from "@basket-scoreboard/api-contracts";
-import { buildOperatorMatchScoreLink, buildPublicScoreboardLink } from "./operatorMatches";
+import {
+  buildOperatorMatchScoreLink,
+  buildOperatorMatchSummaryLink,
+  buildPublicScoreboardLink
+} from "./operatorMatches";
 
 export const foulTypeOptions: FoulType[] = [
   "PERSONAL",
@@ -78,6 +82,7 @@ export function getFoulControlLinks(matchId: string) {
   return {
     operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
     scoreControl: { href: buildOperatorMatchScoreLink(matchId), label: "Open Score Control" },
+    summary: { href: buildOperatorMatchSummaryLink(matchId), label: "Open Match Summary" },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Open Public Scoreboard"

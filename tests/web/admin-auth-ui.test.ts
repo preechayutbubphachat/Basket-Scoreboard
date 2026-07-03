@@ -21,6 +21,7 @@ import {
   buildOperatorMatchFoulsLink,
   buildOperatorMatchLifecycleLink,
   buildOperatorMatchScoreLink,
+  buildOperatorMatchSummaryLink,
   buildOperatorMatchTimeoutsLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
@@ -73,6 +74,11 @@ import {
   timeoutRequestedByOptions
 } from "../../apps/web/src/lib/timeoutControl";
 import {
+  buildSummaryPlayerLabels,
+  getSummaryTeamTotals,
+  hasSummaryMutationControls
+} from "../../apps/web/src/lib/summaryControl";
+import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
   getLifecycleActionPlan,
@@ -91,6 +97,7 @@ import {
 import type {
   AuthenticatedUser,
   MatchRostersResponse,
+  MatchSummaryResponse,
   ScoreAddedPayload,
   ScoreboardProjection
 } from "../../packages/api-contracts/src";
@@ -206,6 +213,55 @@ const matchRosters: MatchRostersResponse = {
     home: { playerCount: 2, starterCount: 1, captainSet: true, confirmed: false, ready: false },
     away: { playerCount: 0, starterCount: 0, captainSet: false, confirmed: false, ready: false }
   }
+};
+
+const matchSummary: MatchSummaryResponse = {
+  matchId: scoreboardProjection.matchId,
+  status: "FINISHED",
+  periodNumber: 4,
+  periodType: "REGULATION",
+  currentSeq: 9,
+  home: {
+    teamId: "home-team",
+    teamName: "Bangkok HOME",
+    score: 22,
+    teamFouls: 5,
+    timeoutsUsed: 2,
+    timeoutsRemaining: 3,
+    unattributedPoints: 4,
+    players: [
+      {
+        playerId: matchRosters.rosters.HOME[0].playerId,
+        jerseyNumber: "7",
+        displayName: "Narin Guard",
+        teamSide: "HOME",
+        isStarter: true,
+        isCaptain: true,
+        status: "ACTIVE",
+        points: 8,
+        personalFouls: 2
+      }
+    ]
+  },
+  away: {
+    teamId: "away-team",
+    teamName: "Chiang Mai AWAY",
+    score: 18,
+    teamFouls: 3,
+    timeoutsUsed: 1,
+    timeoutsRemaining: 4,
+    unattributedPoints: 0,
+    players: []
+  },
+  events: {
+    total: 12,
+    scoreEvents: 5,
+    foulEvents: 3,
+    timeoutEvents: 2,
+    lifecycleEvents: 1,
+    correctionEvents: 1
+  },
+  generatedAt: "2026-07-01T10:10:00.000Z"
 };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -736,6 +792,19 @@ describe("web API client", () => {
     });
   });
 
+  test("reads match summary without CSRF because it is read-only", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValueOnce(jsonResponse(matchSummary));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getMatchSummary(scoreboardProjection.matchId)).resolves.toEqual(matchSummary);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/summary`,
+      expect.objectContaining({
+        credentials: "include"
+      })
+    );
+  });
+
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -1054,6 +1123,11 @@ describe("operator match landing UI policy", () => {
       href: "/operator/matches/match-1/timeouts",
       label: "Open Timeout Control"
     });
+    expect(card.summary).toEqual({
+      enabled: true,
+      href: "/operator/matches/match-1/summary",
+      label: "Open Match Summary"
+    });
     expect(card.publicScoreboard).toEqual({
       enabled: true,
       href: "/public/scoreboard/match-1",
@@ -1077,6 +1151,7 @@ describe("operator match landing UI policy", () => {
     expect(buildOperatorMatchClockLink("match 1")).toBe("/operator/matches/match%201/clock");
     expect(buildOperatorMatchTimeoutsLink("match 1")).toBe("/operator/matches/match%201/timeouts");
     expect(buildOperatorMatchLifecycleLink("match 1")).toBe("/operator/matches/match%201/lifecycle");
+    expect(buildOperatorMatchSummaryLink("match 1")).toBe("/operator/matches/match%201/summary");
   });
 
   test("empty operator match state is explicit", () => {
@@ -1089,6 +1164,7 @@ describe("operator match landing UI policy", () => {
       officials: { href: "/admin/matches/match-1/officials", label: "Officials" },
       rosters: { href: "/admin/matches/match-1/rosters", label: "Rosters" },
       lineup: { href: "/admin/matches/match-1/lineup", label: "Lineup" },
+      summary: { href: "/admin/matches/match-1/summary", label: "Summary" },
       operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
@@ -1279,6 +1355,10 @@ describe("score control UI policy", () => {
   test("builds score control navigation links", () => {
     expect(getScoreControlLinks(scoreboardProjection.matchId, adminUser)).toEqual({
       operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
+      summary: {
+        href: `/operator/matches/${scoreboardProjection.matchId}/summary`,
+        label: "Open Match Summary"
+      },
       publicScoreboard: {
         href: `/public/scoreboard/${scoreboardProjection.matchId}`,
         label: "Open Public Scoreboard"
@@ -1357,6 +1437,26 @@ describe("foul control UI policy", () => {
     expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "FINAL" }, true, false)).toBe(false);
     expect(canUseLiveMatchControls({ ...scoreboardProjection, status: "LIVE" }, true, false)).toBe(true);
     expect(finishedMatchLiveControlWarning).toBe("Match is finished. Use correction workflow for post-game edits.");
+  });
+});
+
+describe("match summary UI policy", () => {
+  test("builds team total labels for summary cards", () => {
+    expect(getSummaryTeamTotals(matchSummary.home)).toEqual([
+      { label: "Score", value: "22" },
+      { label: "Team fouls", value: "5" },
+      { label: "Timeouts", value: "2 used / 3 remaining" },
+      { label: "Unattributed points", value: "4" }
+    ]);
+  });
+
+  test("builds starter and captain labels for box score players", () => {
+    expect(buildSummaryPlayerLabels(matchSummary.home.players[0])).toEqual(["STARTER", "CAPTAIN"]);
+    expect(buildSummaryPlayerLabels({ ...matchSummary.home.players[0], isStarter: false, isCaptain: false })).toEqual([]);
+  });
+
+  test("summary dashboard is read-only", () => {
+    expect(hasSummaryMutationControls()).toBe(false);
   });
 });
 

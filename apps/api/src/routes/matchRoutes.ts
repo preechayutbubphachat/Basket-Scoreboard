@@ -55,6 +55,7 @@ import {
   getScoreboardProjectionView,
   listMatchEvents
 } from "../matchEventStore/repositories.js";
+import { getMatchSummary } from "../matchEventStore/summaryService.js";
 import { getMatchSync } from "../matchEventStore/syncService.js";
 import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
@@ -182,6 +183,25 @@ export function registerMatchRoutes(
       } finally {
         connection.release();
       }
+    }
+  );
+
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/summary",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request, reply) => {
+      const summary = await getMatchSummary({ pool, matchId: request.params.matchId });
+
+      if (!summary) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match summary was not found"));
+      }
+
+      return summary;
     }
   );
 

@@ -5,6 +5,9 @@ import type {
   MatchLineupResponse,
   MatchRosterPlayer,
   MatchRostersResponse,
+  MatchSummaryPlayer,
+  MatchSummaryResponse,
+  MatchSummaryTeam,
   MatchOfficialRoleCode,
   OperatorMatchSummary,
   PlayerPosition,
@@ -28,6 +31,7 @@ import {
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchLifecycleLink,
+  buildOperatorMatchSummaryLink,
   buildOperatorMatchTimeoutsLink,
   buildPublicScoreboardLink,
   buildOperatorMatchCard,
@@ -95,6 +99,7 @@ import {
   getRosterTeamLabel,
   type CreatePlayerFormState
 } from "./lib/rosterControl";
+import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
   applyRealtimeProjectionUpdate,
   createPublicProjectionSocket,
@@ -113,12 +118,14 @@ type Route =
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
   | { name: "admin-lineup"; matchId: string }
+  | { name: "admin-summary"; matchId: string }
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
   | { name: "operator-clock"; matchId: string }
   | { name: "operator-timeouts"; matchId: string }
   | { name: "operator-lifecycle"; matchId: string }
+  | { name: "operator-summary"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -137,6 +144,11 @@ function parseRoute(pathname: string): Route {
   const lineupMatchId = lineupMatch?.[1];
   if (lineupMatchId) {
     return { name: "admin-lineup", matchId: decodeURIComponent(lineupMatchId) };
+  }
+  const adminSummaryMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/summary$/);
+  const adminSummaryMatchId = adminSummaryMatch?.[1];
+  if (adminSummaryMatchId) {
+    return { name: "admin-summary", matchId: decodeURIComponent(adminSummaryMatchId) };
   }
   const operatorScoreMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/score$/);
   const operatorMatchId = operatorScoreMatch?.[1];
@@ -162,6 +174,11 @@ function parseRoute(pathname: string): Route {
   const operatorLifecycleMatchId = operatorLifecycleMatch?.[1];
   if (operatorLifecycleMatchId) {
     return { name: "operator-lifecycle", matchId: decodeURIComponent(operatorLifecycleMatchId) };
+  }
+  const operatorSummaryMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/summary$/);
+  const operatorSummaryMatchId = operatorSummaryMatch?.[1];
+  if (operatorSummaryMatchId) {
+    return { name: "operator-summary", matchId: decodeURIComponent(operatorSummaryMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -528,6 +545,16 @@ function OperatorMatchesPage() {
                     }}
                   >
                     {card.lifecycleControl.label}
+                  </a>
+                  <a
+                    className="button-link"
+                    href={card.summary.href}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(card.summary.href);
+                    }}
+                  >
+                    {card.summary.label}
                   </a>
                   <a
                     className="button-link secondary"
@@ -1695,6 +1722,155 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   );
 }
 
+function MatchSummaryPage({ matchId, backHref }: { matchId: string; backHref: string }) {
+  const { api } = useCurrentUser();
+  const [summary, setSummary] = useState<MatchSummaryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  useEffect(() => {
+    async function loadSummary() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        setSummary(await api.getMatchSummary(matchId));
+      } catch (error) {
+        setMessage(toUiMessage(error));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadSummary();
+  }, [api, matchId]);
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Match Summary</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        <div className="button-row">
+          <a
+            className="button-link secondary"
+            href={backHref}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(backHref);
+            }}
+          >
+            Back
+          </a>
+        </div>
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading match summary...</p></section> : null}
+      {!loading && !summary && !message ? (
+        <section className="panel"><p className="muted">No match summary found.</p></section>
+      ) : null}
+      {summary ? (
+        <>
+          <section className="panel">
+            <dl className="state-strip">
+              <div><dt>Status</dt><dd>{summary.status}</dd></div>
+              <div><dt>Period</dt><dd>{summary.periodNumber}</dd></div>
+              <div><dt>Type</dt><dd>{summary.periodType}</dd></div>
+              <div><dt>Current Seq</dt><dd>{summary.currentSeq}</dd></div>
+              <div><dt>Generated</dt><dd>{formatDate(summary.generatedAt)}</dd></div>
+            </dl>
+            <div className="score-display">
+              <div>
+                <span>{summary.home.teamName}</span>
+                <strong>{summary.home.score}</strong>
+              </div>
+              <div>
+                <span>{summary.away.teamName}</span>
+                <strong>{summary.away.score}</strong>
+              </div>
+            </div>
+          </section>
+          <section className="score-actions">
+            <SummaryTeamPanel team={summary.home} />
+            <SummaryTeamPanel team={summary.away} />
+          </section>
+          <section className="panel">
+            <h2>Event Counts</h2>
+            <dl className="state-strip">
+              <div><dt>Total</dt><dd>{summary.events.total}</dd></div>
+              <div><dt>Score</dt><dd>{summary.events.scoreEvents}</dd></div>
+              <div><dt>Fouls</dt><dd>{summary.events.foulEvents}</dd></div>
+              <div><dt>Timeouts</dt><dd>{summary.events.timeoutEvents}</dd></div>
+              <div><dt>Lifecycle</dt><dd>{summary.events.lifecycleEvents}</dd></div>
+              <div><dt>Corrections</dt><dd>{summary.events.correctionEvents}</dd></div>
+            </dl>
+          </section>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function SummaryTeamPanel({ team }: { team: MatchSummaryTeam }) {
+  return (
+    <article className="panel">
+      <h2>{team.teamName}</h2>
+      <dl className="state-strip">
+        {getSummaryTeamTotals(team).map((item) => (
+          <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>
+        ))}
+      </dl>
+      <SummaryPlayerTable players={team.players} unattributedPoints={team.unattributedPoints} />
+    </article>
+  );
+}
+
+function SummaryPlayerTable({
+  players,
+  unattributedPoints
+}: {
+  players: MatchSummaryPlayer[];
+  unattributedPoints: number;
+}) {
+  if (players.length === 0 && unattributedPoints === 0) {
+    return <p className="muted">No player scoring or fouls found.</p>;
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Role</th>
+            <th>PTS</th>
+            <th>PF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {players.map((player) => (
+            <tr key={player.playerId}>
+              <td>{player.jerseyNumber ?? "-"}</td>
+              <td>{player.displayName}</td>
+              <td>{buildSummaryPlayerLabels(player).join(", ") || "-"}</td>
+              <td>{player.points}</td>
+              <td>{player.personalFouls}</td>
+            </tr>
+          ))}
+          {unattributedPoints > 0 ? (
+            <tr>
+              <td>-</td>
+              <td>Team-only scoring</td>
+              <td>-</td>
+              <td>{unattributedPoints}</td>
+              <td>0</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -1877,6 +2053,15 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                       }}
                     >
                       Lifecycle
+                    </a>
+                    <a
+                      href={buildOperatorMatchSummaryLink(match.matchId)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate(buildOperatorMatchSummaryLink(match.matchId));
+                      }}
+                    >
+                      Summary
                     </a>
                   </span>
                 )}
@@ -2449,6 +2634,12 @@ function RoutedApp() {
             <AdminLineupPage matchId={route.matchId} />
           </ProtectedRoute>
         );
+      case "admin-summary":
+        return (
+          <ProtectedRoute requireAdmin>
+            <MatchSummaryPage matchId={route.matchId} backHref="/admin/matches" />
+          </ProtectedRoute>
+        );
       case "operator-matches":
         return (
           <ProtectedRoute requireOperator>
@@ -2483,6 +2674,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorLifecyclePage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-summary":
+        return (
+          <ProtectedRoute requireOperator>
+            <MatchSummaryPage matchId={route.matchId} backHref="/operator/matches" />
           </ProtectedRoute>
         );
       case "public-scoreboard":

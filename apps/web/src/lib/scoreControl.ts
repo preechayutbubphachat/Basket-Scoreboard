@@ -4,7 +4,7 @@ import type {
   ScoreAddedPayload,
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
-import { buildPublicScoreboardLink } from "./operatorMatches";
+import { buildOperatorMatchSummaryLink, buildPublicScoreboardLink } from "./operatorMatches";
 
 export const scorePointOptions = [1, 2, 3] as const;
 export const finishedMatchLiveControlWarning = "Match is finished. Use correction workflow for post-game edits.";
@@ -102,6 +102,7 @@ export function canUseLiveMatchControls(
 export function getScoreControlLinks(matchId: string, user: AuthenticatedUser | null) {
   return {
     operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
+    summary: { href: buildOperatorMatchSummaryLink(matchId), label: "Open Match Summary" },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Open Public Scoreboard"
