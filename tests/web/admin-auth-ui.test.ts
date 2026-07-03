@@ -20,6 +20,7 @@ import {
   buildOperatorMatchClockLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchLifecycleLink,
+  buildOperatorMatchReplayLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchSummaryLink,
   buildOperatorMatchTimeoutsLink,
@@ -79,6 +80,12 @@ import {
   hasSummaryMutationControls
 } from "../../apps/web/src/lib/summaryControl";
 import {
+  buildReplayEventGroupOptions,
+  buildReplayEventMeta,
+  getReplayScoreAfterLabel,
+  hasReplayMutationControls
+} from "../../apps/web/src/lib/replayControl";
+import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
   getLifecycleActionPlan,
@@ -96,6 +103,7 @@ import {
 } from "../../apps/web/src/lib/realtimeProjectionSync";
 import type {
   AuthenticatedUser,
+  MatchReplayResponse,
   MatchRostersResponse,
   MatchSummaryResponse,
   ScoreAddedPayload,
@@ -261,6 +269,57 @@ const matchSummary: MatchSummaryResponse = {
     lifecycleEvents: 1,
     correctionEvents: 1
   },
+  generatedAt: "2026-07-01T10:10:00.000Z"
+};
+
+const matchReplay: MatchReplayResponse = {
+  matchId: scoreboardProjection.matchId,
+  status: "FINISHED",
+  currentSeq: 9,
+  homeTeamName: "Bangkok HOME",
+  awayTeamName: "Chiang Mai AWAY",
+  group: "all",
+  limit: 300,
+  items: [
+    {
+      matchId: scoreboardProjection.matchId,
+      seq: 1,
+      eventType: "SCORE_ADDED",
+      eventGroup: "SCORE",
+      periodNumber: 1,
+      periodType: "REGULATION",
+      teamSide: "HOME",
+      title: "HOME +2",
+      description: "Narin Guard scored 2 points.",
+      scoreAfter: { home: 2, away: 0 },
+      player: {
+        playerId: matchRosters.rosters.HOME[0].playerId,
+        displayName: "Narin Guard",
+        jerseyNumber: "7"
+      },
+      actor: { userId: "actor-1", displayName: null, role: "SCORER" },
+      createdAt: "2026-07-01T10:00:01.000Z"
+    },
+    {
+      matchId: scoreboardProjection.matchId,
+      seq: 2,
+      eventType: "PLAYER_FOUL_ADDED",
+      eventGroup: "FOUL",
+      periodNumber: 1,
+      periodType: "REGULATION",
+      teamSide: "HOME",
+      title: "HOME player foul",
+      description: "Narin Guard personal foul.",
+      scoreAfter: null,
+      player: {
+        playerId: matchRosters.rosters.HOME[0].playerId,
+        displayName: "Narin Guard",
+        jerseyNumber: "7"
+      },
+      actor: { userId: "actor-2", displayName: null, role: "SCORER" },
+      createdAt: "2026-07-01T10:00:02.000Z"
+    }
+  ],
   generatedAt: "2026-07-01T10:10:00.000Z"
 };
 
@@ -805,6 +864,19 @@ describe("web API client", () => {
     );
   });
 
+  test("reads match replay without CSRF because it is read-only", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValueOnce(jsonResponse(matchReplay));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getMatchReplay(scoreboardProjection.matchId, { group: "score", limit: 50 })).resolves.toEqual(matchReplay);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/matches/${scoreboardProjection.matchId}/replay?group=score&limit=50`,
+      expect.objectContaining({
+        credentials: "include"
+      })
+    );
+  });
+
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -1128,6 +1200,11 @@ describe("operator match landing UI policy", () => {
       href: "/operator/matches/match-1/summary",
       label: "Open Match Summary"
     });
+    expect(card.replay).toEqual({
+      enabled: true,
+      href: "/operator/matches/match-1/replay",
+      label: "Open Replay"
+    });
     expect(card.publicScoreboard).toEqual({
       enabled: true,
       href: "/public/scoreboard/match-1",
@@ -1152,6 +1229,7 @@ describe("operator match landing UI policy", () => {
     expect(buildOperatorMatchTimeoutsLink("match 1")).toBe("/operator/matches/match%201/timeouts");
     expect(buildOperatorMatchLifecycleLink("match 1")).toBe("/operator/matches/match%201/lifecycle");
     expect(buildOperatorMatchSummaryLink("match 1")).toBe("/operator/matches/match%201/summary");
+    expect(buildOperatorMatchReplayLink("match 1")).toBe("/operator/matches/match%201/replay");
   });
 
   test("empty operator match state is explicit", () => {
@@ -1165,6 +1243,7 @@ describe("operator match landing UI policy", () => {
       rosters: { href: "/admin/matches/match-1/rosters", label: "Rosters" },
       lineup: { href: "/admin/matches/match-1/lineup", label: "Lineup" },
       summary: { href: "/admin/matches/match-1/summary", label: "Summary" },
+      replay: { href: "/admin/matches/match-1/replay", label: "Replay" },
       operator: { href: "/operator/matches/match-1/score", label: "Operator Score" },
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
@@ -1359,6 +1438,10 @@ describe("score control UI policy", () => {
         href: `/operator/matches/${scoreboardProjection.matchId}/summary`,
         label: "Open Match Summary"
       },
+      replay: {
+        href: `/operator/matches/${scoreboardProjection.matchId}/replay`,
+        label: "Open Replay"
+      },
       publicScoreboard: {
         href: `/public/scoreboard/${scoreboardProjection.matchId}`,
         label: "Open Public Scoreboard"
@@ -1457,6 +1540,32 @@ describe("match summary UI policy", () => {
 
   test("summary dashboard is read-only", () => {
     expect(hasSummaryMutationControls()).toBe(false);
+  });
+});
+
+describe("match replay UI policy", () => {
+  test("builds replay filter options and event labels", () => {
+    expect(buildReplayEventGroupOptions()).toEqual([
+      { value: "all", label: "All" },
+      { value: "score", label: "Score" },
+      { value: "foul", label: "Fouls" },
+      { value: "timeout", label: "Timeouts" },
+      { value: "clock", label: "Clock" },
+      { value: "lifecycle", label: "Lifecycle" },
+      { value: "correction", label: "Corrections" }
+    ]);
+    expect(buildReplayEventMeta(matchReplay.items[0])).toEqual({
+      badge: "SCORE",
+      title: "HOME +2",
+      description: "Narin Guard scored 2 points.",
+      timestamp: expect.any(String)
+    });
+  });
+
+  test("formats replay score-after state and remains read-only", () => {
+    expect(getReplayScoreAfterLabel(matchReplay.items[0], matchReplay)).toBe("Score after: Bangkok HOME 2 - 0 Chiang Mai AWAY");
+    expect(getReplayScoreAfterLabel(matchReplay.items[1], matchReplay)).toBeNull();
+    expect(hasReplayMutationControls()).toBe(false);
   });
 });
 

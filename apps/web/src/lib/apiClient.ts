@@ -5,6 +5,7 @@ import type {
   MatchAssignment,
   MatchLineupResponse,
   MatchOfficialRoleCode,
+  MatchReplayResponse,
   MatchRosterPlayer,
   MatchRostersResponse,
   MatchSummaryResponse,
@@ -295,6 +296,23 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async getMatchSummary(matchId: string) {
       return request<MatchSummaryResponse>(
         `/matches/${encodeURIComponent(matchId)}/summary`,
+        {},
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async getMatchReplay(
+      matchId: string,
+      options: { group?: string; limit?: number; afterSeq?: number; beforeSeq?: number } = {}
+    ) {
+      const params = new URLSearchParams();
+      if (options.group) params.set("group", options.group);
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.afterSeq !== undefined) params.set("afterSeq", String(options.afterSeq));
+      if (options.beforeSeq !== undefined) params.set("beforeSeq", String(options.beforeSeq));
+      const query = params.toString();
+      return request<MatchReplayResponse>(
+        `/matches/${encodeURIComponent(matchId)}/replay${query ? `?${query}` : ""}`,
         {},
         false,
         { acceptRawSuccess: true }

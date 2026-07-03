@@ -221,6 +221,72 @@ export type MatchSummaryResponse = {
   generatedAt: string;
 };
 
+export const replayGroupFilterSchema = z.enum([
+  "all",
+  "score",
+  "foul",
+  "timeout",
+  "clock",
+  "lifecycle",
+  "correction"
+]);
+
+export const replayQuerySchema = z.object({
+  group: replayGroupFilterSchema.default("all"),
+  limit: z.coerce.number().int().min(1).default(300).transform((value) => Math.min(value, 500)),
+  afterSeq: z.coerce.number().int().min(0).optional(),
+  beforeSeq: z.coerce.number().int().min(0).optional()
+});
+
+export type ReplayGroupFilter = z.infer<typeof replayGroupFilterSchema>;
+export type ReplayEventGroup =
+  | "SCORE"
+  | "FOUL"
+  | "TIMEOUT"
+  | "CLOCK"
+  | "LIFECYCLE"
+  | "CORRECTION"
+  | "OTHER";
+
+export type ReplayItem = {
+  matchId: string;
+  seq: number;
+  eventType: string;
+  eventGroup: ReplayEventGroup;
+  periodNumber: number | null;
+  periodType: string | null;
+  teamSide: "HOME" | "AWAY" | null;
+  title: string;
+  description: string;
+  scoreAfter: {
+    home: number;
+    away: number;
+  } | null;
+  player: {
+    playerId: string | null;
+    displayName: string;
+    jerseyNumber: string | null;
+  } | null;
+  actor: {
+    userId: string | null;
+    displayName: string | null;
+    role: string | null;
+  } | null;
+  createdAt: string;
+};
+
+export type MatchReplayResponse = {
+  matchId: string;
+  status: string;
+  currentSeq: number;
+  homeTeamName: string;
+  awayTeamName: string;
+  group: ReplayGroupFilter;
+  limit: number;
+  items: ReplayItem[];
+  generatedAt: string;
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;
