@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CommandResult,
   FoulType,
+  MatchLineupResponse,
   MatchRosterPlayer,
   MatchRostersResponse,
   MatchOfficialRoleCode,
@@ -82,7 +83,9 @@ import {
 import {
   buildCreatePlayerPayload,
   buildPlayerFoulCommandPayload,
+  buildRosterPlayerDisplayLabel,
   buildRosterPlayerLabel,
+  buildRosterReadinessLabel,
   buildScorePlayerOptions,
   createPlayerFormState,
   getRosterPlayersForSide,
@@ -106,6 +109,7 @@ type Route =
   | { name: "admin-matches" }
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
+  | { name: "admin-lineup"; matchId: string }
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
@@ -125,6 +129,11 @@ function parseRoute(pathname: string): Route {
   const rosterMatchId = rosterMatch?.[1];
   if (rosterMatchId) {
     return { name: "admin-rosters", matchId: decodeURIComponent(rosterMatchId) };
+  }
+  const lineupMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/lineup$/);
+  const lineupMatchId = lineupMatch?.[1];
+  if (lineupMatchId) {
+    return { name: "admin-lineup", matchId: decodeURIComponent(lineupMatchId) };
   }
   const operatorScoreMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/score$/);
   const operatorMatchId = operatorScoreMatch?.[1];
@@ -1021,12 +1030,12 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                         key={player.playerId}
                         type="button"
                         className="score-button"
-                        disabled={!canSubmitFoul || Boolean(pendingKey)}
+                        disabled={!canSubmitFoul || Boolean(pendingKey) || player.status === "INACTIVE"}
                         onClick={() => void addPlayerFoul(player)}
                       >
                         {pendingKey === `PLAYER-${player.playerId}`
                           ? "Saving..."
-                          : `Add foul ${buildRosterPlayerLabel(player)}`}
+                          : `Add foul ${buildRosterPlayerDisplayLabel(player)}`}
                       </button>
                     ))}
                   </div>
@@ -2176,6 +2185,160 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
   );
 }
 
+function AdminLineupPage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [lineup, setLineup] = useState<MatchLineupResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const isAdmin = canManageAssignments(currentUser);
+
+  async function loadLineup(options: { clearMessage?: boolean } = {}) {
+    setLoading(true);
+    if (options.clearMessage ?? true) {
+      setMessage(null);
+    }
+    try {
+      setLineup(await api.getMatchLineup(matchId));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadLineup();
+  }, [matchId]);
+
+  async function runLineupAction(
+    key: string,
+    successText: string,
+    action: () => Promise<MatchLineupResponse>
+  ) {
+    if (!isAdmin) return;
+    setPendingKey(key);
+    setMessage(null);
+    try {
+      setLineup(await action());
+      setMessage({ tone: "success", text: successText });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Lineup / Starters</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        {!isAdmin ? <ErrorMessage code="FORBIDDEN" message="Admin role is required to manage lineup." /> : null}
+        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {loading ? <section className="panel"><p>Loading lineup...</p></section> : null}
+      {!loading && !lineup ? <section className="panel"><p className="muted">No lineup found.</p></section> : null}
+      {lineup ? (
+        <section className="score-actions">
+          {(["HOME", "AWAY"] as const).map((teamSide) => {
+            const side = teamSide === "HOME" ? lineup.home : lineup.away;
+            const sideKey = teamSide.toLowerCase() as "home" | "away";
+            return (
+              <article className="panel" key={teamSide}>
+                <h2>{side.teamName ?? side.teamId ?? teamSide}</h2>
+                <dl className="state-strip">
+                  <div><dt>Starters</dt><dd>{side.readiness.starterCount}/5</dd></div>
+                  <div><dt>Captain</dt><dd>{side.readiness.captainSet ? "SET" : "NEEDED"}</dd></div>
+                  <div><dt>Readiness</dt><dd>{buildRosterReadinessLabel(side.readiness)}</dd></div>
+                </dl>
+                {side.players.length === 0 ? <p className="muted">No roster players assigned.</p> : null}
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Player</th>
+                        <th>Status</th>
+                        <th>Starter</th>
+                        <th>Captain</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {side.players.map((player) => (
+                        <tr key={player.playerId}>
+                          <td>{player.jerseyNumberSnapshot ?? "-"}</td>
+                          <td>{player.displayNameSnapshot}</td>
+                          <td>{buildRosterPlayerDisplayLabel(player)}</td>
+                          <td>
+                            {player.isStarter ? (
+                              <button
+                                type="button"
+                                className="secondary"
+                                disabled={!isAdmin || Boolean(pendingKey)}
+                                onClick={() => void runLineupAction(
+                                  `remove-${player.playerId}`,
+                                  "Starter removed.",
+                                  () => api.removeLineupStarter(matchId, teamSide, player.playerId)
+                                )}
+                              >
+                                Clear starter
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={!isAdmin || Boolean(pendingKey) || player.status === "INACTIVE"}
+                                onClick={() => void runLineupAction(
+                                  `starter-${player.playerId}`,
+                                  "Starter selected.",
+                                  () => api.selectLineupStarter(matchId, teamSide, player.playerId)
+                                )}
+                              >
+                                Select starter
+                              </button>
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className={player.isCaptain ? "secondary" : undefined}
+                              disabled={!isAdmin || Boolean(pendingKey) || player.status === "INACTIVE"}
+                              onClick={() => void runLineupAction(
+                                `captain-${player.playerId}`,
+                                "Captain set.",
+                                () => api.setLineupCaptain(matchId, teamSide, player.playerId)
+                              )}
+                            >
+                              {player.isCaptain ? "Captain" : "Set captain"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isAdmin || Boolean(pendingKey)}
+                  onClick={() => void runLineupAction(
+                    `confirm-${teamSide}`,
+                    `${teamSide} roster confirmed.`,
+                    () => api.confirmLineupRoster(matchId, teamSide, "alpha lineup")
+                  )}
+                >
+                  Confirm {teamSide} Roster
+                </button>
+                {lineup[sideKey].readiness.confirmed ? <p className="muted">Roster confirmed.</p> : null}
+              </article>
+            );
+          })}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function HomePage() {
   return (
     <section className="panel">
@@ -2266,6 +2429,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireAdmin>
             <AdminRostersPage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "admin-lineup":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminLineupPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "operator-matches":

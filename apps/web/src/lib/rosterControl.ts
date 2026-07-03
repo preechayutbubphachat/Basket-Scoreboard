@@ -3,6 +3,7 @@ import type {
   MatchRosterPlayer,
   MatchRostersResponse,
   PlayerPosition,
+  RosterReadiness,
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
@@ -22,6 +23,10 @@ export function createPlayerFormState(): CreatePlayerFormState {
 
 export function buildAdminRosterLink(matchId: string) {
   return `/admin/matches/${encodeURIComponent(matchId)}/rosters`;
+}
+
+export function buildAdminLineupLink(matchId: string) {
+  return `/admin/matches/${encodeURIComponent(matchId)}/lineup`;
 }
 
 export function buildCreatePlayerPayload(form: CreatePlayerFormState) {
@@ -50,6 +55,37 @@ export function buildRosterPlayerLabel(player: Pick<MatchRosterPlayer, "displayN
     : player.displayNameSnapshot;
 }
 
+export function getRosterPlayerRoleLabels(
+  player: Pick<MatchRosterPlayer, "isStarter" | "isCaptain" | "status">
+) {
+  const labels: string[] = [];
+  if (player.status === "INACTIVE") {
+    labels.push("INACTIVE");
+  } else if (player.isStarter) {
+    labels.push("STARTER");
+  } else if (player.status === "BENCH") {
+    labels.push("BENCH");
+  }
+  if (player.isCaptain) {
+    labels.push("CAPTAIN");
+  }
+  return labels;
+}
+
+export function buildRosterPlayerDisplayLabel(player: MatchRosterPlayer) {
+  const labels = getRosterPlayerRoleLabels(player);
+  const base = buildRosterPlayerLabel(player);
+  return labels.length ? `${base} - ${labels.join(", ")}` : base;
+}
+
+export function buildRosterReadinessLabel(readiness: RosterReadiness | null | undefined) {
+  if (!readiness) return "NEEDS STARTERS";
+  if (readiness.confirmed && readiness.ready) return "CONFIRMED";
+  if (readiness.starterCount !== 5) return "NEEDS STARTERS";
+  if (!readiness.captainSet) return "NEEDS CAPTAIN";
+  return "READY";
+}
+
 export function buildPlayerFoulCommandPayload(
   projection: ScoreboardProjection,
   player: MatchRosterPlayer,
@@ -69,8 +105,9 @@ export function buildPlayerFoulCommandPayload(
 export function buildScorePlayerOptions(rosters: MatchRostersResponse | null, teamSide: "HOME" | "AWAY") {
   return getRosterPlayersForSide(rosters, teamSide)
     .filter((player) => player.status !== "INACTIVE")
+    .sort((left, right) => Number(right.isStarter) - Number(left.isStarter))
     .map((player) => ({
       playerId: player.playerId,
-      label: buildRosterPlayerLabel(player)
+      label: buildRosterPlayerDisplayLabel(player)
     }));
 }

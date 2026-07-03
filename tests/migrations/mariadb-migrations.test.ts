@@ -23,7 +23,8 @@ describe("MariaDB migration foundation", () => {
       "006_create_audit_tables.sql",
       "007_create_user_sessions_table.sql",
       "008_create_match_officials_table.sql",
-      "009_create_match_roster_tables.sql"
+      "009_create_match_roster_tables.sql",
+      "010_create_match_roster_confirmations_table.sql"
     ]);
   });
 
@@ -43,6 +44,7 @@ describe("MariaDB migration foundation", () => {
       "user_sessions",
       "match_officials",
       "match_roster_players",
+      "match_roster_confirmations",
       "tournaments",
       "teams",
       "players",
@@ -111,6 +113,22 @@ describe("MariaDB migration foundation", () => {
     expect(rosterSql).toContain("engine=innodb");
     expect(rosterSql).not.toContain(["update", "match_events"].join(" "));
     expect(rosterSql).not.toContain(["delete", "from", "match_events"].join(" "));
+  });
+
+  it("adds match roster confirmations without mutating match events", () => {
+    const confirmationSql = compact(readMigration("010_create_match_roster_confirmations_table.sql"));
+
+    expect(confirmationSql).toContain("create table if not exists match_roster_confirmations");
+    expect(confirmationSql).toContain("match_id char(36) not null");
+    expect(confirmationSql).toContain("team_side enum('home', 'away') not null");
+    expect(confirmationSql).toContain("confirmed_at timestamp not null");
+    expect(confirmationSql).toContain("confirmed_by_user_id char(36) null");
+    expect(confirmationSql).toContain("unique key uq_match_roster_confirmations_match_side");
+    expect(confirmationSql).toContain("key idx_match_roster_confirmations_match_id");
+    expect(confirmationSql).toContain("foreign key (match_id) references matches");
+    expect(confirmationSql).toContain("engine=innodb");
+    expect(confirmationSql).not.toContain(["update", "match_events"].join(" "));
+    expect(confirmationSql).not.toContain(["delete", "from", "match_events"].join(" "));
   });
 
   it("defines the critical append-only event store columns and constraints", () => {

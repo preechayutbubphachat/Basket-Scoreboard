@@ -3,6 +3,7 @@ import type { Pool } from "mysql2/promise";
 import {
   assignRosterPlayerSchema,
   createPlayerSchema,
+  lineupActionSchema,
   reasonCodes,
   updatePlayerSchema,
   updateRosterPlayerSchema,
@@ -12,9 +13,14 @@ import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { apiError } from "../errors/apiErrors.js";
 import {
   assignPlayerToMatchRoster,
+  confirmLineupRoster,
   createPlayer,
+  listMatchLineup,
   listMatchRoster,
   listPlayersForTeam,
+  removeLineupStarter,
+  selectLineupStarter,
+  setLineupCaptain,
   updateMatchRosterPlayer,
   updatePlayer
 } from "../rosters/rosterRepository.js";
@@ -113,6 +119,115 @@ export function registerRosterRoutes(
     }
   );
 
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/lineup",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request, reply) => {
+      const lineup = await listMatchLineup(pool, request.params.matchId);
+      if (!lineup) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match was not found"));
+      }
+
+      return {
+        ok: true,
+        data: lineup
+      };
+    }
+  );
+
+  app.post<{ Params: { matchId: string; teamSide: string; playerId: string } }>(
+    "/api/v1/matches/:matchId/lineup/:teamSide/starters/:playerId",
+    { preHandler: [auth.requireAuth, auth.requireCsrf] },
+    async (request, reply) => {
+      if (!isAdmin(request.user)) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+      const teamSide = parseTeamSide(request.params.teamSide);
+      if (!teamSide) {
+        return reply.status(400).send(apiError(reasonCodes.VALIDATION_ERROR, "Invalid lineup team side"));
+      }
+      const input = lineupActionSchema.parse(request.body ?? {});
+      const result = await selectLineupStarter(pool, {
+        matchId: request.params.matchId,
+        teamSide,
+        playerId: request.params.playerId,
+        input
+      });
+      return sendLineupMutationResult(reply, result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string; teamSide: string; playerId: string } }>(
+    "/api/v1/matches/:matchId/lineup/:teamSide/starters/:playerId/remove",
+    { preHandler: [auth.requireAuth, auth.requireCsrf] },
+    async (request, reply) => {
+      if (!isAdmin(request.user)) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+      const teamSide = parseTeamSide(request.params.teamSide);
+      if (!teamSide) {
+        return reply.status(400).send(apiError(reasonCodes.VALIDATION_ERROR, "Invalid lineup team side"));
+      }
+      const input = lineupActionSchema.parse(request.body ?? {});
+      const result = await removeLineupStarter(pool, {
+        matchId: request.params.matchId,
+        teamSide,
+        playerId: request.params.playerId,
+        input
+      });
+      return sendLineupMutationResult(reply, result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string; teamSide: string; playerId: string } }>(
+    "/api/v1/matches/:matchId/lineup/:teamSide/captain/:playerId",
+    { preHandler: [auth.requireAuth, auth.requireCsrf] },
+    async (request, reply) => {
+      if (!isAdmin(request.user)) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+      const teamSide = parseTeamSide(request.params.teamSide);
+      if (!teamSide) {
+        return reply.status(400).send(apiError(reasonCodes.VALIDATION_ERROR, "Invalid lineup team side"));
+      }
+      const input = lineupActionSchema.parse(request.body ?? {});
+      const result = await setLineupCaptain(pool, {
+        matchId: request.params.matchId,
+        teamSide,
+        playerId: request.params.playerId,
+        input
+      });
+      return sendLineupMutationResult(reply, result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string; teamSide: string } }>(
+    "/api/v1/matches/:matchId/lineup/:teamSide/confirm",
+    { preHandler: [auth.requireAuth, auth.requireCsrf] },
+    async (request, reply) => {
+      if (!isAdmin(request.user)) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+      const teamSide = parseTeamSide(request.params.teamSide);
+      if (!teamSide) {
+        return reply.status(400).send(apiError(reasonCodes.VALIDATION_ERROR, "Invalid lineup team side"));
+      }
+      const input = lineupActionSchema.parse(request.body ?? {});
+      const result = await confirmLineupRoster(pool, {
+        matchId: request.params.matchId,
+        teamSide,
+        input,
+        actorUserId: request.user?.userId ?? null
+      });
+      return sendLineupMutationResult(reply, result);
+    }
+  );
+
   app.post<{ Params: { matchId: string; teamSide: string } }>(
     "/api/v1/matches/:matchId/rosters/:teamSide/players",
     { preHandler: [auth.requireAuth, auth.requireCsrf] },
@@ -173,6 +288,21 @@ export function registerRosterRoutes(
       };
     }
   );
+}
+
+function sendLineupMutationResult(
+  reply: FastifyReply,
+  result:
+    | { ok: true; statusCode: number; lineup: Awaited<ReturnType<typeof listMatchLineup>> }
+    | { ok: false; statusCode: number; reasonCode: string; message: string }
+) {
+  if (!result.ok) {
+    return reply.status(result.statusCode).send(apiError(result.reasonCode as ReasonCode, result.message));
+  }
+  return reply.status(result.statusCode).send({
+    ok: true,
+    data: result.lineup
+  });
 }
 
 function isAdmin(user: AuthenticatedUser | undefined) {

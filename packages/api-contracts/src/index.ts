@@ -107,12 +107,19 @@ export const updateRosterPlayerSchema = z.object({
   isCaptain: z.boolean()
 });
 
+export const lineupActionSchema = z.object({
+  expectedSeq: z.number().int().min(0).nullable().optional(),
+  commandId: z.string().uuid().nullable().optional(),
+  reason: z.string().trim().max(500).nullable().optional()
+});
+
 export type PlayerPosition = z.infer<typeof playerPositionSchema>;
 export type RosterStatus = z.infer<typeof rosterStatusSchema>;
 export type CreatePlayerRequest = z.infer<typeof createPlayerSchema>;
 export type UpdatePlayerRequest = z.infer<typeof updatePlayerSchema>;
 export type AssignRosterPlayerRequest = z.infer<typeof assignRosterPlayerSchema>;
 export type UpdateRosterPlayerRequest = z.infer<typeof updateRosterPlayerSchema>;
+export type LineupActionRequest = z.infer<typeof lineupActionSchema>;
 
 export type PlayerRecord = {
   playerId: string;
@@ -139,12 +146,37 @@ export type MatchRosterPlayer = {
   isCaptain: boolean;
 };
 
+export type RosterReadiness = {
+  playerCount: number;
+  starterCount: number;
+  captainSet: boolean;
+  confirmed: boolean;
+  ready: boolean;
+};
+
 export type MatchRostersResponse = {
   matchId: string;
   rosters: {
     HOME: MatchRosterPlayer[];
     AWAY: MatchRosterPlayer[];
   };
+  readiness?: {
+    home: RosterReadiness;
+    away: RosterReadiness;
+  };
+};
+
+export type LineupTeamResponse = {
+  teamId: string | null;
+  teamName: string | null;
+  players: MatchRosterPlayer[];
+  readiness: RosterReadiness;
+};
+
+export type MatchLineupResponse = {
+  matchId: string;
+  home: LineupTeamResponse;
+  away: LineupTeamResponse;
 };
 
 export type SmokeMatchResponse = {

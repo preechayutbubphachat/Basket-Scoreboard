@@ -3,6 +3,7 @@ import type {
   CommandResult,
   CreatePlayerRequest,
   MatchAssignment,
+  MatchLineupResponse,
   MatchOfficialRoleCode,
   MatchRosterPlayer,
   MatchRostersResponse,
@@ -246,6 +247,24 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: false }
       );
     },
+    async getMatchLineup(matchId: string) {
+      const data = await request<MatchLineupResponse>(
+        `/matches/${encodeURIComponent(matchId)}/lineup`
+      );
+      return data;
+    },
+    async selectLineupStarter(matchId: string, teamSide: "HOME" | "AWAY", playerId: string, reason: string | null = null) {
+      return lineupMutation(matchId, `/lineup/${teamSide}/starters/${encodeURIComponent(playerId)}`, reason);
+    },
+    async removeLineupStarter(matchId: string, teamSide: "HOME" | "AWAY", playerId: string, reason: string | null = null) {
+      return lineupMutation(matchId, `/lineup/${teamSide}/starters/${encodeURIComponent(playerId)}/remove`, reason);
+    },
+    async setLineupCaptain(matchId: string, teamSide: "HOME" | "AWAY", playerId: string, reason: string | null = null) {
+      return lineupMutation(matchId, `/lineup/${teamSide}/captain/${encodeURIComponent(playerId)}`, reason);
+    },
+    async confirmLineupRoster(matchId: string, teamSide: "HOME" | "AWAY", reason: string | null = null) {
+      return lineupMutation(matchId, `/lineup/${teamSide}/confirm`, reason);
+    },
     async assignRosterPlayer(matchId: string, teamSide: "HOME" | "AWAY", playerId: string) {
       const data = await request<{ rosterPlayer: MatchRosterPlayer }>(
         `/matches/${encodeURIComponent(matchId)}/rosters/${teamSide}/players`,
@@ -478,5 +497,20 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       false,
       { acceptRawSuccess: true }
     );
+  }
+
+  async function lineupMutation(matchId: string, path: string, reason: string | null) {
+    const data = await request<MatchLineupResponse>(
+      `/matches/${encodeURIComponent(matchId)}${path}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          expectedSeq: null,
+          commandId: null,
+          reason: reason?.trim() ? reason.trim() : null
+        })
+      }
+    );
+    return data;
   }
 }

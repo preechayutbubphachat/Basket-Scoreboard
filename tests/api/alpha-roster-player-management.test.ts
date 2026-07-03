@@ -115,6 +115,10 @@ function createRosterPool() {
         return [roster, []];
       }
 
+      if (sql.includes("FROM match_roster_confirmations")) {
+        return [[], []];
+      }
+
       if (sql.includes("FROM match_roster_players mrp") && sql.includes("mrp.player_id = ?")) {
         return [
           roster.filter((entry) => {

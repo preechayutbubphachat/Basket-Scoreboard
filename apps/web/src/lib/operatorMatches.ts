@@ -26,6 +26,10 @@ export function buildAdminMatchActions(matchId: string) {
       href: `/admin/matches/${encodeURIComponent(matchId)}/rosters`,
       label: "Rosters"
     },
+    lineup: {
+      href: `/admin/matches/${encodeURIComponent(matchId)}/lineup`,
+      label: "Lineup"
+    },
     operator: {
       href: buildOperatorMatchScoreLink(matchId),
       label: "Operator Score"
