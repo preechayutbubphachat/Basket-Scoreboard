@@ -30,6 +30,24 @@ export type ScheduledMatchFormState = {
   venueLabel: string;
 };
 
+export type TournamentQuickLink = {
+  href: string;
+  label: string;
+  private: boolean;
+};
+
+export type EmptyStateCopy = {
+  title: string;
+  description: string;
+  helperText?: string;
+  primaryActionLabel?: string;
+};
+
+export type ScheduledMatchFormFeedback = {
+  disabled: boolean;
+  warning: string | null;
+};
+
 export function buildAdminTournamentScheduleLink(tournamentId: string) {
   return `/admin/tournaments/${encodeURIComponent(tournamentId)}/schedule`;
 }
@@ -44,6 +62,24 @@ export function buildPublicTournamentScheduleLink(tournamentId: string) {
 
 export function buildPublicTournamentStandingsLink(tournamentId: string) {
   return `/public/tournaments/${encodeURIComponent(tournamentId)}/standings`;
+}
+
+export function buildTournamentQuickLinks(tournamentId: string): TournamentQuickLink[] {
+  return [
+    { href: buildAdminTournamentScheduleLink(tournamentId), label: "Schedule", private: true },
+    { href: buildAdminTournamentStandingsLink(tournamentId), label: "Standings", private: true },
+    { href: buildPublicTournamentScheduleLink(tournamentId), label: "Public Schedule", private: false },
+    { href: buildPublicTournamentStandingsLink(tournamentId), label: "Public Standings", private: false }
+  ];
+}
+
+export function getTournamentEmptyState(): EmptyStateCopy {
+  return {
+    title: "No tournaments yet",
+    description: "Create a tournament to start scheduling matches.",
+    helperText: "After creating a tournament, add teams and scheduled matches.",
+    primaryActionLabel: "Create Tournament"
+  };
 }
 
 export function createTournamentFormState(): TournamentFormState {
@@ -93,6 +129,26 @@ export function createTournamentMatchPayload(state: ScheduledMatchFormState): Cr
   };
 }
 
+export function getScheduledMatchFormFeedback(
+  state: ScheduledMatchFormState,
+  teamCount: number,
+  saving = false
+): ScheduledMatchFormFeedback {
+  if (saving) {
+    return { disabled: true, warning: "Saving scheduled match..." };
+  }
+  if (teamCount < 2) {
+    return { disabled: true, warning: "Create at least two teams before scheduling a match." };
+  }
+  if (!state.homeTeamId || !state.awayTeamId) {
+    return { disabled: true, warning: "Select both Home and Away teams." };
+  }
+  if (state.homeTeamId === state.awayTeamId) {
+    return { disabled: true, warning: "Home and Away teams must be different." };
+  }
+  return { disabled: false, warning: null };
+}
+
 export function buildScheduleStatusFilters(): Array<{ value: ScheduleStatusFilter; label: string }> {
   return [
     { value: "all", label: "All" },
@@ -140,6 +196,16 @@ export function hasPublicScheduleMutationControls() {
   return false;
 }
 
+export function getPublicScheduleEmptyState(matchCount: number): EmptyStateCopy | null {
+  if (matchCount > 0) {
+    return null;
+  }
+  return {
+    title: "No scheduled matches",
+    description: "This tournament does not have scheduled matches yet."
+  };
+}
+
 export function buildStandingsRowMeta(row: TournamentStandingsRow, provisionalRank: number) {
   return {
     provisionalRank,
@@ -163,6 +229,16 @@ export function getPublicStandingsLinks(tournamentId: string) {
 
 export function hasPublicStandingsMutationControls() {
   return false;
+}
+
+export function getPublicStandingsEmptyState(finishedMatchCount: number, rowCount: number): EmptyStateCopy | null {
+  if (finishedMatchCount > 0 || rowCount > 0) {
+    return null;
+  }
+  return {
+    title: "No finished matches",
+    description: "Standings are provisional and will update after finished matches are available."
+  };
 }
 
 function emptyToNull(value: string) {
