@@ -47,9 +47,9 @@ function createTournamentSchedulePool() {
       tournament_name: "Alpha Cup",
       stage_name: null,
       group_name: null,
-      round_label: null,
-      court_label: null,
-      venue_label: null,
+      round_label: "null",
+      court_label: "null",
+      venue_label: "null",
       scheduled_at: null,
       home_team_id: null,
       home_team_name: null,
@@ -143,6 +143,10 @@ describe("alpha tournament public schedule", () => {
               publicScoreboardPath: `/public/scoreboard/${matchId}`
             }),
             expect.objectContaining({
+              roundLabel: null,
+              courtLabel: null,
+              venueLabel: null,
+              scheduledAt: null,
               homeTeamName: "HOME",
               awayTeamName: "AWAY",
               status: "SCHEDULED",

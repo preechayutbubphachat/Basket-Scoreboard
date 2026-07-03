@@ -170,11 +170,16 @@ export function getScheduleStatusGroup(status: string): ScheduleStatusFilter {
 }
 
 export function buildScheduleRowMeta(match: TournamentScheduleMatch) {
+  const homeTeamName = labelOrFallback(match.homeTeamName, "TBD");
+  const awayTeamName = labelOrFallback(match.awayTeamName, "TBD");
+  const courtLabel = labelOrNull(match.courtLabel);
+  const venueLabel = labelOrNull(match.venueLabel);
+
   return {
-    matchupLabel: `${match.homeTeamName} vs ${match.awayTeamName}`,
+    matchupLabel: `${homeTeamName} vs ${awayTeamName}`,
     scoreLabel: `${match.homeScore} - ${match.awayScore}`,
     scheduleLabel: match.scheduledAt ? new Date(match.scheduledAt).toLocaleString() : "Schedule pending",
-    locationLabel: match.courtLabel ?? match.venueLabel ?? "Court pending",
+    locationLabel: courtLabel ?? venueLabel ?? "Court TBD",
     statusGroup: getScheduleStatusGroup(match.status)
   };
 }
@@ -254,4 +259,17 @@ function toIsoDateTimeOrNull(value: string) {
 
   const date = new Date(trimmed);
   return Number.isNaN(date.getTime()) ? trimmed : date.toISOString();
+}
+
+function labelOrNull(value: string | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.toLowerCase() !== "null" ? trimmed : null;
+}
+
+function labelOrFallback(value: string | null, fallback: string) {
+  return labelOrNull(value) ?? fallback;
 }

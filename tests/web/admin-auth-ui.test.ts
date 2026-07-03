@@ -1985,6 +1985,20 @@ describe("tournament schedule UI policy", () => {
       locationLabel: "Court A",
       statusGroup: "live"
     });
+    expect(buildScheduleRowMeta({
+      ...tournamentSchedule.matches[0],
+      scheduledAt: null,
+      courtLabel: "null",
+      venueLabel: "null",
+      homeTeamName: "null",
+      awayTeamName: ""
+    })).toEqual({
+      matchupLabel: "TBD vs TBD",
+      scoreLabel: "10 - 8",
+      scheduleLabel: "Schedule pending",
+      locationLabel: "Court TBD",
+      statusGroup: "live"
+    });
     expect(getPublicScheduleLinks(tournamentSchedule.matches[0])).toEqual({
       scoreboard: {
         href: `/public/scoreboard/${scoreboardProjection.matchId}`,
