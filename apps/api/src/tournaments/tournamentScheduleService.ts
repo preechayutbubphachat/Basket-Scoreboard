@@ -157,16 +157,16 @@ function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
   return {
     matchId: row.match_id,
     tournamentId: row.tournament_id,
-    stageName: row.stage_name,
-    groupName: row.group_name,
-    roundLabel: row.round_label,
-    courtLabel: row.court_label,
-    venueLabel: row.venue_label,
+    stageName: labelOrNull(row.stage_name),
+    groupName: labelOrNull(row.group_name),
+    roundLabel: labelOrNull(row.round_label),
+    courtLabel: labelOrNull(row.court_label),
+    venueLabel: labelOrNull(row.venue_label),
     scheduledAt: serializeDate(row.scheduled_at),
     homeTeamId: row.home_team_id,
-    homeTeamName: row.home_team_name ?? "HOME",
+    homeTeamName: labelOrNull(row.home_team_name) ?? "HOME",
     awayTeamId: row.away_team_id,
-    awayTeamName: row.away_team_name ?? "AWAY",
+    awayTeamName: labelOrNull(row.away_team_name) ?? "AWAY",
     status,
     homeScore: numberOrDefault(projection.homeScore, 0),
     awayScore: numberOrDefault(projection.awayScore, 0),
@@ -191,4 +191,13 @@ function numberOrDefault(value: unknown, fallback: number) {
 
 function stringOrNull(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function labelOrNull(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.toLowerCase() !== "null" ? trimmed : null;
 }
