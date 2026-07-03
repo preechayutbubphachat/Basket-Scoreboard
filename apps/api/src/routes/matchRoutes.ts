@@ -6,6 +6,7 @@ import {
   addPlayerFoulCommandSchema,
   addTeamFoulCommandSchema,
   applyScoreCorrectionCommandSchema,
+  auditLogQuerySchema,
   correctionRequestCommandSchema,
   createMatchSchema,
   gameClockSetCommandSchema,
@@ -58,6 +59,7 @@ import {
 } from "../matchEventStore/repositories.js";
 import { getMatchSummary } from "../matchEventStore/summaryService.js";
 import { getMatchReplay } from "../matchEventStore/replayService.js";
+import { getMatchAuditLog } from "../matchEventStore/auditLogService.js";
 import { getMatchSync } from "../matchEventStore/syncService.js";
 import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
@@ -78,7 +80,8 @@ export function registerMatchRoutes(
         | "match.score.operate"
         | "match.correction.request"
         | "match.correction.apply"
-        | "match.correction.reject",
+        | "match.correction.reject"
+        | "match.audit.read",
       getMatchId: (request: FastifyRequest) => string
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     requireCsrf: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
@@ -224,6 +227,37 @@ export function registerMatchRoutes(
       }
 
       return replay;
+    }
+  );
+
+  app.get<{
+    Params: { matchId: string };
+    Querystring: {
+      group?: string;
+      limit?: string;
+      afterSeq?: string;
+      beforeSeq?: string;
+      actorId?: string;
+      eventType?: string;
+      hasReason?: string;
+    };
+  }>(
+    "/api/v1/matches/:matchId/audit-log",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.audit.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request, reply) => {
+      const query = auditLogQuerySchema.parse(request.query);
+      const auditLog = await getMatchAuditLog({ pool, matchId: request.params.matchId, query });
+
+      if (!auditLog) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match audit log was not found"));
+      }
+
+      return auditLog;
     }
   );
 

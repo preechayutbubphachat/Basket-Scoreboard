@@ -2,6 +2,9 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CommandResult,
   FoulType,
+  AuditLogGroupFilter,
+  AuditLogRow,
+  MatchAuditLogResponse,
   MatchLineupResponse,
   MatchReplayResponse,
   MatchRosterPlayer,
@@ -30,6 +33,7 @@ import {
 import {
   buildAdminMatchActions,
   buildAdminMatchLink,
+  buildOperatorMatchAuditLogLink,
   buildOperatorMatchClockLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
@@ -108,6 +112,11 @@ import {
   buildReplayEventMeta,
   getReplayScoreAfterLabel
 } from "./lib/replayControl";
+import {
+  buildAuditLogFilterOptions,
+  buildAuditLogRowMeta,
+  getAuditCorrectionRows
+} from "./lib/auditLogControl";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
   applyRealtimeProjectionUpdate,
@@ -129,6 +138,7 @@ type Route =
   | { name: "admin-lineup"; matchId: string }
   | { name: "admin-summary"; matchId: string }
   | { name: "admin-replay"; matchId: string }
+  | { name: "admin-audit-log"; matchId: string }
   | { name: "operator-matches" }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
@@ -137,6 +147,7 @@ type Route =
   | { name: "operator-lifecycle"; matchId: string }
   | { name: "operator-summary"; matchId: string }
   | { name: "operator-replay"; matchId: string }
+  | { name: "operator-audit-log"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "unauthorized" };
 
@@ -165,6 +176,11 @@ function parseRoute(pathname: string): Route {
   const adminReplayMatchId = adminReplayMatch?.[1];
   if (adminReplayMatchId) {
     return { name: "admin-replay", matchId: decodeURIComponent(adminReplayMatchId) };
+  }
+  const adminAuditMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/audit-log$/);
+  const adminAuditMatchId = adminAuditMatch?.[1];
+  if (adminAuditMatchId) {
+    return { name: "admin-audit-log", matchId: decodeURIComponent(adminAuditMatchId) };
   }
   const operatorScoreMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/score$/);
   const operatorMatchId = operatorScoreMatch?.[1];
@@ -200,6 +216,11 @@ function parseRoute(pathname: string): Route {
   const operatorReplayMatchId = operatorReplayMatch?.[1];
   if (operatorReplayMatchId) {
     return { name: "operator-replay", matchId: decodeURIComponent(operatorReplayMatchId) };
+  }
+  const operatorAuditMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/audit-log$/);
+  const operatorAuditMatchId = operatorAuditMatch?.[1];
+  if (operatorAuditMatchId) {
+    return { name: "operator-audit-log", matchId: decodeURIComponent(operatorAuditMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -1801,6 +1822,16 @@ function MatchSummaryPage({ matchId, backHref }: { matchId: string; backHref: st
           >
             Open Replay
           </a>
+          <a
+            className="button-link"
+            href={buildOperatorMatchAuditLogLink(matchId)}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(buildOperatorMatchAuditLogLink(matchId));
+            }}
+          >
+            Open Audit Log
+          </a>
         </div>
         {message ? <Notice {...message} /> : null}
       </div>
@@ -1958,6 +1989,16 @@ function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: str
           <button type="button" onClick={() => void loadReplay(group)} disabled={loading}>
             {loading ? "Refreshing..." : "Refresh"}
           </button>
+          <a
+            className="button-link"
+            href={buildOperatorMatchAuditLogLink(matchId)}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(buildOperatorMatchAuditLogLink(matchId));
+            }}
+          >
+            Open Audit Log
+          </a>
         </div>
         {message ? <Notice {...message} /> : null}
       </div>
@@ -2050,6 +2091,174 @@ function ReplayTimelineRow({ item, replay }: { item: ReplayItem; replay: MatchRe
       </td>
       <td>{scoreAfter ?? "-"}</td>
       <td>{item.actor?.role ?? "-"}</td>
+    </tr>
+  );
+}
+
+function MatchAuditLogPage({ matchId, backHref }: { matchId: string; backHref: string }) {
+  const { api } = useCurrentUser();
+  const [auditLog, setAuditLog] = useState<MatchAuditLogResponse | null>(null);
+  const [group, setGroup] = useState<AuditLogGroupFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadAuditLog(nextGroup = group) {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setAuditLog(await api.getMatchAuditLog(matchId, { group: nextGroup, limit: 300 }));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAuditLog(group);
+  }, [api, matchId, group]);
+
+  function selectGroup(nextGroup: AuditLogGroupFilter) {
+    setGroup(nextGroup);
+  }
+
+  const correctionRows = auditLog ? getAuditCorrectionRows(auditLog) : [];
+
+  return (
+    <section className="stack">
+      <div className="panel">
+        <h1>Audit Log / Correction Review</h1>
+        <p className="muted">Match ID: {matchId}</p>
+        <div className="button-row">
+          <a
+            className="button-link secondary"
+            href={backHref}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(backHref);
+            }}
+          >
+            Back
+          </a>
+          <button type="button" onClick={() => void loadAuditLog(group)} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        {message ? <Notice {...message} /> : null}
+      </div>
+      {auditLog ? (
+        <section className="panel">
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{auditLog.status}</dd></div>
+            <div><dt>Current Seq</dt><dd>{auditLog.currentSeq}</dd></div>
+            <div><dt>Total Rows</dt><dd>{auditLog.summary.totalRows}</dd></div>
+            <div><dt>Event Rows</dt><dd>{auditLog.summary.eventRows}</dd></div>
+            <div><dt>Corrections</dt><dd>{auditLog.summary.correctionRows}</dd></div>
+            <div><dt>Rejected</dt><dd>{auditLog.summary.rejectedRows}</dd></div>
+            <div><dt>Missing Reason</dt><dd>{auditLog.summary.missingReasonRows}</dd></div>
+            <div><dt>Generated</dt><dd>{formatDate(auditLog.generatedAt)}</dd></div>
+          </dl>
+        </section>
+      ) : null}
+      <section className="panel">
+        <div className="button-row" role="group" aria-label="Audit log filters">
+          {buildAuditLogFilterOptions().map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={group === option.value ? "score-button" : undefined}
+              disabled={loading}
+              onClick={() => selectGroup(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </section>
+      {loading ? <section className="panel"><p>Loading audit log...</p></section> : null}
+      {!loading && auditLog && auditLog.rows.length === 0 ? (
+        <section className="panel"><p className="muted">No audit rows found for this filter.</p></section>
+      ) : null}
+      {auditLog && auditLog.rows.length > 0 ? (
+        <section className="panel">
+          <h2>Audit Rows</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Time</th>
+                  <th>Group</th>
+                  <th>Event/Action</th>
+                  <th>Actor</th>
+                  <th>Role</th>
+                  <th>Reason</th>
+                  <th>Correlation / Command</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLog.rows.map((row) => (
+                  <AuditLogRowView key={`${row.source}-${row.seq ?? row.createdAt}-${row.eventType}`} row={row} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+      <section className="panel">
+        <h2>Correction Review</h2>
+        {correctionRows.length === 0 ? (
+          <p className="muted">No correction events found.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Event</th>
+                  <th>Reason</th>
+                  <th>Actor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {correctionRows.map((row) => (
+                  <tr key={`correction-${row.seq}-${row.eventType}`}>
+                    <td>{row.seq ?? "-"}</td>
+                    <td>{row.eventType}</td>
+                    <td>{row.reason ?? "Unavailable"}</td>
+                    <td>{row.actor.displayName ?? row.actor.userId ?? "Unavailable"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function AuditLogRowView({ row }: { row: AuditLogRow }) {
+  const meta = buildAuditLogRowMeta(row);
+  return (
+    <tr>
+      <td>{row.seq ?? "-"}</td>
+      <td>{meta.timestamp}</td>
+      <td>{meta.badge}</td>
+      <td>
+        <strong>{meta.title}</strong>
+        <div className="muted">{row.eventType}</div>
+        <div className="muted">{row.description}</div>
+      </td>
+      <td>{meta.actorLabel}</td>
+      <td>{row.actor.role ?? "Unavailable"}</td>
+      <td>{meta.reasonLabel}</td>
+      <td>
+        <span>{row.correlationId ?? "Unavailable"}</span>
+        <div className="muted">{row.commandId ?? "No command id"}</div>
+        <div className="muted">{row.causationId ?? "No causation id"}</div>
+        <div className="muted">{row.device.label ?? "No device metadata"}</div>
+      </td>
     </tr>
   );
 }
@@ -2838,6 +3047,12 @@ function RoutedApp() {
             <MatchReplayPage matchId={route.matchId} backHref="/admin/matches" />
           </ProtectedRoute>
         );
+      case "admin-audit-log":
+        return (
+          <ProtectedRoute requireAdmin>
+            <MatchAuditLogPage matchId={route.matchId} backHref="/admin/matches" />
+          </ProtectedRoute>
+        );
       case "operator-matches":
         return (
           <ProtectedRoute requireOperator>
@@ -2884,6 +3099,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <MatchReplayPage matchId={route.matchId} backHref="/operator/matches" />
+          </ProtectedRoute>
+        );
+      case "operator-audit-log":
+        return (
+          <ProtectedRoute requireOperator>
+            <MatchAuditLogPage matchId={route.matchId} backHref="/operator/matches" />
           </ProtectedRoute>
         );
       case "public-scoreboard":

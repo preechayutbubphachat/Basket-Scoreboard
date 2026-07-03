@@ -287,6 +287,86 @@ export type MatchReplayResponse = {
   generatedAt: string;
 };
 
+export const auditLogGroupFilterSchema = z.enum([
+  "all",
+  "score",
+  "foul",
+  "clock",
+  "shot_clock",
+  "timeout",
+  "lifecycle",
+  "roster_lineup",
+  "correction",
+  "rejected",
+  "other"
+]);
+
+export const auditLogQuerySchema = z.object({
+  group: auditLogGroupFilterSchema.default("all"),
+  limit: z.coerce.number().int().min(1).default(300).transform((value) => Math.min(value, 500)),
+  afterSeq: z.coerce.number().int().min(0).optional(),
+  beforeSeq: z.coerce.number().int().min(0).optional(),
+  actorId: z.string().trim().min(1).max(100).optional(),
+  eventType: z.string().trim().min(1).max(100).optional(),
+  hasReason: z.coerce.boolean().optional()
+});
+
+export type AuditLogGroupFilter = z.infer<typeof auditLogGroupFilterSchema>;
+export type AuditLogRowGroup =
+  | "SCORE"
+  | "FOUL"
+  | "CLOCK"
+  | "SHOT_CLOCK"
+  | "TIMEOUT"
+  | "LIFECYCLE"
+  | "ROSTER_LINEUP"
+  | "CORRECTION"
+  | "AUTH"
+  | "OTHER";
+
+export type AuditLogRow = {
+  matchId: string;
+  seq: number | null;
+  source: "MATCH_EVENT" | "AUDIT_LOG" | "COMMAND_RESULT" | "UNKNOWN";
+  group: AuditLogRowGroup;
+  eventType: string;
+  status: "APPENDED" | "REJECTED" | "CORRECTED" | "INFO" | "UNKNOWN";
+  title: string;
+  description: string;
+  actor: {
+    userId: string | null;
+    displayName: string | null;
+    role: string | null;
+  };
+  device: {
+    label: string | null;
+    ipMasked: string | null;
+    userAgentSummary: string | null;
+  };
+  reason: string | null;
+  commandId: string | null;
+  correlationId: string | null;
+  causationId: string | null;
+  createdAt: string;
+};
+
+export type MatchAuditLogResponse = {
+  matchId: string;
+  status: string;
+  currentSeq: number;
+  group: AuditLogGroupFilter;
+  limit: number;
+  rows: AuditLogRow[];
+  summary: {
+    totalRows: number;
+    eventRows: number;
+    correctionRows: number;
+    rejectedRows: number;
+    missingReasonRows: number;
+  };
+  generatedAt: string;
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;
