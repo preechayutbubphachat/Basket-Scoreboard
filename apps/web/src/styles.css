@@ -133,7 +133,8 @@ select {
 
 .form-grid,
 .assignment-form,
-.inline-form {
+.inline-form,
+.stacked-form {
   display: grid;
   gap: 14px;
 }
@@ -150,6 +151,20 @@ select {
   align-items: end;
   grid-template-columns: minmax(240px, 1fr) auto;
   max-width: 680px;
+}
+
+.stacked-form {
+  align-items: end;
+  border: 1px solid #d9e0ea;
+  border-radius: 8px;
+  margin: 16px 0;
+  padding: 16px;
+}
+
+.setup-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 label {

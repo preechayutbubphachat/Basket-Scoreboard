@@ -1,27 +1,48 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool } from "mysql2/promise";
-import { reasonCodes } from "@basket-scoreboard/api-contracts";
+import {
+  createTeamSchema,
+  createTournamentMatchSchema,
+  createTournamentSchema,
+  reasonCodes,
+  type ReasonCode
+} from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { apiError } from "../errors/apiErrors.js";
 import { getTournamentSchedule, listTournamentSummaries } from "../tournaments/tournamentScheduleService.js";
 import { getTournamentStandings } from "../tournaments/tournamentStandingsService.js";
+import {
+  createScheduledTournamentMatch,
+  createTournamentSetup,
+  createTournamentSetupTeam,
+  listTournamentSetupTeams
+} from "../tournaments/tournamentSetupService.js";
 
 export function registerTournamentRoutes(
   app: FastifyInstance,
   pool: Pool,
   auth: {
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
+    requireCsrf: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
   }
 ) {
+  function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user as AuthenticatedUser;
+    if (user.role !== "ADMIN") {
+      void reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      return false;
+    }
+    return true;
+  }
+
   app.get(
     "/api/v1/tournaments",
     {
       preHandler: [auth.requireAuth]
     },
     async (request, reply) => {
-      const user = request.user as AuthenticatedUser;
-      if (user.role !== "ADMIN") {
-        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      if (!requireAdmin(request, reply)) {
+        return;
       }
 
       return {
@@ -33,15 +54,96 @@ export function registerTournamentRoutes(
     }
   );
 
+  app.post(
+    "/api/v1/tournaments",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = createTournamentSchema.parse(request.body);
+      const tournament = await createTournamentSetup(pool, input);
+      return reply.status(201).send({
+        ok: true,
+        data: { tournament }
+      });
+    }
+  );
+
+  app.get(
+    "/api/v1/teams",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      return {
+        ok: true,
+        data: {
+          teams: await listTournamentSetupTeams(pool)
+        }
+      };
+    }
+  );
+
+  app.post(
+    "/api/v1/teams",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = createTeamSchema.parse(request.body);
+      const team = await createTournamentSetupTeam(pool, input);
+      return reply.status(201).send({
+        ok: true,
+        data: { team }
+      });
+    }
+  );
+
+  app.post<{ Params: { tournamentId: string } }>(
+    "/api/v1/tournaments/:tournamentId/matches",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = createTournamentMatchSchema.parse(request.body);
+      const result = await createScheduledTournamentMatch(pool, request.params.tournamentId, input);
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .send(apiError(result.reasonCode as ReasonCode, result.message));
+      }
+
+      return reply.status(result.statusCode).send({
+        ok: true,
+        data: result.value
+      });
+    }
+  );
+
   app.get<{ Params: { tournamentId: string } }>(
     "/api/v1/tournaments/:tournamentId/schedule",
     {
       preHandler: [auth.requireAuth]
     },
     async (request, reply) => {
-      const user = request.user as AuthenticatedUser;
-      if (user.role !== "ADMIN") {
-        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      if (!requireAdmin(request, reply)) {
+        return;
       }
 
       const schedule = await getTournamentSchedule(pool, request.params.tournamentId);
@@ -62,9 +164,8 @@ export function registerTournamentRoutes(
       preHandler: [auth.requireAuth]
     },
     async (request, reply) => {
-      const user = request.user as AuthenticatedUser;
-      if (user.role !== "ADMIN") {
-        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      if (!requireAdmin(request, reply)) {
+        return;
       }
 
       const standings = await getTournamentStandings(pool, request.params.tournamentId);

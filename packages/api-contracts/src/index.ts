@@ -376,6 +376,16 @@ export type TournamentSummary = {
   finishedMatchCount: number;
 };
 
+export type TournamentSetupStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "ARCHIVED";
+
+export type TournamentSetupTeam = {
+  teamId: string;
+  tournamentId: string | null;
+  name: string;
+  shortName: string | null;
+  status: string;
+};
+
 export type TournamentScheduleMatch = {
   matchId: string;
   tournamentId: string | null;
@@ -398,6 +408,10 @@ export type TournamentScheduleMatch = {
 
 export type TournamentListResponse = {
   tournaments: TournamentSummary[];
+};
+
+export type TeamListResponse = {
+  teams: TournamentSetupTeam[];
 };
 
 export type TournamentScheduleResponse = {
@@ -487,7 +501,33 @@ export const createMatchSchema = z.object({
   awayTeamId: z.string().uuid().nullable().optional(),
   scheduledAt: z.string().datetime().nullable().optional(),
   venueName: z.string().max(200).nullable().optional(),
-  ruleProfileId: z.string().min(1).max(80).default("FIBA_2024")
+  ruleProfileId: z.string().min(1).max(80).default("FIBA_2024"),
+  metadata: z.record(z.unknown()).optional()
+});
+
+export const createTournamentSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "ARCHIVED"]).default("ACTIVE"),
+  startsAt: z.string().datetime().nullable().optional(),
+  endsAt: z.string().datetime().nullable().optional()
+});
+
+export const createTeamSchema = z.object({
+  tournamentId: z.string().uuid().nullable().optional(),
+  name: z.string().trim().min(1).max(200),
+  shortName: z.string().trim().min(1).max(40).nullable().optional()
+});
+
+export const createTournamentMatchSchema = z.object({
+  homeTeamId: z.string().uuid(),
+  awayTeamId: z.string().uuid(),
+  scheduledAt: z.string().datetime().nullable().optional(),
+  roundLabel: z.string().trim().min(1).max(80).nullable().optional(),
+  courtLabel: z.string().trim().min(1).max(80).nullable().optional(),
+  venueLabel: z.string().trim().min(1).max(200).nullable().optional()
+}).refine((value) => value.homeTeamId !== value.awayTeamId, {
+  message: "Home and away teams must be different",
+  path: ["awayTeamId"]
 });
 
 export const scoreAddedPayloadSchema = z.object({
@@ -666,6 +706,9 @@ export const commandResultStatusSchema = z.enum([
 ]);
 
 export type CreateMatchRequest = z.infer<typeof createMatchSchema>;
+export type CreateTournamentRequest = z.infer<typeof createTournamentSchema>;
+export type CreateTeamRequest = z.infer<typeof createTeamSchema>;
+export type CreateTournamentMatchRequest = z.infer<typeof createTournamentMatchSchema>;
 export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
 export type FoulType = z.infer<typeof foulTypeSchema>;
 export type TeamFoulAddedPayload = z.infer<typeof teamFoulAddedPayloadSchema>;

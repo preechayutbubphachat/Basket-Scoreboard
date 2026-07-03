@@ -24,7 +24,7 @@ export async function createMatch(options: {
         options.input.scheduledAt ? new Date(options.input.scheduledAt) : null,
         options.input.venueName ?? null,
         options.input.ruleProfileId,
-        JSON.stringify({})
+        JSON.stringify(options.input.metadata ?? {})
       ]
     );
     await connection.query(
