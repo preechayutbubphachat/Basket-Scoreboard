@@ -1,9 +1,12 @@
 import type {
+  CreateCourtRequest,
   CreateTeamRequest,
   CreateTournamentMatchRequest,
   CreateTournamentRequest,
+  CreateVenueRequest,
   TournamentScheduleMatch,
-  TournamentStandingsRow
+  TournamentStandingsRow,
+  VenueSummary
 } from "@basket-scoreboard/api-contracts";
 
 export type ScheduleStatusFilter = "all" | "scheduled" | "live" | "finished";
@@ -24,10 +27,30 @@ export type TeamFormState = {
 export type ScheduledMatchFormState = {
   homeTeamId: string;
   awayTeamId: string;
+  courtId: string;
   scheduledAt: string;
   roundLabel: string;
   courtLabel: string;
   venueLabel: string;
+};
+
+export type VenueFormState = {
+  name: string;
+  shortName: string;
+  address: string;
+};
+
+export type CourtFormState = {
+  venueId: string;
+  label: string;
+  displayName: string;
+};
+
+export type VenueCourtOption = {
+  value: string;
+  label: string;
+  venueName: string;
+  courtLabel: string;
 };
 
 export type TournamentQuickLink = {
@@ -94,11 +117,20 @@ export function createScheduledMatchFormState(): ScheduledMatchFormState {
   return {
     homeTeamId: "",
     awayTeamId: "",
+    courtId: "",
     scheduledAt: "",
     roundLabel: "",
     courtLabel: "",
     venueLabel: ""
   };
+}
+
+export function createVenueFormState(): VenueFormState {
+  return { name: "", shortName: "", address: "" };
+}
+
+export function createCourtFormState(): CourtFormState {
+  return { venueId: "", label: "", displayName: "" };
 }
 
 export function createTournamentPayload(state: TournamentFormState): CreateTournamentRequest {
@@ -119,13 +151,30 @@ export function createTeamPayload(state: TeamFormState): CreateTeamRequest {
 }
 
 export function createTournamentMatchPayload(state: ScheduledMatchFormState): CreateTournamentMatchRequest {
+  const courtId = emptyToNull(state.courtId);
   return {
     homeTeamId: state.homeTeamId,
     awayTeamId: state.awayTeamId,
+    courtId,
     scheduledAt: toIsoDateTimeOrNull(state.scheduledAt),
     roundLabel: emptyToNull(state.roundLabel),
-    courtLabel: emptyToNull(state.courtLabel),
-    venueLabel: emptyToNull(state.venueLabel)
+    courtLabel: courtId ? null : emptyToNull(state.courtLabel),
+    venueLabel: courtId ? null : emptyToNull(state.venueLabel)
+  };
+}
+
+export function createVenuePayload(state: VenueFormState): CreateVenueRequest {
+  return {
+    name: state.name.trim(),
+    shortName: emptyToNull(state.shortName),
+    address: emptyToNull(state.address)
+  };
+}
+
+export function createCourtPayload(state: CourtFormState): CreateCourtRequest {
+  return {
+    label: state.label.trim(),
+    displayName: emptyToNull(state.displayName)
   };
 }
 
@@ -179,9 +228,27 @@ export function buildScheduleRowMeta(match: TournamentScheduleMatch) {
     matchupLabel: `${homeTeamName} vs ${awayTeamName}`,
     scoreLabel: `${match.homeScore} - ${match.awayScore}`,
     scheduleLabel: match.scheduledAt ? new Date(match.scheduledAt).toLocaleString() : "Schedule pending",
-    locationLabel: courtLabel ?? venueLabel ?? "Court TBD",
+    locationLabel: venueLabel && courtLabel ? `${venueLabel} / ${courtLabel}` : courtLabel ?? venueLabel ?? "Court TBD",
     statusGroup: getScheduleStatusGroup(match.status)
   };
+}
+
+export function buildVenueCourtOptions(venues: VenueSummary[]): VenueCourtOption[] {
+  return venues.flatMap((venue) =>
+    venue.courts
+      .filter((court) => court.active)
+      .map((court) => ({
+        value: court.courtId,
+        label: `${venue.name} / ${court.label}`,
+        venueName: venue.name,
+        courtLabel: court.label
+      }))
+  );
+}
+
+export function buildSelectedCourtPreview(venues: VenueSummary[], courtId: string) {
+  const selected = buildVenueCourtOptions(venues).find((option) => option.value === courtId);
+  return selected ? `Selected court: ${selected.label}` : null;
 }
 
 export function getPublicScheduleLinks(match: TournamentScheduleMatch) {

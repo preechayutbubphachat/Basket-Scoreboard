@@ -24,7 +24,8 @@ describe("MariaDB migration foundation", () => {
       "007_create_user_sessions_table.sql",
       "008_create_match_officials_table.sql",
       "009_create_match_roster_tables.sql",
-      "010_create_match_roster_confirmations_table.sql"
+      "010_create_match_roster_confirmations_table.sql",
+      "011_create_venues_courts_tables.sql"
     ]);
   });
 
@@ -45,6 +46,8 @@ describe("MariaDB migration foundation", () => {
       "match_officials",
       "match_roster_players",
       "match_roster_confirmations",
+      "venues",
+      "courts",
       "tournaments",
       "teams",
       "players",
@@ -129,6 +132,28 @@ describe("MariaDB migration foundation", () => {
     expect(confirmationSql).toContain("engine=innodb");
     expect(confirmationSql).not.toContain(["update", "match_events"].join(" "));
     expect(confirmationSql).not.toContain(["delete", "from", "match_events"].join(" "));
+  });
+
+  it("adds venue and court setup tables without mutating match events", () => {
+    const venueSql = compact(readMigration("011_create_venues_courts_tables.sql"));
+
+    expect(venueSql).toContain("create table if not exists venues");
+    expect(venueSql).toContain("venue_id char(36) not null");
+    expect(venueSql).toContain("name varchar(200) not null");
+    expect(venueSql).toContain("short_name varchar(80) null");
+    expect(venueSql).toContain("address varchar(500) null");
+    expect(venueSql).toContain("active tinyint(1) not null default 1");
+    expect(venueSql).toContain("unique key uq_venues_name");
+    expect(venueSql).toContain("create table if not exists courts");
+    expect(venueSql).toContain("court_id char(36) not null");
+    expect(venueSql).toContain("venue_id char(36) not null");
+    expect(venueSql).toContain("label varchar(80) not null");
+    expect(venueSql).toContain("display_name varchar(120) null");
+    expect(venueSql).toContain("unique key uq_courts_venue_label");
+    expect(venueSql).toContain("foreign key (venue_id) references venues");
+    expect(venueSql).toContain("engine=innodb");
+    expect(venueSql).not.toContain(["update", "match_events"].join(" "));
+    expect(venueSql).not.toContain(["delete", "from", "match_events"].join(" "));
   });
 
   it("defines the critical append-only event store columns and constraints", () => {

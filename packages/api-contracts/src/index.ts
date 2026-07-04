@@ -386,6 +386,22 @@ export type TournamentSetupTeam = {
   status: string;
 };
 
+export type VenueCourt = {
+  courtId: string;
+  label: string;
+  displayName: string | null;
+  active: boolean;
+};
+
+export type VenueSummary = {
+  venueId: string;
+  name: string;
+  shortName: string | null;
+  address: string | null;
+  active: boolean;
+  courts: VenueCourt[];
+};
+
 export type TournamentScheduleMatch = {
   matchId: string;
   tournamentId: string | null;
@@ -412,6 +428,10 @@ export type TournamentListResponse = {
 
 export type TeamListResponse = {
   teams: TournamentSetupTeam[];
+};
+
+export type VenueListResponse = {
+  venues: VenueSummary[];
 };
 
 export type TournamentScheduleResponse = {
@@ -518,10 +538,22 @@ export const createTeamSchema = z.object({
   shortName: z.string().trim().min(1).max(40).nullable().optional()
 });
 
+export const createVenueSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  shortName: z.string().trim().min(1).max(80).nullable().optional(),
+  address: z.string().trim().min(1).max(500).nullable().optional()
+});
+
+export const createCourtSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  displayName: z.string().trim().min(1).max(120).nullable().optional()
+});
+
 export const createTournamentMatchSchema = z.object({
   homeTeamId: z.string().uuid(),
   awayTeamId: z.string().uuid(),
   scheduledAt: z.string().datetime().nullable().optional(),
+  courtId: z.string().uuid().nullable().optional(),
   roundLabel: z.string().trim().min(1).max(80).nullable().optional(),
   courtLabel: z.string().trim().min(1).max(80).nullable().optional(),
   venueLabel: z.string().trim().min(1).max(200).nullable().optional()
@@ -708,6 +740,8 @@ export const commandResultStatusSchema = z.enum([
 export type CreateMatchRequest = z.infer<typeof createMatchSchema>;
 export type CreateTournamentRequest = z.infer<typeof createTournamentSchema>;
 export type CreateTeamRequest = z.infer<typeof createTeamSchema>;
+export type CreateVenueRequest = z.infer<typeof createVenueSchema>;
+export type CreateCourtRequest = z.infer<typeof createCourtSchema>;
 export type CreateTournamentMatchRequest = z.infer<typeof createTournamentMatchSchema>;
 export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
 export type FoulType = z.infer<typeof foulTypeSchema>;

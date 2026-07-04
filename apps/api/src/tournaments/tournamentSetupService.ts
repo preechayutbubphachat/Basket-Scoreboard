@@ -12,6 +12,7 @@ import {
 } from "@basket-scoreboard/api-contracts";
 import { createMatch } from "../matchEventStore/createMatch.js";
 import { getTournamentSchedule } from "./tournamentScheduleService.js";
+import { findActiveCourtSnapshot } from "./venueCourtService.js";
 
 type TeamRow = RowDataPacket & {
   team_id: string;
@@ -116,6 +117,11 @@ export async function createScheduledTournamentMatch(
     };
   }
 
+  const court = input.courtId ? await findActiveCourtSnapshot(pool, input.courtId) : null;
+  if (input.courtId && !court) {
+    return { ok: false, statusCode: 404, reasonCode: reasonCodes.MATCH_NOT_FOUND, message: "Court was not found" };
+  }
+
   const match = await createMatch({
     pool,
     input: {
@@ -124,9 +130,13 @@ export async function createScheduledTournamentMatch(
       awayTeamId: input.awayTeamId,
       scheduledAt: input.scheduledAt ?? null,
       matchCode: input.roundLabel ?? null,
-      venueName: input.venueLabel ?? null,
+      venueName: court?.venueLabel ?? input.venueLabel ?? null,
       ruleProfileId: "FIBA_2024",
-      metadata: { courtLabel: input.courtLabel ?? null }
+      metadata: {
+        courtLabel: court?.courtLabel ?? input.courtLabel ?? null,
+        courtId: court?.courtId ?? null,
+        venueId: court?.venueId ?? null
+      }
     }
   });
 
