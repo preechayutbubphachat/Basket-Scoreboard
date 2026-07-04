@@ -1,9 +1,10 @@
 import type { Pool, RowDataPacket } from "mysql2/promise";
-import type { MatchOperationLinks, MatchReadiness } from "@basket-scoreboard/api-contracts";
+import type { MatchOfficialRoleCode, MatchOperationLinks, MatchReadiness } from "@basket-scoreboard/api-contracts";
 
 type OfficialsRow = RowDataPacket & {
   match_id: string;
-  active_count: number | string | null;
+  role_code: MatchOfficialRoleCode | string;
+  display_name: string | null;
 };
 
 type RosterRow = RowDataPacket & {
@@ -24,7 +25,7 @@ type ReadinessSeed = {
 };
 
 type MatchSetupCounts = {
-  officialsCount: number;
+  officials: Array<{ role: MatchOfficialRoleCode | string; displayName: string | null }>;
   homeRosterCount: number;
   awayRosterCount: number;
   homeStarters: number;
@@ -44,7 +45,7 @@ export async function getReadinessForMatches(
   const matchIds = matches.map((match) => match.matchId);
   const counts = new Map<string, MatchSetupCounts>(
     matchIds.map((matchId) => [matchId, {
-      officialsCount: 0,
+      officials: [],
       homeRosterCount: 0,
       awayRosterCount: 0,
       homeStarters: 0,
@@ -55,13 +56,24 @@ export async function getReadinessForMatches(
   );
 
   const [officialRows] = await pool.query<OfficialsRow[]>(
-    "SELECT match_id, COUNT(*) AS active_count FROM match_officials WHERE match_id IN (?) AND assignment_status = 'ACTIVE' GROUP BY match_id",
+    `SELECT
+      mo.match_id,
+      mo.role_code,
+      COALESCE(NULLIF(u.display_name, ''), u.email, mo.user_id) AS display_name
+    FROM match_officials mo
+    LEFT JOIN users u ON u.user_id = mo.user_id
+    WHERE mo.match_id IN (?)
+      AND mo.assignment_status = 'ACTIVE'
+    ORDER BY mo.match_id ASC, mo.role_code ASC, display_name ASC`,
     [matchIds]
   );
   for (const row of officialRows) {
     const target = counts.get(row.match_id);
     if (target) {
-      target.officialsCount = numberOrDefault(row.active_count, 0);
+      target.officials.push({
+        role: row.role_code,
+        displayName: labelOrNull(row.display_name)
+      });
     }
   }
 
@@ -135,13 +147,10 @@ function buildReadiness(status: string, counts: MatchSetupCounts): MatchReadines
     && counts.homeConfirmed
     && counts.awayConfirmed;
 
+  const officials = buildOfficialsReadiness(counts.officials);
+
   return {
-    officials: {
-      state: counts.officialsCount > 0 ? "READY" : "MISSING",
-      label: counts.officialsCount > 0
-        ? `${counts.officialsCount} active official${counts.officialsCount === 1 ? "" : "s"}`
-        : "No active officials"
-    },
+    officials,
     roster: {
       state: rosterState,
       homeCount: counts.homeRosterCount,
@@ -155,6 +164,42 @@ function buildReadiness(status: string, counts: MatchSetupCounts): MatchReadines
       awayConfirmed: counts.awayConfirmed
     },
     lifecycle: buildLifecycleReadiness(status)
+  };
+}
+
+function buildOfficialsReadiness(
+  officials: Array<{ role: MatchOfficialRoleCode | string; displayName: string | null }>
+): MatchReadiness["officials"] {
+  const sortedOfficials = [...officials].sort((first, second) => {
+    const roleComparison = String(first.role).localeCompare(String(second.role));
+    if (roleComparison !== 0) {
+      return roleComparison;
+    }
+    return (first.displayName ?? "").localeCompare(second.displayName ?? "");
+  });
+
+  if (officials.length === 0) {
+    return {
+      state: "MISSING",
+      label: "No active officials",
+      assignedCount: 0,
+      roles: []
+    };
+  }
+
+  const normalizedRoles = sortedOfficials.map((official) => String(official.role).toUpperCase());
+  const alphaReady = normalizedRoles.some((role) => role === "SCORER" || role === "REFEREE");
+  const roleList = Array.from(new Set(normalizedRoles)).sort();
+  const baseLabel = `${sortedOfficials.length} active official${sortedOfficials.length === 1 ? "" : "s"}: ${roleList.join(", ")}`;
+
+  return {
+    state: alphaReady ? "READY" : "PARTIAL",
+    label: alphaReady ? baseLabel : `${baseLabel}. Add scorer or referee for Alpha readiness.`,
+    assignedCount: sortedOfficials.length,
+    roles: sortedOfficials.map((official) => ({
+      role: official.role,
+      displayName: official.displayName
+    }))
   };
 }
 
@@ -175,4 +220,12 @@ function buildLifecycleReadiness(status: string): MatchReadiness["lifecycle"] {
 function numberOrDefault(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function labelOrNull(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

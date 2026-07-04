@@ -27,7 +27,7 @@ type ScheduleFixtureRow = {
 function createTournamentSchedulePool(
   extraRows: ScheduleFixtureRow[] = [],
   setup: {
-    officials?: Array<{ match_id: string; active_count: number }>;
+    officials?: Array<{ match_id: string; role_code: string; display_name: string | null }>;
     rosters?: Array<{ match_id: string; team_side: "HOME" | "AWAY"; player_count: number; starter_count: number }>;
     confirmations?: Array<{ match_id: string; team_side: "HOME" | "AWAY" }>;
   } = {}
@@ -184,7 +184,12 @@ describe("alpha tournament public schedule", () => {
                 lineupUrl: `/admin/matches/${matchId}/lineup`
               }),
               readiness: expect.objectContaining({
-                officials: { state: "MISSING", label: "No active officials" },
+                officials: {
+                  state: "MISSING",
+                  label: "No active officials",
+                  assignedCount: 0,
+                  roles: []
+                },
                 roster: { state: "MISSING", homeCount: 0, awayCount: 0 },
                 lineup: {
                   state: "MISSING",
@@ -224,9 +229,12 @@ describe("alpha tournament public schedule", () => {
     }
   });
 
-  it("derives ready officials, roster, and lineup state from existing setup rows", async () => {
+  it("derives role-aware officials, roster, and lineup state from existing setup rows", async () => {
     const { pool } = createTournamentSchedulePool([], {
-      officials: [{ match_id: matchId, active_count: 2 }],
+      officials: [
+        { match_id: matchId, role_code: "TIMER", display_name: "Table Timer" },
+        { match_id: matchId, role_code: "SCORER", display_name: "Lead Scorer" }
+      ],
       rosters: [
         { match_id: matchId, team_side: "HOME", player_count: 5, starter_count: 5 },
         { match_id: matchId, team_side: "AWAY", player_count: 5, starter_count: 5 }
@@ -252,7 +260,15 @@ describe("alpha tournament public schedule", () => {
             expect.objectContaining({
               matchId,
               readiness: {
-                officials: { state: "READY", label: "2 active officials" },
+                officials: {
+                  state: "READY",
+                  label: "2 active officials: SCORER, TIMER",
+                  assignedCount: 2,
+                  roles: [
+                    { role: "SCORER", displayName: "Lead Scorer" },
+                    { role: "TIMER", displayName: "Table Timer" }
+                  ]
+                },
                 roster: { state: "READY", homeCount: 5, awayCount: 5 },
                 lineup: {
                   state: "READY",
@@ -263,6 +279,43 @@ describe("alpha tournament public schedule", () => {
                 },
                 lifecycle: { state: "LIVE", label: "Live" }
               }
+            }),
+            expect.any(Object)
+          ]
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("marks timer-only official setup as partial operational readiness", async () => {
+    const { pool } = createTournamentSchedulePool([], {
+      officials: [{ match_id: matchId, role_code: "TIMER", display_name: "Table Timer" }]
+    });
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/tournaments/${tournamentId}/schedule`,
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        data: {
+          matches: [
+            expect.objectContaining({
+              matchId,
+              readiness: expect.objectContaining({
+                officials: {
+                  state: "PARTIAL",
+                  label: "1 active official: TIMER. Add scorer or referee for Alpha readiness.",
+                  assignedCount: 1,
+                  roles: [{ role: "TIMER", displayName: "Table Timer" }]
+                }
+              })
             }),
             expect.any(Object)
           ]
@@ -476,6 +529,7 @@ describe("alpha tournament public schedule", () => {
       expect(JSON.stringify(body)).not.toContain("conflicts");
       expect(JSON.stringify(body)).not.toContain("operations");
       expect(JSON.stringify(body)).not.toContain("readiness");
+      expect(JSON.stringify(body)).not.toMatch(/SCORER|REFEREE|TIMER|SHOT_CLOCK_OPERATOR|officials/i);
     } finally {
       await app.close();
     }

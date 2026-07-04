@@ -57,6 +57,7 @@ export type MatchAssignment = {
   id: string;
   matchId: string;
   userId: string;
+  displayName?: string | null;
   roleCode: MatchOfficialRoleCode;
   assignmentStatus: "ACTIVE" | "REVOKED" | string;
   assignedAt: string;
@@ -420,13 +421,18 @@ export type ScheduleConflictWarning = {
   courtLabel: string | null;
 };
 
-export type MatchReadinessState = "READY" | "MISSING" | "UNKNOWN" | "INCOMPLETE";
+export type MatchReadinessState = "READY" | "PARTIAL" | "MISSING" | "UNKNOWN" | "INCOMPLETE";
 export type MatchLifecycleReadinessState = "NOT_STARTED" | "LIVE" | "FINISHED" | "UNKNOWN";
 
 export type MatchReadiness = {
   officials: {
-    state: "READY" | "MISSING" | "UNKNOWN";
+    state: "READY" | "PARTIAL" | "MISSING" | "UNKNOWN";
     label: string;
+    assignedCount?: number;
+    roles?: Array<{
+      role: MatchOfficialRoleCode | string;
+      displayName: string | null;
+    }>;
   };
   roster: {
     state: "READY" | "INCOMPLETE" | "MISSING";
