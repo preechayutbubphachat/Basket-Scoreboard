@@ -1,9 +1,11 @@
 import type {
   AuthenticatedUser,
   CommandResult,
+  CreateCourtRequest,
   CreateTeamRequest,
   CreateTournamentMatchRequest,
   CreateTournamentRequest,
+  CreateVenueRequest,
   CreatePlayerRequest,
   MatchAssignment,
   MatchAuditLogResponse,
@@ -30,6 +32,9 @@ import type {
   TournamentStandingsResponse,
   TournamentSetupTeam,
   TournamentSummary,
+  VenueCourt,
+  VenueListResponse,
+  VenueSummary,
   TeamFoulAddedPayload,
   SmokeMatchResponse
 } from "@basket-scoreboard/api-contracts";
@@ -255,6 +260,24 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         body: JSON.stringify(input)
       });
       return data.team;
+    },
+    async getVenues() {
+      const data = await request<VenueListResponse>("/venues");
+      return data.venues;
+    },
+    async createVenue(input: CreateVenueRequest) {
+      const data = await request<{ venue: VenueSummary }>("/venues", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data.venue;
+    },
+    async createCourt(venueId: string, input: CreateCourtRequest) {
+      const data = await request<{ court: VenueCourt }>(`/venues/${encodeURIComponent(venueId)}/courts`, {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data.court;
     },
     async createTournamentMatch(tournamentId: string, input: CreateTournamentMatchRequest) {
       const data = await request<{

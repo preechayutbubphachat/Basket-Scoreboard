@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool } from "mysql2/promise";
 import {
+  createCourtSchema,
   createTeamSchema,
   createTournamentMatchSchema,
   createTournamentSchema,
+  createVenueSchema,
   reasonCodes,
   type ReasonCode
 } from "@basket-scoreboard/api-contracts";
@@ -17,6 +19,11 @@ import {
   createTournamentSetupTeam,
   listTournamentSetupTeams
 } from "../tournaments/tournamentSetupService.js";
+import {
+  createCourtSetup,
+  createVenueSetup,
+  listVenuesWithCourts
+} from "../tournaments/venueCourtService.js";
 
 export function registerTournamentRoutes(
   app: FastifyInstance,
@@ -107,6 +114,71 @@ export function registerTournamentRoutes(
       return reply.status(201).send({
         ok: true,
         data: { team }
+      });
+    }
+  );
+
+  app.get(
+    "/api/v1/venues",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      return {
+        ok: true,
+        data: {
+          venues: await listVenuesWithCourts(pool)
+        }
+      };
+    }
+  );
+
+  app.post(
+    "/api/v1/venues",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = createVenueSchema.parse(request.body);
+      const result = await createVenueSetup(pool, input);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return reply.status(result.statusCode).send({
+        ok: true,
+        data: { venue: result.value }
+      });
+    }
+  );
+
+  app.post<{ Params: { venueId: string } }>(
+    "/api/v1/venues/:venueId/courts",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = createCourtSchema.parse(request.body);
+      const result = await createCourtSetup(pool, request.params.venueId, input);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return reply.status(result.statusCode).send({
+        ok: true,
+        data: { court: result.value }
       });
     }
   );

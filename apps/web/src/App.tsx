@@ -24,7 +24,8 @@ import type {
   TournamentStandingsResponse,
   TournamentStandingsRow,
   TournamentSetupTeam,
-  TournamentSummary
+  TournamentSummary,
+  VenueSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
@@ -128,15 +129,21 @@ import {
   buildAdminTournamentStandingsLink,
   buildPublicTournamentScheduleLink,
   buildPublicTournamentStandingsLink,
+  buildSelectedCourtPreview,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  buildVenueCourtOptions,
   buildTournamentQuickLinks,
+  createCourtFormState,
+  createCourtPayload,
   createScheduledMatchFormState,
   createTeamFormState,
   createTeamPayload,
   createTournamentFormState,
   createTournamentMatchPayload,
   createTournamentPayload,
+  createVenueFormState,
+  createVenuePayload,
   buildStandingsRowMeta,
   getPublicScheduleEmptyState,
   getPublicStandingsEmptyState,
@@ -145,8 +152,10 @@ import {
   getScheduledMatchFormFeedback,
   getScheduleStatusGroup,
   getTournamentEmptyState,
+  type CourtFormState,
   type ScheduledMatchFormState,
-  type ScheduleStatusFilter
+  type ScheduleStatusFilter,
+  type VenueFormState
 } from "./lib/scheduleControl";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
@@ -714,23 +723,28 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
   const { api } = useCurrentUser();
   const [schedule, setSchedule] = useState<TournamentScheduleResponse | null>(null);
   const [teams, setTeams] = useState<TournamentSetupTeam[]>([]);
+  const [venues, setVenues] = useState<VenueSummary[]>([]);
   const [teamForm, setTeamForm] = useState(() => createTeamFormState(tournamentId));
+  const [venueForm, setVenueForm] = useState<VenueFormState>(createVenueFormState);
+  const [courtForm, setCourtForm] = useState<CourtFormState>(createCourtFormState);
   const [matchForm, setMatchForm] = useState(createScheduledMatchFormState);
   const [filter, setFilter] = useState<ScheduleStatusFilter>("all");
   const [loading, setLoading] = useState(true);
-  const [savingSetup, setSavingSetup] = useState<"team" | "match" | null>(null);
+  const [savingSetup, setSavingSetup] = useState<"team" | "match" | "venue" | "court" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
 
   async function loadSchedule() {
     setLoading(true);
     setMessage(null);
     try {
-      const [nextSchedule, nextTeams] = await Promise.all([
+      const [nextSchedule, nextTeams, nextVenues] = await Promise.all([
         api.getTournamentSchedule(tournamentId),
-        api.listTeams()
+        api.listTeams(),
+        api.getVenues()
       ]);
       setSchedule(nextSchedule);
       setTeams(nextTeams);
+      setVenues(nextVenues);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -740,12 +754,16 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
 
   useEffect(() => {
     setTeamForm(createTeamFormState(tournamentId));
+    setVenueForm(createVenueFormState());
+    setCourtForm(createCourtFormState());
     setMatchForm(createScheduledMatchFormState());
     void loadSchedule();
   }, [api, tournamentId]);
 
   const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
   const tournamentTeams = teams.filter((team) => team.tournamentId === null || team.tournamentId === tournamentId);
+  const courtOptions = buildVenueCourtOptions(venues);
+  const selectedCourtPreview = buildSelectedCourtPreview(venues, matchForm.courtId);
   const matchFormFeedback = getScheduledMatchFormFeedback(matchForm, tournamentTeams.length, savingSetup === "match");
 
   async function handleCreateTeam(event: FormEvent<HTMLFormElement>) {
@@ -757,6 +775,38 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
       setTeamForm(createTeamFormState(tournamentId));
       await loadSchedule();
       setMessage({ tone: "success", text: "Team created." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSavingSetup(null);
+    }
+  }
+
+  async function handleCreateVenue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingSetup("venue");
+    setMessage({ tone: "success", text: "Saving venue..." });
+    try {
+      await api.createVenue(createVenuePayload(venueForm));
+      setVenueForm(createVenueFormState());
+      await loadSchedule();
+      setMessage({ tone: "success", text: "Venue created." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSavingSetup(null);
+    }
+  }
+
+  async function handleCreateCourt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingSetup("court");
+    setMessage({ tone: "success", text: "Saving court..." });
+    try {
+      await api.createCourt(courtForm.venueId, createCourtPayload(courtForm));
+      setCourtForm(createCourtFormState());
+      await loadSchedule();
+      setMessage({ tone: "success", text: "Court created." });
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -831,6 +881,76 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
             {savingSetup === "team" ? "Saving..." : "Create Team"}
           </button>
         </form>
+        <form className="stacked-form" onSubmit={(event) => void handleCreateVenue(event)}>
+          <h2>Create Venue</h2>
+          <label>
+            Venue name
+            <input
+              value={venueForm.name}
+              onChange={(event) => setVenueForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Main Hall"
+              required
+              maxLength={200}
+            />
+          </label>
+          <label>
+            Short name
+            <input
+              value={venueForm.shortName}
+              onChange={(event) => setVenueForm((current) => ({ ...current, shortName: event.target.value }))}
+              placeholder="MH"
+              maxLength={80}
+            />
+          </label>
+          <label>
+            Address
+            <input
+              value={venueForm.address}
+              onChange={(event) => setVenueForm((current) => ({ ...current, address: event.target.value }))}
+              placeholder="Bangkok"
+              maxLength={500}
+            />
+          </label>
+          <button type="submit" disabled={savingSetup !== null || venueForm.name.trim().length === 0}>
+            {savingSetup === "venue" ? "Saving..." : "Create Venue"}
+          </button>
+        </form>
+        <form className="stacked-form" onSubmit={(event) => void handleCreateCourt(event)}>
+          <h2>Create Court</h2>
+          <label>
+            Venue
+            <select
+              value={courtForm.venueId}
+              onChange={(event) => setCourtForm((current) => ({ ...current, venueId: event.target.value }))}
+              required
+            >
+              <option value="">Select venue</option>
+              {venues.map((venue) => <option key={venue.venueId} value={venue.venueId}>{venue.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Court label
+            <input
+              value={courtForm.label}
+              onChange={(event) => setCourtForm((current) => ({ ...current, label: event.target.value }))}
+              placeholder="Court A"
+              required
+              maxLength={80}
+            />
+          </label>
+          <label>
+            Display name
+            <input
+              value={courtForm.displayName}
+              onChange={(event) => setCourtForm((current) => ({ ...current, displayName: event.target.value }))}
+              placeholder="Main Hall / Court A"
+              maxLength={120}
+            />
+          </label>
+          <button type="submit" disabled={savingSetup !== null || !courtForm.venueId || courtForm.label.trim().length === 0}>
+            {savingSetup === "court" ? "Saving..." : "Create Court"}
+          </button>
+        </form>
         <form className="stacked-form" onSubmit={(event) => void handleCreateMatch(event)}>
           <h2>Create Scheduled Match</h2>
           {matchFormFeedback.warning ? <p className="muted">{matchFormFeedback.warning}</p> : null}
@@ -874,12 +994,24 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
             />
           </label>
           <label>
+            Court assignment
+            <select
+              value={matchForm.courtId}
+              onChange={(event) => setMatchForm((current) => ({ ...current, courtId: event.target.value }))}
+            >
+              <option value="">No court selected</option>
+              {courtOptions.map((court) => <option key={court.value} value={court.value}>{court.label}</option>)}
+            </select>
+          </label>
+          {selectedCourtPreview ? <p className="muted">{selectedCourtPreview}</p> : null}
+          <label>
             Court
             <input
               value={matchForm.courtLabel}
               onChange={(event) => setMatchForm((current) => ({ ...current, courtLabel: event.target.value }))}
               placeholder="Court A"
               maxLength={80}
+              disabled={Boolean(matchForm.courtId)}
             />
           </label>
           <label>
@@ -889,6 +1021,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
               onChange={(event) => setMatchForm((current) => ({ ...current, venueLabel: event.target.value }))}
               placeholder="Main Hall"
               maxLength={200}
+              disabled={Boolean(matchForm.courtId)}
             />
           </label>
           <button
@@ -899,6 +1032,29 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           </button>
         </form>
       </div>
+      {venues.length > 0 ? (
+        <section className="panel compact-panel">
+          <h2>Venues and Courts</h2>
+          <div className="match-grid">
+            {venues.map((venue) => (
+              <article className="match-card" key={venue.venueId}>
+                <h3>{venue.name}</h3>
+                <p className="muted">{venue.shortName ?? "No short name"}</p>
+                <p className="muted">{venue.address ?? "No address"}</p>
+                {venue.courts.length > 0 ? (
+                  <ul>
+                    {venue.courts.map((court) => (
+                      <li key={court.courtId}>{court.displayName ?? court.label}{court.active ? "" : " (inactive)"}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="muted">No courts yet.</p>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <ScheduleFilterBar value={filter} onChange={setFilter} />
       {loading ? <p>Loading schedule...</p> : null}
       {!loading && matches.length === 0 ? (

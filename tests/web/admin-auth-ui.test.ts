@@ -100,7 +100,13 @@ import {
   buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
   buildScheduleStatusFilters,
+  buildSelectedCourtPreview,
+  buildVenueCourtOptions,
   buildTournamentQuickLinks,
+  createCourtFormState,
+  createCourtPayload,
+  createVenueFormState,
+  createVenuePayload,
   createScheduledMatchFormState,
   createTeamFormState,
   createTournamentFormState,
@@ -447,6 +453,21 @@ const tournamentSchedule: TournamentScheduleResponse = {
     }
   ],
   generatedAt: "2026-07-03T10:05:00.000Z"
+};
+
+const venueList = {
+  venues: [
+    {
+      venueId: "venue-1",
+      name: "Main Hall",
+      shortName: "MH",
+      address: "Bangkok",
+      active: true,
+      courts: [
+        { courtId: "court-1", label: "Court A", displayName: "Main Hall / Court A", active: true }
+      ]
+    }
+  ]
 };
 
 const tournamentStandings: TournamentStandingsResponse = {
@@ -1088,6 +1109,9 @@ describe("web API client", () => {
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: { tournament: tournamentList.tournaments[0] } }, 201))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: { team: { teamId: "team-1", tournamentId: "tournament-1", name: "Bangkok Home", shortName: "BKK", status: "ACTIVE" } } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { venue: venueList.venues[0] } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { court: venueList.venues[0].courts[0] } }, 201))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { venues: venueList.venues } }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: { matchId: "match-1", currentSeq: 0, scheduleMatch: tournamentSchedule.matches[0] } }, 201));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
 
@@ -1096,13 +1120,23 @@ describe("web API client", () => {
       teamId: "team-1",
       name: "Bangkok Home"
     });
+    await expect(client.createVenue({ name: "Main Hall", shortName: "MH", address: "Bangkok" })).resolves.toMatchObject({
+      venueId: "venue-1",
+      name: "Main Hall"
+    });
+    await expect(client.createCourt("venue-1", { label: "Court A", displayName: "Main Hall / Court A" })).resolves.toMatchObject({
+      courtId: "court-1",
+      label: "Court A"
+    });
+    await expect(client.getVenues()).resolves.toEqual(venueList.venues);
     await expect(
       client.createTournamentMatch("tournament-1", {
         homeTeamId: "home-team",
         awayTeamId: "away-team",
+        courtId: "court-1",
         roundLabel: "Round 1",
-        courtLabel: "Court A",
-        venueLabel: "Main Hall",
+        courtLabel: null,
+        venueLabel: null,
         scheduledAt: "2026-07-03T10:00:00.000Z"
       })
     ).resolves.toMatchObject({ matchId: "match-1", currentSeq: 0 });
@@ -1127,6 +1161,29 @@ describe("web API client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "/api/v1/venues",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }),
+        body: JSON.stringify({ name: "Main Hall", shortName: "MH", address: "Bangkok" })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/v1/venues/venue-1/courts",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }),
+        body: JSON.stringify({ label: "Court A", displayName: "Main Hall / Court A" })
+      })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/v1/venues",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
       "/api/v1/tournaments/tournament-1/matches",
       expect.objectContaining({
         method: "POST",
@@ -1947,6 +2004,7 @@ describe("tournament schedule UI policy", () => {
       homeTeamId: "",
       awayTeamId: "",
       scheduledAt: "",
+      courtId: "",
       roundLabel: "",
       courtLabel: "",
       venueLabel: ""
@@ -1960,6 +2018,7 @@ describe("tournament schedule UI policy", () => {
     expect(createTournamentMatchPayload({
       homeTeamId: "home-team",
       awayTeamId: "away-team",
+      courtId: "",
       scheduledAt: "",
       roundLabel: " Round 1 ",
       courtLabel: "",
@@ -1967,9 +2026,27 @@ describe("tournament schedule UI policy", () => {
     })).toEqual({
       homeTeamId: "home-team",
       awayTeamId: "away-team",
+      courtId: null,
       roundLabel: "Round 1",
       courtLabel: null,
       venueLabel: "Main Hall",
+      scheduledAt: null
+    });
+    expect(createTournamentMatchPayload({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      courtId: "court-1",
+      scheduledAt: "",
+      roundLabel: "",
+      courtLabel: " Legacy Court ",
+      venueLabel: " Legacy Venue "
+    })).toEqual({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      courtId: "court-1",
+      roundLabel: null,
+      courtLabel: null,
+      venueLabel: null,
       scheduledAt: null
     });
     expect(buildScheduleStatusFilters()).toEqual([
@@ -1985,6 +2062,11 @@ describe("tournament schedule UI policy", () => {
       locationLabel: "Court A",
       statusGroup: "live"
     });
+    expect(buildScheduleRowMeta({
+      ...tournamentSchedule.matches[0],
+      courtLabel: "Court A",
+      venueLabel: "Main Hall"
+    }).locationLabel).toBe("Main Hall / Court A");
     expect(buildScheduleRowMeta({
       ...tournamentSchedule.matches[0],
       scheduledAt: null,
@@ -2017,6 +2099,50 @@ describe("tournament schedule UI policy", () => {
       title: "No scheduled matches",
       description: "This tournament does not have scheduled matches yet."
     });
+  });
+
+  test("builds venue and court management payloads and court dropdown options", () => {
+    const venues = [
+      {
+        venueId: "venue-1",
+        name: "Main Hall",
+        shortName: "MH",
+        address: "Bangkok",
+        active: true,
+        courts: [
+          { courtId: "court-1", label: "Court A", displayName: "Main Hall / Court A", active: true },
+          { courtId: "court-2", label: "Court B", displayName: null, active: false }
+        ]
+      },
+      {
+        venueId: "venue-2",
+        name: "Annex",
+        shortName: null,
+        address: null,
+        active: true,
+        courts: [
+          { courtId: "court-3", label: "Court A", displayName: null, active: true }
+        ]
+      }
+    ];
+
+    expect(createVenueFormState()).toEqual({ name: "", shortName: "", address: "" });
+    expect(createVenuePayload({ name: " Main Hall ", shortName: " MH ", address: "" })).toEqual({
+      name: "Main Hall",
+      shortName: "MH",
+      address: null
+    });
+    expect(createCourtFormState()).toEqual({ venueId: "", label: "", displayName: "" });
+    expect(createCourtPayload({ venueId: "venue-1", label: " Court A ", displayName: "" })).toEqual({
+      label: "Court A",
+      displayName: null
+    });
+    expect(buildVenueCourtOptions(venues)).toEqual([
+      { value: "court-1", label: "Main Hall / Court A", venueName: "Main Hall", courtLabel: "Court A" },
+      { value: "court-3", label: "Annex / Court A", venueName: "Annex", courtLabel: "Court A" }
+    ]);
+    expect(buildSelectedCourtPreview(venues, "court-1")).toBe("Selected court: Main Hall / Court A");
+    expect(buildSelectedCourtPreview(venues, "")).toBeNull();
   });
 
   test("builds provisional standings row metadata and public-safe links", () => {
