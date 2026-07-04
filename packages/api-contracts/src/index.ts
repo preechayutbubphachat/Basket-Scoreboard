@@ -19,7 +19,10 @@ export const reasonCodes = {
   CSRF_REQUIRED: "CSRF_REQUIRED",
   CSRF_INVALID: "CSRF_INVALID",
   MATCH_NOT_ASSIGNED: "MATCH_NOT_ASSIGNED",
+  USER_REQUIRED: "USER_REQUIRED",
   USER_NOT_FOUND: "USER_NOT_FOUND",
+  ROLE_REQUIRED: "ROLE_REQUIRED",
+  INVALID_OFFICIAL_ROLE: "INVALID_OFFICIAL_ROLE",
   ASSIGNMENT_NOT_FOUND: "ASSIGNMENT_NOT_FOUND",
   ASSIGNMENT_INACTIVE: "ASSIGNMENT_INACTIVE",
   DUPLICATE_ASSIGNMENT: "DUPLICATE_ASSIGNMENT",
@@ -62,6 +65,12 @@ export type MatchAssignment = {
   assignmentStatus: "ACTIVE" | "REVOKED" | string;
   assignedAt: string;
   revokedAt: string | null;
+};
+
+export type OfficialCandidate = {
+  userId: string;
+  displayName: string | null;
+  roles: RoleCode[];
 };
 
 export type OperatorMatchSummary = {

@@ -14,6 +14,67 @@ import {
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
 describe("match official assignment API safety", () => {
+  it("lets ADMIN list sanitized official candidates and denies non-admin reads", async () => {
+    const queryLog: string[] = [];
+    const pool = {
+      async query(sql: string) {
+        queryLog.push(sql);
+        if (sql.includes("FROM users")) {
+          return [[
+            {
+              user_id: "11111111-1111-4111-8111-111111111111",
+              display_name: "Score Table",
+              role_key: "SCORER",
+              email: "score@example.com",
+              password_hash: "secret-hash"
+            }
+          ], []];
+        }
+        throw new Error(`unexpected query: ${sql}`);
+      }
+    };
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const unauthenticated = await app.inject({
+        method: "GET",
+        url: "/api/v1/users/official-candidates"
+      });
+      expect(unauthenticated.statusCode).toBe(401);
+
+      const nonAdmin = await app.inject({
+        method: "GET",
+        url: "/api/v1/users/official-candidates",
+        headers: { "x-dev-user-role": "SCORER" }
+      });
+      expect(nonAdmin.statusCode).toBe(403);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/users/official-candidates",
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        ok: true,
+        data: {
+          candidates: [
+            {
+              userId: "11111111-1111-4111-8111-111111111111",
+              displayName: "Score Table",
+              roles: ["SCORER"]
+            }
+          ]
+        }
+      });
+      expect(JSON.stringify(response.json())).not.toMatch(/email|password|password_hash|session|cookie|csrf|token/i);
+      expect(queryLog).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns controlled JSON 404 when listing officials for an unknown match", async () => {
     const pool = {
       async query(sql: string) {
@@ -232,6 +293,20 @@ describeDb("match official assignment workflow", () => {
       });
       expect(duplicateAssign.statusCode).toBe(409);
       expect(duplicateAssign.json()).toMatchObject({ error: { reasonCode: "DUPLICATE_ASSIGNMENT" } });
+
+      const invalidUser = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchA}/officials`,
+        headers: { cookie: adminSession.cookie, "x-csrf-token": adminSession.csrfToken },
+        payload: { userId: "99", roleCode: "SCORER" }
+      });
+      expect(invalidUser.statusCode).toBe(404);
+      expect(invalidUser.json()).toMatchObject({
+        error: {
+          reasonCode: "USER_NOT_FOUND",
+          message: "Please select a valid official."
+        }
+      });
 
       const listResponse = await app.inject({
         method: "GET",
