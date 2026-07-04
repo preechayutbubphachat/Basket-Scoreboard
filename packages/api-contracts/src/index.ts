@@ -402,12 +402,26 @@ export type VenueSummary = {
   courts: VenueCourt[];
 };
 
+export type ScheduleConflictWarning = {
+  conflictId: string;
+  severity: "WARNING";
+  type: "SAME_COURT_SAME_TIME" | "LEGACY_SAME_COURT_SAME_TIME";
+  message: string;
+  matchId: string;
+  conflictingMatchId: string;
+  scheduledAt: string;
+  courtId: string | null;
+  venueLabel: string | null;
+  courtLabel: string | null;
+};
+
 export type TournamentScheduleMatch = {
   matchId: string;
   tournamentId: string | null;
   stageName: string | null;
   groupName: string | null;
   roundLabel: string | null;
+  courtId: string | null;
   courtLabel: string | null;
   venueLabel: string | null;
   scheduledAt: string | null;
@@ -420,6 +434,7 @@ export type TournamentScheduleMatch = {
   awayScore: number;
   currentSeq: number;
   publicScoreboardPath: string;
+  conflicts?: ScheduleConflictWarning[];
 };
 
 export type TournamentListResponse = {

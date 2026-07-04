@@ -4,7 +4,27 @@ import { buildApiApp } from "../../apps/api/src/app";
 const tournamentId = "22222222-2222-4222-8222-222222222222";
 const matchId = "33333333-3333-4333-8333-333333333333";
 
-function createTournamentSchedulePool() {
+type ScheduleFixtureRow = {
+  match_id: string;
+  tournament_id: string;
+  tournament_name: string;
+  stage_name: string | null;
+  group_name: string | null;
+  round_label: string | null;
+  court_id: string | null;
+  court_label: string | null;
+  venue_label: string | null;
+  scheduled_at: string | null;
+  home_team_id: string | null;
+  home_team_name: string | null;
+  away_team_id: string | null;
+  away_team_name: string | null;
+  match_status: string | null;
+  projection_data: string | null;
+  last_event_seq: number | null;
+};
+
+function createTournamentSchedulePool(extraRows: ScheduleFixtureRow[] = []) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   const tournamentRows = [
     {
@@ -24,6 +44,7 @@ function createTournamentSchedulePool() {
       stage_name: null,
       group_name: null,
       round_label: "Round 1",
+      court_id: "55555555-5555-4555-8555-555555555555",
       court_label: null,
       venue_label: "Court A",
       scheduled_at: "2026-07-03T10:00:00.000Z",
@@ -48,6 +69,7 @@ function createTournamentSchedulePool() {
       stage_name: null,
       group_name: null,
       round_label: "null",
+      court_id: null,
       court_label: "null",
       venue_label: "null",
       scheduled_at: null,
@@ -58,7 +80,8 @@ function createTournamentSchedulePool() {
       match_status: "SCHEDULED",
       projection_data: null,
       last_event_seq: null
-    }
+    },
+    ...extraRows
   ];
 
   return {
@@ -133,6 +156,7 @@ describe("alpha tournament public schedule", () => {
             expect.objectContaining({
               matchId,
               tournamentId,
+              courtId: "55555555-5555-4555-8555-555555555555",
               venueLabel: "Court A",
               homeTeamName: "Bangkok Home",
               awayTeamName: "Chiang Mai Away",
@@ -144,6 +168,7 @@ describe("alpha tournament public schedule", () => {
             }),
             expect.objectContaining({
               roundLabel: null,
+              courtId: null,
               courtLabel: null,
               venueLabel: null,
               scheduledAt: null,
@@ -157,6 +182,157 @@ describe("alpha tournament public schedule", () => {
           ]
         }
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("adds warning-only conflicts for admin schedule rows with the same court and time", async () => {
+    const { pool } = createTournamentSchedulePool([
+      {
+        match_id: "55555555-5555-4555-8555-555555555555",
+        tournament_id: tournamentId,
+        tournament_name: "Alpha Cup",
+        stage_name: null,
+        group_name: null,
+        round_label: "Round 1",
+        court_id: "55555555-5555-4555-8555-555555555555",
+        court_label: "Court A",
+        venue_label: "Main Hall",
+        scheduled_at: "2026-07-03T10:00:00.000Z",
+        home_team_id: "home-team-2",
+        home_team_name: "Phuket Home",
+        away_team_id: "away-team-2",
+        away_team_name: "Khon Kaen Away",
+        match_status: "SCHEDULED",
+        projection_data: null,
+        last_event_seq: null
+      },
+      {
+        match_id: "66666666-6666-4666-8666-666666666666",
+        tournament_id: tournamentId,
+        tournament_name: "Alpha Cup",
+        stage_name: null,
+        group_name: null,
+        round_label: "Round 1",
+        court_id: null,
+        court_label: "Court B",
+        venue_label: "Main Hall",
+        scheduled_at: "2026-07-03T11:00:00.000Z",
+        home_team_id: "home-team-3",
+        home_team_name: "No Conflict Home",
+        away_team_id: "away-team-3",
+        away_team_name: "No Conflict Away",
+        match_status: "SCHEDULED",
+        projection_data: null,
+        last_event_seq: null
+      }
+    ]);
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/tournaments/${tournamentId}/schedule`,
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      const matches = response.json<{ data: { matches: Array<{ matchId: string; conflicts?: unknown[] }> } }>().data.matches;
+      expect(matches.find((match) => match.matchId === matchId)?.conflicts).toEqual([
+        expect.objectContaining({
+          severity: "WARNING",
+          type: "SAME_COURT_SAME_TIME",
+          matchId,
+          conflictingMatchId: "55555555-5555-4555-8555-555555555555",
+          courtId: "55555555-5555-4555-8555-555555555555",
+          scheduledAt: "2026-07-03T10:00:00.000Z"
+        })
+      ]);
+      expect(matches.find((match) => match.matchId === "66666666-6666-4666-8666-666666666666")?.conflicts).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("adds legacy same venue and court warnings without conflicting across venues", async () => {
+    const { pool } = createTournamentSchedulePool([
+      {
+        match_id: "77777777-7777-4777-8777-777777777777",
+        tournament_id: tournamentId,
+        tournament_name: "Alpha Cup",
+        stage_name: null,
+        group_name: null,
+        round_label: "Round 1",
+        court_id: null,
+        court_label: "Court Legacy",
+        venue_label: "Legacy Hall",
+        scheduled_at: "2026-07-03T12:00:00.000Z",
+        home_team_id: "home-team-4",
+        home_team_name: "Legacy Home",
+        away_team_id: "away-team-4",
+        away_team_name: "Legacy Away",
+        match_status: "SCHEDULED",
+        projection_data: null,
+        last_event_seq: null
+      },
+      {
+        match_id: "88888888-8888-4888-8888-888888888888",
+        tournament_id: tournamentId,
+        tournament_name: "Alpha Cup",
+        stage_name: null,
+        group_name: null,
+        round_label: "Round 1",
+        court_id: null,
+        court_label: "Court Legacy",
+        venue_label: "Legacy Hall",
+        scheduled_at: "2026-07-03T12:00:00.000Z",
+        home_team_id: "home-team-5",
+        home_team_name: "Legacy Conflict Home",
+        away_team_id: "away-team-5",
+        away_team_name: "Legacy Conflict Away",
+        match_status: "SCHEDULED",
+        projection_data: null,
+        last_event_seq: null
+      },
+      {
+        match_id: "99999999-9999-4999-8999-999999999999",
+        tournament_id: tournamentId,
+        tournament_name: "Alpha Cup",
+        stage_name: null,
+        group_name: null,
+        round_label: "Round 1",
+        court_id: null,
+        court_label: "Court Legacy",
+        venue_label: "Different Hall",
+        scheduled_at: "2026-07-03T12:00:00.000Z",
+        home_team_id: "home-team-6",
+        home_team_name: "Different Venue Home",
+        away_team_id: "away-team-6",
+        away_team_name: "Different Venue Away",
+        match_status: "SCHEDULED",
+        projection_data: null,
+        last_event_seq: null
+      }
+    ]);
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/tournaments/${tournamentId}/schedule`,
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      const matches = response.json<{ data: { matches: Array<{ matchId: string; conflicts?: unknown[] }> } }>().data.matches;
+      expect(matches.find((match) => match.matchId === "77777777-7777-4777-8777-777777777777")?.conflicts).toEqual([
+        expect.objectContaining({
+          type: "LEGACY_SAME_COURT_SAME_TIME",
+          conflictingMatchId: "88888888-8888-4888-8888-888888888888"
+        })
+      ]);
+      expect(matches.find((match) => match.matchId === "99999999-9999-4999-8999-999999999999")?.conflicts).toEqual([]);
     } finally {
       await app.close();
     }
@@ -211,6 +387,7 @@ describe("alpha tournament public schedule", () => {
         }
       });
       expect(JSON.stringify(body)).not.toMatch(/actor|commandId|correlationId|session|cookie|csrf|password/i);
+      expect(JSON.stringify(body)).not.toContain("conflicts");
     } finally {
       await app.close();
     }

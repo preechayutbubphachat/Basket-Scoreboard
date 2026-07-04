@@ -1,5 +1,6 @@
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type {
+  ScheduleConflictWarning,
   TournamentScheduleMatch,
   TournamentScheduleResponse,
   TournamentSummary
@@ -26,6 +27,7 @@ type ScheduleRow = RowDataPacket & {
   stage_name: string | null;
   group_name: string | null;
   round_label: string | null;
+  court_id: string | null;
   court_label: string | null;
   venue_label: string | null;
   scheduled_at: Date | string | null;
@@ -86,6 +88,7 @@ export async function getTournamentSchedule(
       NULL AS stage_name,
       NULL AS group_name,
       m.match_code AS round_label,
+      JSON_UNQUOTE(JSON_EXTRACT(m.metadata, '$.courtId')) AS court_id,
       JSON_UNQUOTE(JSON_EXTRACT(m.metadata, '$.courtLabel')) AS court_label,
       m.venue_name AS venue_label,
       m.scheduled_at,
@@ -110,7 +113,7 @@ export async function getTournamentSchedule(
 
   return {
     tournament,
-    matches: rows.map(serializeScheduleRow),
+    matches: serializeScheduleRows(rows, { includeConflicts: !options.publicOnly }),
     generatedAt: new Date().toISOString()
   };
 }
@@ -146,6 +149,22 @@ function serializeTournamentSummary(row: TournamentRow): TournamentSummary {
   };
 }
 
+function serializeScheduleRows(
+  rows: ScheduleRow[],
+  options: { includeConflicts: boolean }
+): TournamentScheduleMatch[] {
+  const matches = rows.map(serializeScheduleRow);
+  if (!options.includeConflicts) {
+    return matches;
+  }
+
+  const conflictsByMatchId = deriveScheduleConflicts(matches);
+  return matches.map((match) => ({
+    ...match,
+    conflicts: conflictsByMatchId.get(match.matchId) ?? []
+  }));
+}
+
 function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
   const projection = row.projection_data ? parseJsonField<ProjectionLike>(row.projection_data) ?? {} : {};
   const projectedStatus = stringOrNull(projection.status);
@@ -160,6 +179,7 @@ function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
     stageName: labelOrNull(row.stage_name),
     groupName: labelOrNull(row.group_name),
     roundLabel: labelOrNull(row.round_label),
+    courtId: labelOrNull(row.court_id),
     courtLabel: labelOrNull(row.court_label),
     venueLabel: labelOrNull(row.venue_label),
     scheduledAt: serializeDate(row.scheduled_at),
@@ -172,6 +192,73 @@ function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
     awayScore: numberOrDefault(projection.awayScore, 0),
     currentSeq,
     publicScoreboardPath: `/public/scoreboard/${encodeURIComponent(row.match_id)}`
+  };
+}
+
+function deriveScheduleConflicts(matches: TournamentScheduleMatch[]) {
+  const conflictsByMatchId = new Map<string, ScheduleConflictWarning[]>();
+
+  for (let index = 0; index < matches.length; index += 1) {
+    const current = matches[index]!;
+    for (let compareIndex = index + 1; compareIndex < matches.length; compareIndex += 1) {
+      const candidate = matches[compareIndex]!;
+      const conflictType = getScheduleConflictType(current, candidate);
+      if (!conflictType || !current.scheduledAt) {
+        continue;
+      }
+
+      const currentWarning = buildConflictWarning(current, candidate, conflictType);
+      const candidateWarning = buildConflictWarning(candidate, current, conflictType);
+      conflictsByMatchId.set(current.matchId, [...(conflictsByMatchId.get(current.matchId) ?? []), currentWarning]);
+      conflictsByMatchId.set(candidate.matchId, [...(conflictsByMatchId.get(candidate.matchId) ?? []), candidateWarning]);
+    }
+  }
+
+  return conflictsByMatchId;
+}
+
+function getScheduleConflictType(
+  first: TournamentScheduleMatch,
+  second: TournamentScheduleMatch
+): ScheduleConflictWarning["type"] | null {
+  if (!first.scheduledAt || first.scheduledAt !== second.scheduledAt) {
+    return null;
+  }
+
+  if (first.courtId && second.courtId && first.courtId === second.courtId) {
+    return "SAME_COURT_SAME_TIME";
+  }
+
+  if (!first.courtId && !second.courtId) {
+    const firstVenue = normalizeLabel(first.venueLabel);
+    const secondVenue = normalizeLabel(second.venueLabel);
+    const firstCourt = normalizeLabel(first.courtLabel);
+    const secondCourt = normalizeLabel(second.courtLabel);
+    if (firstVenue && firstVenue === secondVenue && firstCourt && firstCourt === secondCourt) {
+      return "LEGACY_SAME_COURT_SAME_TIME";
+    }
+  }
+
+  return null;
+}
+
+function buildConflictWarning(
+  match: TournamentScheduleMatch,
+  conflictingMatch: TournamentScheduleMatch,
+  type: ScheduleConflictWarning["type"]
+): ScheduleConflictWarning {
+  const conflictingLabel = `${conflictingMatch.homeTeamName} vs ${conflictingMatch.awayTeamName}`;
+  return {
+    conflictId: `${match.matchId}:${conflictingMatch.matchId}:${match.scheduledAt}`,
+    severity: "WARNING",
+    type,
+    message: `Same court and scheduled time as match ${conflictingLabel}.`,
+    matchId: match.matchId,
+    conflictingMatchId: conflictingMatch.matchId,
+    scheduledAt: match.scheduledAt ?? "",
+    courtId: match.courtId,
+    venueLabel: match.venueLabel,
+    courtLabel: match.courtLabel
   };
 }
 
@@ -200,4 +287,8 @@ function labelOrNull(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.toLowerCase() !== "null" ? trimmed : null;
+}
+
+function normalizeLabel(value: string | null) {
+  return labelOrNull(value)?.toLowerCase() ?? null;
 }

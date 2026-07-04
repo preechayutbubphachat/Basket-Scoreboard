@@ -149,6 +149,8 @@ import {
   getPublicStandingsEmptyState,
   getPublicScheduleLinks,
   getPublicStandingsLinks,
+  getScheduleConflictSummary,
+  getScheduledMatchConflictWarning,
   getScheduledMatchFormFeedback,
   getScheduleStatusGroup,
   getTournamentEmptyState,
@@ -765,6 +767,8 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
   const courtOptions = buildVenueCourtOptions(venues);
   const selectedCourtPreview = buildSelectedCourtPreview(venues, matchForm.courtId);
   const matchFormFeedback = getScheduledMatchFormFeedback(matchForm, tournamentTeams.length, savingSetup === "match");
+  const scheduleConflictSummary = getScheduleConflictSummary(schedule?.matches ?? []);
+  const matchConflictWarning = getScheduledMatchConflictWarning(matchForm, schedule?.matches ?? [], venues);
 
   async function handleCreateTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -855,6 +859,12 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
       </div>
       {message ? <Notice {...message} /> : null}
       {schedule ? <TournamentSummaryStrip tournament={schedule.tournament} /> : null}
+      {scheduleConflictSummary ? (
+        <div className="notice warning" role="status">
+          <strong>Schedule warnings found</strong>
+          <span>{scheduleConflictSummary}</span>
+        </div>
+      ) : null}
       <div className="setup-grid">
         <form className="stacked-form" onSubmit={(event) => void handleCreateTeam(event)}>
           <h2>Create Team</h2>
@@ -954,6 +964,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
         <form className="stacked-form" onSubmit={(event) => void handleCreateMatch(event)}>
           <h2>Create Scheduled Match</h2>
           {matchFormFeedback.warning ? <p className="muted">{matchFormFeedback.warning}</p> : null}
+          {matchConflictWarning ? <p className="schedule-warning">{matchConflictWarning}</p> : null}
           <label>
             Home team
             <select
@@ -3302,7 +3313,15 @@ function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; 
               <tr key={match.matchId}>
                 <td>{meta.scheduleLabel}</td>
                 <td>{meta.locationLabel}</td>
-                <td>{meta.matchupLabel}</td>
+                <td>
+                  {meta.matchupLabel}
+                  {mode === "admin" && meta.conflictBadgeLabel ? (
+                    <div className="schedule-warning">
+                      <strong>{meta.conflictBadgeLabel}</strong>
+                      {meta.conflictDetail ? <span> {meta.conflictDetail}</span> : null}
+                    </div>
+                  ) : null}
+                </td>
                 <td>{meta.scoreLabel}</td>
                 <td>{match.status}</td>
                 <td>

@@ -198,6 +198,48 @@ export function getScheduledMatchFormFeedback(
   return { disabled: false, warning: null };
 }
 
+export function getScheduledMatchConflictWarning(
+  state: ScheduledMatchFormState,
+  matches: TournamentScheduleMatch[],
+  venues: VenueSummary[]
+) {
+  const scheduledAt = toIsoDateTimeOrNull(state.scheduledAt);
+  if (!scheduledAt) {
+    return null;
+  }
+
+  const selectedCourt = state.courtId
+    ? buildVenueCourtOptions(venues).find((option) => option.value === state.courtId)
+    : null;
+  const selectedVenueLabel = selectedCourt?.venueName ?? emptyToNull(state.venueLabel);
+  const selectedCourtLabel = selectedCourt?.courtLabel ?? emptyToNull(state.courtLabel);
+
+  if (!state.courtId && (!selectedVenueLabel || !selectedCourtLabel)) {
+    return null;
+  }
+
+  const conflictingMatch = matches.find((match) => {
+    if (match.scheduledAt !== scheduledAt) {
+      return false;
+    }
+    if (state.courtId && match.courtId === state.courtId) {
+      return true;
+    }
+    if (!state.courtId && !match.courtId) {
+      return normalizeLabel(match.venueLabel) === normalizeLabel(selectedVenueLabel)
+        && normalizeLabel(match.courtLabel) === normalizeLabel(selectedCourtLabel);
+    }
+    return false;
+  });
+
+  if (!conflictingMatch) {
+    return null;
+  }
+
+  const meta = buildScheduleRowMeta(conflictingMatch);
+  return `Court conflict warning: same court and scheduled time as ${meta.matchupLabel}. Warnings are advisory. No official buffer/turnover rule is implemented yet.`;
+}
+
 export function buildScheduleStatusFilters(): Array<{ value: ScheduleStatusFilter; label: string }> {
   return [
     { value: "all", label: "All" },
@@ -229,8 +271,18 @@ export function buildScheduleRowMeta(match: TournamentScheduleMatch) {
     scoreLabel: `${match.homeScore} - ${match.awayScore}`,
     scheduleLabel: match.scheduledAt ? new Date(match.scheduledAt).toLocaleString() : "Schedule pending",
     locationLabel: venueLabel && courtLabel ? `${venueLabel} / ${courtLabel}` : courtLabel ?? venueLabel ?? "Court TBD",
-    statusGroup: getScheduleStatusGroup(match.status)
+    statusGroup: getScheduleStatusGroup(match.status),
+    conflictCount: match.conflicts?.length ?? 0,
+    conflictBadgeLabel: match.conflicts?.length ? "Court conflict warning" : null,
+    conflictDetail: match.conflicts?.[0]?.message ?? null
   };
+}
+
+export function getScheduleConflictSummary(matches: TournamentScheduleMatch[]) {
+  const conflictCount = matches.reduce((total, match) => total + (match.conflicts?.length ?? 0), 0);
+  return conflictCount > 0
+    ? `Schedule warnings found: ${conflictCount} court conflict warning${conflictCount === 1 ? "" : "s"}.`
+    : null;
 }
 
 export function buildVenueCourtOptions(venues: VenueSummary[]): VenueCourtOption[] {
@@ -339,4 +391,8 @@ function labelOrNull(value: string | null) {
 
 function labelOrFallback(value: string | null, fallback: string) {
   return labelOrNull(value) ?? fallback;
+}
+
+function normalizeLabel(value: string | null) {
+  return labelOrNull(value)?.toLowerCase() ?? null;
 }
