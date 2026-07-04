@@ -116,13 +116,19 @@ export function getTeamLabel(match: Pick<OperatorMatchSummary, "homeTeamName" | 
 }
 
 export function buildOperatorMatchCard(match: OperatorMatchSummary) {
+  const venueParts = [match.venueLabel ?? match.venueName, match.courtLabel].filter(Boolean);
+  const readiness = match.readiness;
   return {
     title: getTeamLabel(match),
+    tournamentLabel: match.tournamentName ?? "Tournament pending",
     statusLabel: match.status,
     scheduledLabel: match.scheduledAt ? new Date(match.scheduledAt).toLocaleString() : "Schedule pending",
-    venueLabel: match.venueName ?? "Venue pending",
+    venueLabel: venueParts.length ? venueParts.join(" / ") : "Venue pending",
     assignedRolesLabel: match.assignedRoleCodes.length ? match.assignedRoleCodes.join(", ") : "No active role",
     currentSeqLabel: `Seq ${match.currentSeq}`,
+    readinessLabel: readiness
+      ? `Officials ${readiness.officials.state} / Roster ${readiness.roster.state} / Lineup ${readiness.lineup.state} / ${readiness.lifecycle.label}`
+      : "Readiness unknown",
     scoreControl: {
       enabled: true,
       href: buildOperatorMatchScoreLink(match.matchId),

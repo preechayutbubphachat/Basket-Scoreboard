@@ -278,6 +278,18 @@ function createTournamentSetupPool() {
         ];
       }
 
+      if (normalized.includes("FROM match_officials")) {
+        return [[], []];
+      }
+
+      if (normalized.includes("FROM match_roster_players")) {
+        return [[], []];
+      }
+
+      if (normalized.includes("FROM match_roster_confirmations")) {
+        return [[], []];
+      }
+
       return [[], []];
     },
     async getConnection() {

@@ -285,6 +285,25 @@ export function getScheduleConflictSummary(matches: TournamentScheduleMatch[]) {
     : null;
 }
 
+export function buildReadinessBadges(match: TournamentScheduleMatch) {
+  if (!match.readiness) {
+    return [];
+  }
+
+  return [
+    { label: `Officials: ${match.readiness.officials.state}`, title: match.readiness.officials.label },
+    {
+      label: `Roster: ${match.readiness.roster.state}`,
+      title: `HOME ${match.readiness.roster.homeCount} / AWAY ${match.readiness.roster.awayCount}`
+    },
+    {
+      label: `Lineup: ${match.readiness.lineup.state}`,
+      title: `Starters HOME ${match.readiness.lineup.homeStarters} / AWAY ${match.readiness.lineup.awayStarters}`
+    },
+    { label: `Lifecycle: ${match.readiness.lifecycle.state.replace("_", " ")}`, title: match.readiness.lifecycle.label }
+  ];
+}
+
 export function buildVenueCourtOptions(venues: VenueSummary[]): VenueCourtOption[] {
   return venues.flatMap((venue) =>
     venue.courts

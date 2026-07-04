@@ -6,6 +6,10 @@ import type {
   TournamentSummary
 } from "@basket-scoreboard/api-contracts";
 import { parseJsonField } from "../matchEventStore/json.js";
+import {
+  buildMatchOperationLinks,
+  getReadinessForMatches
+} from "../matchReadiness/matchReadinessService.js";
 
 type TournamentRow = RowDataPacket & {
   tournament_id: string;
@@ -111,9 +115,13 @@ export async function getTournamentSchedule(
     [tournamentId]
   );
 
+  const matches = rows.map(serializeScheduleRow);
+
   return {
     tournament,
-    matches: serializeScheduleRows(rows, { includeConflicts: !options.publicOnly }),
+    matches: options.publicOnly
+      ? matches
+      : await decorateProtectedScheduleRows(pool, matches),
     generatedAt: new Date().toISOString()
   };
 }
@@ -149,20 +157,27 @@ function serializeTournamentSummary(row: TournamentRow): TournamentSummary {
   };
 }
 
-function serializeScheduleRows(
-  rows: ScheduleRow[],
-  options: { includeConflicts: boolean }
-): TournamentScheduleMatch[] {
-  const matches = rows.map(serializeScheduleRow);
-  if (!options.includeConflicts) {
-    return matches;
-  }
-
+async function decorateProtectedScheduleRows(
+  pool: Pool,
+  matches: TournamentScheduleMatch[]
+): Promise<TournamentScheduleMatch[]> {
   const conflictsByMatchId = deriveScheduleConflicts(matches);
-  return matches.map((match) => ({
-    ...match,
-    conflicts: conflictsByMatchId.get(match.matchId) ?? []
-  }));
+  const readinessByMatchId = await getReadinessForMatches(pool, matches.map((match) => ({
+    matchId: match.matchId,
+    status: match.status
+  })));
+  return matches.map((match) => {
+    const decorated: TournamentScheduleMatch = {
+      ...match,
+      conflicts: conflictsByMatchId.get(match.matchId) ?? [],
+      operations: buildMatchOperationLinks(match.matchId)
+    };
+    const readiness = readinessByMatchId.get(match.matchId);
+    if (readiness) {
+      decorated.readiness = readiness;
+    }
+    return decorated;
+  });
 }
 
 function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {

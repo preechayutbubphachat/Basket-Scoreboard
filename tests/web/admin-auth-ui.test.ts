@@ -96,6 +96,7 @@ import {
 import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
+  buildReadinessBadges,
   buildPublicTournamentScheduleLink,
   buildPublicTournamentStandingsLink,
   buildScheduleRowMeta,
@@ -452,7 +453,32 @@ const tournamentSchedule: TournamentScheduleResponse = {
       homeScore: 10,
       awayScore: 8,
       currentSeq: 3,
-      publicScoreboardPath: `/public/scoreboard/${scoreboardProjection.matchId}`
+      publicScoreboardPath: `/public/scoreboard/${scoreboardProjection.matchId}`,
+      operations: {
+        operatorScoreUrl: `/operator/matches/${scoreboardProjection.matchId}/score`,
+        operatorFoulsUrl: `/operator/matches/${scoreboardProjection.matchId}/fouls`,
+        operatorClockUrl: `/operator/matches/${scoreboardProjection.matchId}/clock`,
+        operatorTimeoutsUrl: `/operator/matches/${scoreboardProjection.matchId}/timeouts`,
+        operatorLifecycleUrl: `/operator/matches/${scoreboardProjection.matchId}/lifecycle`,
+        officialsUrl: `/admin/matches/${scoreboardProjection.matchId}/officials`,
+        rostersUrl: `/admin/matches/${scoreboardProjection.matchId}/rosters`,
+        lineupUrl: `/admin/matches/${scoreboardProjection.matchId}/lineup`,
+        summaryUrl: `/operator/matches/${scoreboardProjection.matchId}/summary`,
+        replayUrl: `/operator/matches/${scoreboardProjection.matchId}/replay`,
+        auditLogUrl: `/operator/matches/${scoreboardProjection.matchId}/audit-log`
+      },
+      readiness: {
+        officials: { state: "READY", label: "2 active officials" },
+        roster: { state: "READY", homeCount: 7, awayCount: 8 },
+        lineup: {
+          state: "INCOMPLETE",
+          homeStarters: 5,
+          awayStarters: 4,
+          homeConfirmed: true,
+          awayConfirmed: false
+        },
+        lifecycle: { state: "LIVE", label: "Live" }
+      }
     }
   ],
   generatedAt: "2026-07-03T10:05:00.000Z"
@@ -1505,15 +1531,28 @@ describe("operator match landing UI policy", () => {
     const card = buildOperatorMatchCard({
       matchId: "match-1",
       homeTeamId: "home-1",
+      homeTeamName: null,
       awayTeamId: "away-1",
+      awayTeamName: null,
+      matchCode: "Round 1",
+      tournamentId: "tournament-1",
+      tournamentName: "Alpha Cup",
       status: "SCHEDULED",
       scheduledAt: "2026-07-01T10:00:00.000Z",
       venueName: "Court A",
+      venueLabel: "Main Hall",
+      courtLabel: "Court A",
       assignedRoleCodes: ["SCORER"],
-      currentSeq: 0
+      currentSeq: 0,
+      homeScore: null,
+      awayScore: null,
+      readiness: tournamentSchedule.matches[0].readiness
     });
 
     expect(card.title).toBe("home-1 vs away-1");
+    expect(card.tournamentLabel).toBe("Alpha Cup");
+    expect(card.venueLabel).toBe("Main Hall / Court A");
+    expect(card.readinessLabel).toBe("Officials READY / Roster READY / Lineup INCOMPLETE / Live");
     expect(card.assignedRolesLabel).toBe("SCORER");
     expect(card.scoreControl).toEqual({
       enabled: true,
@@ -2068,6 +2107,12 @@ describe("tournament schedule UI policy", () => {
       conflictBadgeLabel: null,
       conflictDetail: null
     });
+    expect(buildReadinessBadges(tournamentSchedule.matches[0])).toEqual([
+      { label: "Officials: READY", title: "2 active officials" },
+      { label: "Roster: READY", title: "HOME 7 / AWAY 8" },
+      { label: "Lineup: INCOMPLETE", title: "Starters HOME 5 / AWAY 4" },
+      { label: "Lifecycle: LIVE", title: "Live" }
+    ]);
     expect(buildScheduleRowMeta({
       ...tournamentSchedule.matches[0],
       courtLabel: "Court A",

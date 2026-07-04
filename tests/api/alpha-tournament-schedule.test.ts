@@ -24,7 +24,14 @@ type ScheduleFixtureRow = {
   last_event_seq: number | null;
 };
 
-function createTournamentSchedulePool(extraRows: ScheduleFixtureRow[] = []) {
+function createTournamentSchedulePool(
+  extraRows: ScheduleFixtureRow[] = [],
+  setup: {
+    officials?: Array<{ match_id: string; active_count: number }>;
+    rosters?: Array<{ match_id: string; team_side: "HOME" | "AWAY"; player_count: number; starter_count: number }>;
+    confirmations?: Array<{ match_id: string; team_side: "HOME" | "AWAY" }>;
+  } = {}
+) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   const tournamentRows = [
     {
@@ -102,6 +109,18 @@ function createTournamentSchedulePool(extraRows: ScheduleFixtureRow[] = []) {
           return [params[0] === tournamentId ? scheduleRows : [], []];
         }
 
+        if (sql.includes("FROM match_officials")) {
+          return [setup.officials ?? [], []];
+        }
+
+        if (sql.includes("FROM match_roster_players")) {
+          return [setup.rosters ?? [], []];
+        }
+
+        if (sql.includes("FROM match_roster_confirmations")) {
+          return [setup.confirmations ?? [], []];
+        }
+
         return [[], []];
       }
     }
@@ -158,6 +177,24 @@ describe("alpha tournament public schedule", () => {
               tournamentId,
               courtId: "55555555-5555-4555-8555-555555555555",
               venueLabel: "Court A",
+              operations: expect.objectContaining({
+                operatorScoreUrl: `/operator/matches/${matchId}/score`,
+                officialsUrl: `/admin/matches/${matchId}/officials`,
+                rostersUrl: `/admin/matches/${matchId}/rosters`,
+                lineupUrl: `/admin/matches/${matchId}/lineup`
+              }),
+              readiness: expect.objectContaining({
+                officials: { state: "MISSING", label: "No active officials" },
+                roster: { state: "MISSING", homeCount: 0, awayCount: 0 },
+                lineup: {
+                  state: "MISSING",
+                  homeStarters: 0,
+                  awayStarters: 0,
+                  homeConfirmed: false,
+                  awayConfirmed: false
+                },
+                lifecycle: { state: "LIVE", label: "Live" }
+              }),
               homeTeamName: "Bangkok Home",
               awayTeamName: "Chiang Mai Away",
               status: "LIVE",
@@ -179,6 +216,55 @@ describe("alpha tournament public schedule", () => {
               awayScore: 0,
               currentSeq: 0
             })
+          ]
+        }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("derives ready officials, roster, and lineup state from existing setup rows", async () => {
+    const { pool } = createTournamentSchedulePool([], {
+      officials: [{ match_id: matchId, active_count: 2 }],
+      rosters: [
+        { match_id: matchId, team_side: "HOME", player_count: 5, starter_count: 5 },
+        { match_id: matchId, team_side: "AWAY", player_count: 5, starter_count: 5 }
+      ],
+      confirmations: [
+        { match_id: matchId, team_side: "HOME" },
+        { match_id: matchId, team_side: "AWAY" }
+      ]
+    });
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/tournaments/${tournamentId}/schedule`,
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        data: {
+          matches: [
+            expect.objectContaining({
+              matchId,
+              readiness: {
+                officials: { state: "READY", label: "2 active officials" },
+                roster: { state: "READY", homeCount: 5, awayCount: 5 },
+                lineup: {
+                  state: "READY",
+                  homeStarters: 5,
+                  awayStarters: 5,
+                  homeConfirmed: true,
+                  awayConfirmed: true
+                },
+                lifecycle: { state: "LIVE", label: "Live" }
+              }
+            }),
+            expect.any(Object)
           ]
         }
       });
@@ -388,6 +474,8 @@ describe("alpha tournament public schedule", () => {
       });
       expect(JSON.stringify(body)).not.toMatch(/actor|commandId|correlationId|session|cookie|csrf|password/i);
       expect(JSON.stringify(body)).not.toContain("conflicts");
+      expect(JSON.stringify(body)).not.toContain("operations");
+      expect(JSON.stringify(body)).not.toContain("readiness");
     } finally {
       await app.close();
     }

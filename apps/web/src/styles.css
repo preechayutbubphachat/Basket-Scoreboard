@@ -226,6 +226,23 @@ label {
   margin-top: 8px;
 }
 
+.readiness-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.readiness-badge {
+  background: #eef4ff;
+  border: 1px solid #b2ccff;
+  border-radius: 6px;
+  color: #1849a9;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 3px 6px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
