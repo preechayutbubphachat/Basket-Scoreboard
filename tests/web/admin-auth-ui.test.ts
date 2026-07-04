@@ -117,6 +117,8 @@ import {
   getPublicStandingsEmptyState,
   getPublicScheduleLinks,
   getPublicStandingsLinks,
+  getScheduleConflictSummary,
+  getScheduledMatchConflictWarning,
   getScheduledMatchFormFeedback,
   getTournamentEmptyState,
   hasPublicScheduleMutationControls,
@@ -438,6 +440,7 @@ const tournamentSchedule: TournamentScheduleResponse = {
       stageName: null,
       groupName: null,
       roundLabel: "Round 1",
+      courtId: "court-1",
       courtLabel: null,
       venueLabel: "Court A",
       scheduledAt: "2026-07-03T10:00:00.000Z",
@@ -2060,7 +2063,10 @@ describe("tournament schedule UI policy", () => {
       scoreLabel: "10 - 8",
       scheduleLabel: expect.any(String),
       locationLabel: "Court A",
-      statusGroup: "live"
+      statusGroup: "live",
+      conflictCount: 0,
+      conflictBadgeLabel: null,
+      conflictDetail: null
     });
     expect(buildScheduleRowMeta({
       ...tournamentSchedule.matches[0],
@@ -2079,7 +2085,10 @@ describe("tournament schedule UI policy", () => {
       scoreLabel: "10 - 8",
       scheduleLabel: "Schedule pending",
       locationLabel: "Court TBD",
-      statusGroup: "live"
+      statusGroup: "live",
+      conflictCount: 0,
+      conflictBadgeLabel: null,
+      conflictDetail: null
     });
     expect(getPublicScheduleLinks(tournamentSchedule.matches[0])).toEqual({
       scoreboard: {
@@ -2143,6 +2152,60 @@ describe("tournament schedule UI policy", () => {
     ]);
     expect(buildSelectedCourtPreview(venues, "court-1")).toBe("Selected court: Main Hall / Court A");
     expect(buildSelectedCourtPreview(venues, "")).toBeNull();
+  });
+
+  test("builds advisory schedule conflict warnings without blocking submit", () => {
+    const conflictMatch = {
+      ...tournamentSchedule.matches[0],
+      conflicts: [
+        {
+          conflictId: "conflict-1",
+          severity: "WARNING" as const,
+          type: "SAME_COURT_SAME_TIME" as const,
+          message: "Same court and scheduled time as match North vs South.",
+          matchId: tournamentSchedule.matches[0].matchId,
+          conflictingMatchId: "match-2",
+          scheduledAt: "2026-07-03T10:00:00.000Z",
+          courtId: "court-1",
+          venueLabel: "Main Hall",
+          courtLabel: "Court A"
+        }
+      ]
+    };
+
+    expect(getScheduleConflictSummary([conflictMatch])).toBe("Schedule warnings found: 1 court conflict warning.");
+    expect(buildScheduleRowMeta(conflictMatch)).toMatchObject({
+      conflictCount: 1,
+      conflictBadgeLabel: "Court conflict warning",
+      conflictDetail: "Same court and scheduled time as match North vs South."
+    });
+    expect(getScheduledMatchConflictWarning({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      courtId: "court-1",
+      scheduledAt: "2026-07-03T10:00:00.000Z",
+      roundLabel: "",
+      courtLabel: "",
+      venueLabel: ""
+    }, [tournamentSchedule.matches[0]], venueList.venues)).toContain("Court conflict warning");
+    expect(getScheduledMatchFormFeedback({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      courtId: "court-1",
+      scheduledAt: "2026-07-03T10:00:00.000Z",
+      roundLabel: "",
+      courtLabel: "",
+      venueLabel: ""
+    }, 2)).toEqual({ disabled: false, warning: null });
+    expect(getScheduledMatchConflictWarning({
+      homeTeamId: "home-team",
+      awayTeamId: "away-team",
+      courtId: "",
+      scheduledAt: "2026-07-03T10:00:00.000Z",
+      roundLabel: "",
+      courtLabel: "Court A",
+      venueLabel: "Different Hall"
+    }, [tournamentSchedule.matches[0]], venueList.venues)).toBeNull();
   });
 
   test("builds provisional standings row metadata and public-safe links", () => {

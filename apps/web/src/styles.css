@@ -211,6 +211,21 @@ label {
   color: #05603a;
 }
 
+.notice.warning,
+.schedule-warning {
+  background: #fffaeb;
+  border: 1px solid #fedf89;
+  border-radius: 6px;
+  color: #93370d;
+  padding: 8px 10px;
+}
+
+.schedule-warning {
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }

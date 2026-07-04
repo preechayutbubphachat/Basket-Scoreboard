@@ -253,7 +253,7 @@ function createTournamentSetupPool() {
               const projection = matchProjections.find((item) => item.match_id === match.match_id);
               const home = teams.find((team) => team.team_id === match.home_team_id);
               const away = teams.find((team) => team.team_id === match.away_team_id);
-              const metadata = JSON.parse(match.metadata || "{}") as { courtLabel?: string };
+              const metadata = JSON.parse(match.metadata || "{}") as { courtId?: string; courtLabel?: string };
               return {
                 match_id: match.match_id,
                 tournament_id: match.tournament_id,
@@ -261,6 +261,7 @@ function createTournamentSetupPool() {
                 stage_name: null,
                 group_name: null,
                 round_label: match.match_code,
+                court_id: metadata.courtId ?? null,
                 court_label: metadata.courtLabel ?? null,
                 venue_label: match.venue_name,
                 scheduled_at: match.scheduled_at,
@@ -494,6 +495,78 @@ describe("alpha tournament data setup", () => {
         }
       });
       expect(JSON.parse(store.matches[0].metadata)).toMatchObject({ courtId, venueId, courtLabel: "Court A" });
+      expect(store.matchEvents).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("allows scheduled match creation with advisory court conflict warnings", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const store = createTournamentSetupPool();
+    const app = buildApiApp({ pool: store.pool as never });
+
+    try {
+      const venueResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/venues",
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: { name: "Main Hall" }
+      });
+      const venueId = venueResponse.json<{ data: { venue: { venueId: string } } }>().data.venue.venueId;
+      const courtResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/venues/${venueId}/courts`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: { label: "Court A" }
+      });
+      const courtId = courtResponse.json<{ data: { court: { courtId: string } } }>().data.court.courtId;
+
+      const firstMatch = await app.inject({
+        method: "POST",
+        url: `/api/v1/tournaments/${tournamentId}/matches`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          homeTeamId,
+          awayTeamId,
+          scheduledAt: "2026-07-03T10:00:00.000Z",
+          courtId
+        }
+      });
+      expect(firstMatch.statusCode).toBe(201);
+      expect(firstMatch.json()).toMatchObject({
+        data: {
+          scheduleMatch: expect.objectContaining({
+            conflicts: []
+          })
+        }
+      });
+
+      const secondMatch = await app.inject({
+        method: "POST",
+        url: `/api/v1/tournaments/${tournamentId}/matches`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: {
+          homeTeamId,
+          awayTeamId,
+          scheduledAt: "2026-07-03T10:00:00.000Z",
+          courtId
+        }
+      });
+      expect(secondMatch.statusCode).toBe(201);
+      expect(secondMatch.json()).toMatchObject({
+        data: {
+          scheduleMatch: expect.objectContaining({
+            conflicts: [
+              expect.objectContaining({
+                severity: "WARNING",
+                type: "SAME_COURT_SAME_TIME",
+                courtId
+              })
+            ]
+          })
+        }
+      });
       expect(store.matchEvents).toHaveLength(0);
     } finally {
       await app.close();
