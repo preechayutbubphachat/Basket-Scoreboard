@@ -103,6 +103,7 @@ import {
 import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
+  buildLifecycleReadinessContext,
   getLifecycleActionPlan,
   getLifecycleControlFeedback,
   getLifecycleControlLinks,
@@ -110,10 +111,13 @@ import {
 } from "./lib/lifecycleControl";
 import {
   buildCreatePlayerPayload,
+  buildLineupSetupSummary,
   buildPlayerFoulCommandPayload,
   buildRosterPlayerDisplayLabel,
   buildRosterPlayerLabel,
   buildRosterReadinessLabel,
+  buildRosterSetupSummary,
+  buildSetupQuickLinks,
   buildScorePlayerOptions,
   createPlayerFormState,
   getRosterPlayersForSide,
@@ -2410,6 +2414,7 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
 function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [readiness, setReadiness] = useState<OperatorMatchSummary["readiness"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<LifecycleAction | null>(null);
   const [reason, setReason] = useState("");
@@ -2422,6 +2427,12 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
     setMessage(null);
     try {
       setProjection(await api.getMatchProjection(matchId));
+      try {
+        const matches = await api.getOperatorMatches();
+        setReadiness(matches.find((match) => match.matchId === matchId)?.readiness ?? null);
+      } catch {
+        setReadiness(null);
+      }
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -2497,6 +2508,7 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
 
   const lifecycleState = projection ? buildLifecycleControlState(projection) : null;
   const actionPlan = projection ? getLifecycleActionPlan(projection) : null;
+  const readinessContext = buildLifecycleReadinessContext(readiness);
 
   return (
     <section className="stack">
@@ -2533,6 +2545,22 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
               <small>{projection.gameClock?.running ? "Running" : "Stopped"}</small>
             </div>
           </div>
+          {readinessContext ? (
+            <div className="setup-readiness" aria-label="Setup readiness context">
+              <h2>Setup Readiness</h2>
+              {readinessContext.warning ? <Notice tone="error" text={readinessContext.warning} /> : null}
+              <dl className="state-strip">
+                {readinessContext.items.map((item) => (
+                  <div key={item.label}>
+                    <dt>{item.label}</dt>
+                    <dd>{item.state}</dd>
+                    <small>{item.detail}</small>
+                  </div>
+                ))}
+              </dl>
+              <p className="muted">Alpha readiness is advisory here; lifecycle command policy remains enforced by the backend.</p>
+            </div>
+          ) : null}
           <label className="form-grid compact">
             Reason
             <input value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -3359,13 +3387,13 @@ function AdminScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
   const links = [
     { href: operations?.operatorScoreUrl ?? buildOperatorMatchScoreLink(match.matchId), label: "Open Match Ops" },
     { href: operations?.officialsUrl ?? buildAdminMatchLink(match.matchId), label: "Assign Officials" },
-    { href: operations?.rostersUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/rosters`, label: "Rosters" },
-    { href: operations?.lineupUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/lineup`, label: "Lineup" },
+    { href: operations?.rostersUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/rosters`, label: "Setup Roster" },
+    { href: operations?.lineupUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/lineup`, label: "Setup Lineup" },
     { href: match.publicScoreboardPath, label: "Public Scoreboard" },
     { href: operations?.operatorFoulsUrl ?? buildOperatorMatchFoulsLink(match.matchId), label: "Fouls" },
     { href: operations?.operatorClockUrl ?? buildOperatorMatchClockLink(match.matchId), label: "Clock" },
     { href: operations?.operatorTimeoutsUrl ?? buildOperatorMatchTimeoutsLink(match.matchId), label: "Timeouts" },
-    { href: operations?.operatorLifecycleUrl ?? buildOperatorMatchLifecycleLink(match.matchId), label: "Lifecycle" },
+    { href: operations?.operatorLifecycleUrl ?? buildOperatorMatchLifecycleLink(match.matchId), label: "Start / Lifecycle" },
     { href: operations?.summaryUrl ?? buildOperatorMatchSummaryLink(match.matchId), label: "Summary" },
     { href: operations?.replayUrl ?? buildOperatorMatchReplayLink(match.matchId), label: "Replay" },
     { href: operations?.auditLogUrl ?? buildOperatorMatchAuditLogLink(match.matchId), label: "Audit Log" }
@@ -3703,6 +3731,8 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const isAdmin = canManageAssignments(currentUser);
+  const rosterSummary = buildRosterSetupSummary(rosters);
+  const setupLinks = buildSetupQuickLinks(matchId);
 
   async function loadRosters(options: { clearMessage?: boolean } = {}) {
     setLoading(true);
@@ -3770,6 +3800,32 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
         {message ? <Notice {...message} /> : null}
       </div>
       {loading ? <section className="panel"><p>Loading rosters...</p></section> : null}
+      {!loading && projection ? (
+        <section className="panel">
+          <h2>Roster Readiness</h2>
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{rosterSummary.state}</dd></div>
+            <div><dt>HOME players</dt><dd>{rosterSummary.homeCount}</dd></div>
+            <div><dt>AWAY players</dt><dd>{rosterSummary.awayCount}</dd></div>
+          </dl>
+          <p className="muted">{rosterSummary.nextAction}</p>
+          <div className="button-row">
+            {[setupLinks.lineup, setupLinks.lifecycle].map((link) => (
+              <a
+                key={link.href}
+                className="button-link secondary"
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(link.href);
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {!loading && projection ? (
         <section className="score-actions">
           {(["HOME", "AWAY"] as const).map((teamSide) => {
@@ -3866,6 +3922,8 @@ function AdminLineupPage({ matchId }: { matchId: string }) {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const isAdmin = canManageAssignments(currentUser);
+  const lineupSummary = buildLineupSetupSummary(lineup);
+  const setupLinks = buildSetupQuickLinks(matchId);
 
   async function loadLineup(options: { clearMessage?: boolean } = {}) {
     setLoading(true);
@@ -3914,6 +3972,34 @@ function AdminLineupPage({ matchId }: { matchId: string }) {
       </div>
       {loading ? <section className="panel"><p>Loading lineup...</p></section> : null}
       {!loading && !lineup ? <section className="panel"><p className="muted">No lineup found.</p></section> : null}
+      {lineup ? (
+        <section className="panel">
+          <h2>Lineup Readiness</h2>
+          <dl className="state-strip">
+            <div><dt>Status</dt><dd>{lineupSummary.state}</dd></div>
+            <div><dt>HOME starters</dt><dd>{lineupSummary.homeStarters}/5</dd></div>
+            <div><dt>AWAY starters</dt><dd>{lineupSummary.awayStarters}/5</dd></div>
+            <div><dt>HOME confirmed</dt><dd>{lineupSummary.homeConfirmed ? "YES" : "NO"}</dd></div>
+            <div><dt>AWAY confirmed</dt><dd>{lineupSummary.awayConfirmed ? "YES" : "NO"}</dd></div>
+          </dl>
+          <p className="muted">{lineupSummary.nextAction}</p>
+          <div className="button-row">
+            {[setupLinks.rosters, setupLinks.lifecycle].map((link) => (
+              <a
+                key={link.href}
+                className="button-link secondary"
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(link.href);
+                }}
+              >
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {lineup ? (
         <section className="score-actions">
           {(["HOME", "AWAY"] as const).map((teamSide) => {

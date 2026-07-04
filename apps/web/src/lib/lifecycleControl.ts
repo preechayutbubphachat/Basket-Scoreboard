@@ -1,4 +1,4 @@
-import type { CommandResult, LifecycleCommandPayload, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
+import type { CommandResult, LifecycleCommandPayload, MatchReadiness, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
 import {
   buildOperatorMatchClockLink,
   buildOperatorMatchFoulsLink,
@@ -117,6 +117,41 @@ export function getLifecycleControlLinks(matchId: string) {
     clock: { href: buildOperatorMatchClockLink(matchId), label: "Clock" },
     timeouts: { href: buildOperatorMatchTimeoutsLink(matchId), label: "Timeouts" },
     publicScoreboard: { href: buildPublicScoreboardLink(matchId), label: "Public scoreboard" }
+  };
+}
+
+export function buildLifecycleReadinessContext(readiness: MatchReadiness | null | undefined) {
+  if (!readiness) {
+    return null;
+  }
+
+  const incomplete = readiness.officials.state !== "READY"
+    || readiness.roster.state !== "READY"
+    || readiness.lineup.state !== "READY";
+
+  return {
+    warning: incomplete
+      ? "Setup readiness is incomplete. Review roster, lineup, and official assignments before starting."
+      : null,
+    hardBlock: false,
+    items: [
+      { label: "Officials", state: readiness.officials.state, detail: readiness.officials.label },
+      {
+        label: "Roster",
+        state: readiness.roster.state,
+        detail: `HOME ${readiness.roster.homeCount} / AWAY ${readiness.roster.awayCount}`
+      },
+      {
+        label: "Lineup",
+        state: readiness.lineup.state,
+        detail: `HOME ${readiness.lineup.homeStarters} ${readiness.lineup.homeConfirmed ? "confirmed" : "not confirmed"} / AWAY ${readiness.lineup.awayStarters} ${readiness.lineup.awayConfirmed ? "confirmed" : "not confirmed"}`
+      },
+      {
+        label: "Lifecycle",
+        state: readiness.lifecycle.state.replace("_", " "),
+        detail: readiness.lifecycle.label
+      }
+    ]
   };
 }
 

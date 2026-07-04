@@ -24,11 +24,11 @@ export function buildAdminMatchActions(matchId: string) {
     },
     rosters: {
       href: `/admin/matches/${encodeURIComponent(matchId)}/rosters`,
-      label: "Rosters"
+      label: "Setup Roster"
     },
     lineup: {
       href: `/admin/matches/${encodeURIComponent(matchId)}/lineup`,
-      label: "Lineup"
+      label: "Setup Lineup"
     },
     summary: {
       href: `/admin/matches/${encodeURIComponent(matchId)}/summary`,
@@ -60,7 +60,7 @@ export function buildAdminMatchActions(matchId: string) {
     },
     lifecycle: {
       href: buildOperatorMatchLifecycleLink(matchId),
-      label: "Operator Lifecycle"
+      label: "Start / Lifecycle"
     },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
