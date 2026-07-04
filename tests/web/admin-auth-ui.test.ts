@@ -468,7 +468,15 @@ const tournamentSchedule: TournamentScheduleResponse = {
         auditLogUrl: `/operator/matches/${scoreboardProjection.matchId}/audit-log`
       },
       readiness: {
-        officials: { state: "READY", label: "2 active officials" },
+        officials: {
+          state: "READY",
+          label: "2 active officials: REFEREE, SCORER",
+          assignedCount: 2,
+          roles: [
+            { role: "REFEREE", displayName: "Court Referee" },
+            { role: "SCORER", displayName: "Lead Scorer" }
+          ]
+        },
         roster: { state: "READY", homeCount: 7, awayCount: 8 },
         lineup: {
           state: "INCOMPLETE",
@@ -1552,8 +1560,8 @@ describe("operator match landing UI policy", () => {
     expect(card.title).toBe("home-1 vs away-1");
     expect(card.tournamentLabel).toBe("Alpha Cup");
     expect(card.venueLabel).toBe("Main Hall / Court A");
-    expect(card.readinessLabel).toBe("Officials READY / Roster READY / Lineup INCOMPLETE / Live");
-    expect(card.assignedRolesLabel).toBe("SCORER");
+    expect(card.readinessLabel).toBe("Officials READY (REFEREE, SCORER) / Roster READY / Lineup INCOMPLETE / Live");
+    expect(card.assignedRolesLabel).toBe("Your role: SCORER");
     expect(card.scoreControl).toEqual({
       enabled: true,
       href: "/operator/matches/match-1/score",
@@ -2108,7 +2116,7 @@ describe("tournament schedule UI policy", () => {
       conflictDetail: null
     });
     expect(buildReadinessBadges(tournamentSchedule.matches[0])).toEqual([
-      { label: "Officials: READY", title: "2 active officials" },
+      { label: "Officials: READY", title: "2 active officials: REFEREE, SCORER" },
       { label: "Roster: READY", title: "HOME 7 / AWAY 8" },
       { label: "Lineup: INCOMPLETE", title: "Starters HOME 5 / AWAY 4" },
       { label: "Lifecycle: LIVE", title: "Live" }

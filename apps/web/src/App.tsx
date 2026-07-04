@@ -3352,7 +3352,7 @@ function AdminScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
   const operations = match.operations;
   const links = [
     { href: operations?.operatorScoreUrl ?? buildOperatorMatchScoreLink(match.matchId), label: "Open Match Ops" },
-    { href: operations?.officialsUrl ?? buildAdminMatchLink(match.matchId), label: "Officials" },
+    { href: operations?.officialsUrl ?? buildAdminMatchLink(match.matchId), label: "Assign Officials" },
     { href: operations?.rostersUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/rosters`, label: "Rosters" },
     { href: operations?.lineupUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/lineup`, label: "Lineup" },
     { href: match.publicScoreboardPath, label: "Public Scoreboard" },
@@ -3547,7 +3547,7 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
         userId: form.userId.trim(),
         roleCode: form.roleCode
       });
-      setMessage({ tone: "success", text: "Assignment saved from backend response." });
+      setMessage({ tone: "success", text: "Official assigned." });
       setForm(createAssignmentFormState());
       await loadOfficials();
     } catch (error) {
@@ -3617,7 +3617,7 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
             <table>
               <thead>
                 <tr>
-                  <th>User ID</th>
+                  <th>Official</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th>Assigned</th>
@@ -3627,7 +3627,7 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
               <tbody>
                 {officials.map((official) => (
                   <tr key={official.id}>
-                    <td>{official.userId}</td>
+                    <td>{official.displayName ?? official.userId}</td>
                     <td>{official.roleCode}</td>
                     <td>{official.assignmentStatus}</td>
                     <td>{formatDate(official.assignedAt)}</td>

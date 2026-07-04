@@ -157,7 +157,7 @@ describe("operator match list route auth", () => {
           }], []];
         }
         if (normalized.includes("FROM match_officials")) {
-          return [[{ match_id: "match-1", active_count: 1 }], []];
+          return [[{ match_id: "match-1", role_code: "SCORER", display_name: "Lead Scorer" }], []];
         }
         if (normalized.includes("FROM match_roster_players")) {
           return [[
@@ -182,7 +182,12 @@ describe("operator match list route auth", () => {
         venueLabel: "Main Hall",
         courtLabel: "Court A",
         readiness: expect.objectContaining({
-          officials: { state: "READY", label: "1 active official" },
+          officials: {
+            state: "READY",
+            label: "1 active official: SCORER",
+            assignedCount: 1,
+            roles: [{ role: "SCORER", displayName: "Lead Scorer" }]
+          },
           roster: { state: "READY", homeCount: 5, awayCount: 5 },
           lineup: expect.objectContaining({ state: "READY" })
         })

@@ -10,6 +10,7 @@ type AssignmentRow = RowDataPacket & {
   id: string;
   match_id: string;
   user_id: string;
+  display_name: string | null;
   role_code: MatchOfficialRoleCode;
   assignment_status: string;
   assigned_by_user_id: string | null;
@@ -28,6 +29,7 @@ export type MatchOfficialAssignment = {
   id: string;
   matchId: string;
   userId: string;
+  displayName: string | null;
   roleCode: MatchOfficialRoleCode;
   assignmentStatus: string;
   assignedByUserId: string | null;
@@ -88,7 +90,22 @@ async function exists(queryable: Queryable, sql: string, values: unknown[]) {
 
 async function getAssignmentById(queryable: Queryable, assignmentId: string) {
   const [rows] = await queryable.query<AssignmentRow[]>(
-    "SELECT id, match_id, user_id, role_code, assignment_status, assigned_by_user_id, assigned_at, revoked_by_user_id, revoked_at, created_at, updated_at FROM match_officials WHERE id = ?",
+    `SELECT
+      mo.id,
+      mo.match_id,
+      mo.user_id,
+      COALESCE(NULLIF(u.display_name, ''), u.email, mo.user_id) AS display_name,
+      mo.role_code,
+      mo.assignment_status,
+      mo.assigned_by_user_id,
+      mo.assigned_at,
+      mo.revoked_by_user_id,
+      mo.revoked_at,
+      mo.created_at,
+      mo.updated_at
+    FROM match_officials mo
+    LEFT JOIN users u ON u.user_id = mo.user_id
+    WHERE mo.id = ?`,
     [assignmentId]
   );
 
@@ -102,7 +119,22 @@ async function getAssignmentByMatchUserRole(
   roleCode: MatchOfficialRoleCode
 ) {
   const [rows] = await queryable.query<AssignmentRow[]>(
-    "SELECT id, match_id, user_id, role_code, assignment_status, assigned_by_user_id, assigned_at, revoked_by_user_id, revoked_at, created_at, updated_at FROM match_officials WHERE match_id = ? AND user_id = ? AND role_code = ?",
+    `SELECT
+      mo.id,
+      mo.match_id,
+      mo.user_id,
+      COALESCE(NULLIF(u.display_name, ''), u.email, mo.user_id) AS display_name,
+      mo.role_code,
+      mo.assignment_status,
+      mo.assigned_by_user_id,
+      mo.assigned_at,
+      mo.revoked_by_user_id,
+      mo.revoked_at,
+      mo.created_at,
+      mo.updated_at
+    FROM match_officials mo
+    LEFT JOIN users u ON u.user_id = mo.user_id
+    WHERE mo.match_id = ? AND mo.user_id = ? AND mo.role_code = ?`,
     [matchId, userId, roleCode]
   );
 
@@ -266,7 +298,23 @@ export async function revokeMatchOfficial(
 
 export async function listMatchOfficials(queryable: Queryable, matchId: string) {
   const [rows] = await queryable.query<AssignmentRow[]>(
-    "SELECT id, match_id, user_id, role_code, assignment_status, assigned_by_user_id, assigned_at, revoked_by_user_id, revoked_at, created_at, updated_at FROM match_officials WHERE match_id = ? ORDER BY assigned_at ASC, id ASC",
+    `SELECT
+      mo.id,
+      mo.match_id,
+      mo.user_id,
+      COALESCE(NULLIF(u.display_name, ''), u.email, mo.user_id) AS display_name,
+      mo.role_code,
+      mo.assignment_status,
+      mo.assigned_by_user_id,
+      mo.assigned_at,
+      mo.revoked_by_user_id,
+      mo.revoked_at,
+      mo.created_at,
+      mo.updated_at
+    FROM match_officials mo
+    LEFT JOIN users u ON u.user_id = mo.user_id
+    WHERE mo.match_id = ?
+    ORDER BY mo.assigned_at ASC, mo.id ASC`,
     [matchId]
   );
 
@@ -275,7 +323,23 @@ export async function listMatchOfficials(queryable: Queryable, matchId: string) 
 
 export async function getUserMatchAssignments(queryable: Queryable, userId: string) {
   const [rows] = await queryable.query<AssignmentRow[]>(
-    "SELECT id, match_id, user_id, role_code, assignment_status, assigned_by_user_id, assigned_at, revoked_by_user_id, revoked_at, created_at, updated_at FROM match_officials WHERE user_id = ? AND assignment_status = 'ACTIVE' ORDER BY assigned_at ASC, id ASC",
+    `SELECT
+      mo.id,
+      mo.match_id,
+      mo.user_id,
+      COALESCE(NULLIF(u.display_name, ''), u.email, mo.user_id) AS display_name,
+      mo.role_code,
+      mo.assignment_status,
+      mo.assigned_by_user_id,
+      mo.assigned_at,
+      mo.revoked_by_user_id,
+      mo.revoked_at,
+      mo.created_at,
+      mo.updated_at
+    FROM match_officials mo
+    LEFT JOIN users u ON u.user_id = mo.user_id
+    WHERE mo.user_id = ? AND mo.assignment_status = 'ACTIVE'
+    ORDER BY mo.assigned_at ASC, mo.id ASC`,
     [userId]
   );
 
@@ -300,6 +364,7 @@ function toAssignment(row: AssignmentRow): MatchOfficialAssignment {
     id: row.id,
     matchId: row.match_id,
     userId: row.user_id,
+    displayName: row.display_name,
     roleCode: row.role_code,
     assignmentStatus: row.assignment_status,
     assignedByUserId: row.assigned_by_user_id,

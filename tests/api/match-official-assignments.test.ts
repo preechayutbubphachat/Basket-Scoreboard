@@ -13,6 +13,39 @@ import {
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
+describe("match official assignment API safety", () => {
+  it("returns controlled JSON 404 when listing officials for an unknown match", async () => {
+    const pool = {
+      async query(sql: string) {
+        if (sql.includes("COUNT(*) AS count FROM matches")) {
+          return [[{ count: 0 }], []];
+        }
+        throw new Error("list officials should not query assignments for an unknown match");
+      }
+    };
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/matches/33333333-3333-4333-8333-333333333333/officials",
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        error: {
+          reasonCode: "MATCH_NOT_FOUND",
+          message: "Match not found"
+        }
+      });
+      expect(JSON.stringify(response.json())).not.toMatch(/SELECT|stack|password|session|csrf/i);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 async function buildMigratedApp() {
   const pool = createDatabasePool();
   const connection = await pool.getConnection();

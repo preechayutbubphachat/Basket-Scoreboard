@@ -118,16 +118,20 @@ export function getTeamLabel(match: Pick<OperatorMatchSummary, "homeTeamName" | 
 export function buildOperatorMatchCard(match: OperatorMatchSummary) {
   const venueParts = [match.venueLabel ?? match.venueName, match.courtLabel].filter(Boolean);
   const readiness = match.readiness;
+  const officialRoles = readiness?.officials.roles?.map((official) => official.role).filter(Boolean) ?? [];
+  const officialReadinessLabel = readiness
+    ? `Officials ${readiness.officials.state}${officialRoles.length ? ` (${Array.from(new Set(officialRoles)).sort().join(", ")})` : ""}`
+    : null;
   return {
     title: getTeamLabel(match),
     tournamentLabel: match.tournamentName ?? "Tournament pending",
     statusLabel: match.status,
     scheduledLabel: match.scheduledAt ? new Date(match.scheduledAt).toLocaleString() : "Schedule pending",
     venueLabel: venueParts.length ? venueParts.join(" / ") : "Venue pending",
-    assignedRolesLabel: match.assignedRoleCodes.length ? match.assignedRoleCodes.join(", ") : "No active role",
+    assignedRolesLabel: match.assignedRoleCodes.length ? `Your role: ${match.assignedRoleCodes.join(", ")}` : "No active role",
     currentSeqLabel: `Seq ${match.currentSeq}`,
     readinessLabel: readiness
-      ? `Officials ${readiness.officials.state} / Roster ${readiness.roster.state} / Lineup ${readiness.lineup.state} / ${readiness.lifecycle.label}`
+      ? `${officialReadinessLabel} / Roster ${readiness.roster.state} / Lineup ${readiness.lineup.state} / ${readiness.lifecycle.label}`
       : "Readiness unknown",
     scoreControl: {
       enabled: true,

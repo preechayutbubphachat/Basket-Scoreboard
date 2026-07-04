@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Pool } from "mysql2/promise";
+import type { Pool, RowDataPacket } from "mysql2/promise";
 import { z } from "zod";
 import { reasonCodes, type MatchOfficialRoleCode, type ReasonCode } from "@basket-scoreboard/api-contracts";
 import { apiError } from "../errors/apiErrors.js";
@@ -19,6 +19,10 @@ const assignOfficialSchema = z.object({
 const revokeOfficialSchema = z.object({
   reason: z.string().trim().min(1).max(500)
 });
+
+type CountRow = RowDataPacket & {
+  count: number | string | null;
+};
 
 export function registerMatchOfficialRoutes(
   app: FastifyInstance,
@@ -66,6 +70,14 @@ export function registerMatchOfficialRoutes(
 
       if (user.role !== "ADMIN") {
         return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      }
+
+      const [rows] = await pool.query<CountRow[]>(
+        "SELECT COUNT(*) AS count FROM matches WHERE match_id = ?",
+        [request.params.matchId]
+      );
+      if (Number(rows[0]?.count ?? 0) < 1) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match not found"));
       }
 
       return {
