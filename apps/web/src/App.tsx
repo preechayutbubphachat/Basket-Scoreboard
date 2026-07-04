@@ -13,6 +13,7 @@ import type {
   MatchSummaryResponse,
   MatchSummaryTeam,
   MatchOfficialRoleCode,
+  OfficialCandidate,
   OperatorMatchSummary,
   PlayerPosition,
   ReplayGroupFilter,
@@ -31,9 +32,14 @@ import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import {
   canManageAssignments,
+  createAssignmentCandidateOptions,
   createAssignmentFormState,
+  getAssignmentFormLabels,
   getProtectedRouteDecision,
+  isAssignmentSubmitDisabled,
   matchOfficialRoleCodes,
+  toAssignmentValidationMessage,
+  validateAssignmentForm,
   validateRevokeReason,
   type AssignmentFormState
 } from "./lib/adminAssignments";
@@ -3517,16 +3523,25 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
 function AdminOfficialsPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [officials, setOfficials] = useState<AssignmentRecord[]>([]);
+  const [candidates, setCandidates] = useState<OfficialCandidate[]>([]);
   const [form, setForm] = useState<AssignmentFormState>(() => createAssignmentFormState());
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const isAdmin = canManageAssignments(currentUser);
+  const formLabels = getAssignmentFormLabels();
+  const candidateOptions = createAssignmentCandidateOptions(candidates);
 
   async function loadOfficials() {
     setLoading(true);
     setMessage(null);
     try {
-      setOfficials(await api.listOfficials(matchId));
+      const [nextOfficials, nextCandidates] = await Promise.all([
+        api.listOfficials(matchId),
+        isAdmin ? api.listOfficialCandidates() : Promise.resolve([])
+      ]);
+      setOfficials(nextOfficials);
+      setCandidates(nextCandidates);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -3542,16 +3557,24 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
     event.preventDefault();
     if (!isAdmin) return;
     setMessage(null);
+    const validation = validateAssignmentForm(form);
+    if (!validation.ok) {
+      setMessage({ tone: "error", text: validation.message, code: validation.reasonCode });
+      return;
+    }
+    setSaving(true);
     try {
       await api.assignOfficial(matchId, {
         userId: form.userId.trim(),
-        roleCode: form.roleCode
+        roleCode: form.roleCode as MatchOfficialRoleCode
       });
       setMessage({ tone: "success", text: "Official assigned." });
       setForm(createAssignmentFormState());
       await loadOfficials();
     } catch (error) {
-      setMessage(toUiMessage(error));
+      setMessage(toAssignmentUiMessage(error));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -3585,17 +3608,28 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
           <h2>Add assignment</h2>
           <form className="assignment-form" onSubmit={submitAssignment}>
             <label>
-              User ID
-              <input value={form.userId} onChange={(event) => setForm({ ...form, userId: event.target.value })} />
+              {formLabels.official}
+              <select
+                value={form.userId}
+                onChange={(event) => setForm({ ...form, userId: event.target.value })}
+              >
+                <option value="">{formLabels.officialPlaceholder}</option>
+                {candidateOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
-              Role code
+              {formLabels.role}
               <select
                 value={form.roleCode}
                 onChange={(event) =>
                   setForm({ ...form, roleCode: event.target.value as MatchOfficialRoleCode })
                 }
               >
+                <option value="">Select role</option>
                 {matchOfficialRoleCodes.map((roleCode) => (
                   <option key={roleCode} value={roleCode}>
                     {roleCode}
@@ -3603,8 +3637,11 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
                 ))}
               </select>
             </label>
-            <button type="submit">Assign official</button>
+            <button type="submit" disabled={isAssignmentSubmitDisabled(form, saving)}>
+              {saving ? "Assigning..." : "Assign official"}
+            </button>
           </form>
+          {!loading && candidateOptions.length === 0 ? <p className="muted">No assignable users found.</p> : null}
         </section>
       ) : null}
 
@@ -4029,6 +4066,17 @@ function toUiMessage(error: unknown) {
     };
   }
   return { tone: "error" as const, code: "INTERNAL_ERROR", text: "Unexpected error" };
+}
+
+function toAssignmentUiMessage(error: unknown) {
+  if (error instanceof ApiClientError) {
+    return {
+      tone: "error" as const,
+      code: error.reasonCode,
+      text: toAssignmentValidationMessage(error.reasonCode) ?? error.message
+    };
+  }
+  return toUiMessage(error);
 }
 
 function formatDate(value: string | null | undefined) {

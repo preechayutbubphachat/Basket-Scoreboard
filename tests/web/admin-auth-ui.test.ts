@@ -9,9 +9,13 @@ import {
 import { createInitialAuthState, reduceAuthState } from "../../apps/web/src/lib/authState";
 import {
   canManageAssignments,
+  createAssignmentCandidateOptions,
   createAssignmentFormState,
+  getAssignmentFormLabels,
   getProtectedRouteDecision,
+  isAssignmentSubmitDisabled,
   submitAssignmentForm,
+  toAssignmentValidationMessage,
   validateRevokeReason
 } from "../../apps/web/src/lib/adminAssignments";
 import {
@@ -694,6 +698,33 @@ describe("web API client", () => {
     );
     expect(localStorage.getItem("csrf-token")).toBeNull();
     expect(sessionStorage.getItem("csrf-token")).toBeNull();
+  });
+
+  test("loads sanitized official candidates from the protected API", async () => {
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        data: {
+          candidates: [
+            {
+              userId: "user-1",
+              displayName: "Score Table",
+              roles: ["SCORER"]
+            }
+          ]
+        }
+      })
+    );
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    const candidates = await client.listOfficialCandidates();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/users/official-candidates",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(candidates).toEqual([{ userId: "user-1", displayName: "Score Table", roles: ["SCORER"] }]);
+    expect(JSON.stringify(candidates)).not.toMatch(/password|session|cookie|csrf|token/i);
   });
 
   test("reports stable error code and refreshes CSRF on recoverable CSRF_REQUIRED", async () => {
@@ -1506,6 +1537,35 @@ describe("admin assignment UI policy", () => {
 
     expect(api.assignOfficial).toHaveBeenCalledWith("match-1", { userId: "user-1", roleCode: "REFEREE" });
     expect(result).toEqual({ ok: true, assignmentId: "assignment-1" });
+  });
+
+  test("official assignment form uses an official picker instead of raw user id copy", () => {
+    expect(getAssignmentFormLabels()).toEqual({
+      official: "Official",
+      officialPlaceholder: "Select official",
+      role: "Role code"
+    });
+  });
+
+  test("assignment submit is disabled until official and role are selected", () => {
+    expect(isAssignmentSubmitDisabled(createAssignmentFormState({ userId: "", roleCode: "SCORER" }), false)).toBe(true);
+    expect(isAssignmentSubmitDisabled(createAssignmentFormState({ userId: "user-1", roleCode: "SCORER" }), true)).toBe(true);
+    expect(isAssignmentSubmitDisabled(createAssignmentFormState({ userId: "user-1", roleCode: "SCORER" }), false)).toBe(false);
+  });
+
+  test("assignment picker options use display names and friendly validation messages", () => {
+    expect(
+      createAssignmentCandidateOptions([
+        { userId: "user-1", displayName: "Score Table", roles: ["SCORER"] },
+        { userId: "user-2", displayName: null, roles: ["REFEREE"] }
+      ])
+    ).toEqual([
+      { value: "user-1", label: "Score Table (SCORER)" },
+      { value: "user-2", label: "user-2 (REFEREE)" }
+    ]);
+    expect(toAssignmentValidationMessage("USER_REQUIRED")).toBe("Please select a valid official.");
+    expect(toAssignmentValidationMessage("USER_NOT_FOUND")).toBe("Please select a valid official.");
+    expect(toAssignmentValidationMessage("DUPLICATE_ASSIGNMENT")).toBe("This official is already assigned to this role.");
   });
 
   test("revoke requires a reason", () => {

@@ -11,6 +11,7 @@ import type {
   MatchAuditLogResponse,
   MatchLineupResponse,
   MatchOfficialRoleCode,
+  OfficialCandidate,
   MatchReplayResponse,
   MatchRosterPlayer,
   MatchRostersResponse,
@@ -230,6 +231,10 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async listOfficials(matchId: string) {
       const data = await request<{ officials: AssignmentRecord[] }>(`/matches/${encodeURIComponent(matchId)}/officials`);
       return data.officials;
+    },
+    async listOfficialCandidates() {
+      const data = await request<{ candidates: OfficialCandidate[] }>("/users/official-candidates");
+      return data.candidates;
     },
     async getOperatorMatches() {
       const data = await request<{ matches: OperatorMatchSummary[] }>("/operator/matches");

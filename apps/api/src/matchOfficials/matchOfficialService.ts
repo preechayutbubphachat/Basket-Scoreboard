@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
-import { reasonCodes, type MatchOfficialRoleCode, type PermissionCode } from "@basket-scoreboard/api-contracts";
+import {
+  reasonCodes,
+  type MatchOfficialRoleCode,
+  type OfficialCandidate,
+  type PermissionCode,
+  type RoleCode
+} from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "../matchEventStore/auditRepository.js";
 
@@ -23,6 +29,12 @@ type AssignmentRow = RowDataPacket & {
 
 type CountRow = RowDataPacket & {
   count: number;
+};
+
+type OfficialCandidateRow = RowDataPacket & {
+  user_id: string;
+  display_name: string | null;
+  role_key: RoleCode;
 };
 
 export type MatchOfficialAssignment = {
@@ -164,7 +176,12 @@ export async function assignMatchOfficial(
 
     if (!(await exists(connection, "SELECT COUNT(*) AS count FROM users WHERE user_id = ?", [userId]))) {
       await connection.rollback();
-      return { ok: false, reasonCode: reasonCodes.USER_NOT_FOUND, message: "User not found", statusCode: 404 };
+      return {
+        ok: false,
+        reasonCode: reasonCodes.USER_NOT_FOUND,
+        message: "Please select a valid official.",
+        statusCode: 404
+      };
     }
 
     const existing = await getAssignmentByMatchUserRole(connection, matchId, userId, roleCode);
@@ -219,6 +236,43 @@ export async function assignMatchOfficial(
   } finally {
     connection.release();
   }
+}
+
+export async function listOfficialCandidates(queryable: Queryable): Promise<OfficialCandidate[]> {
+  const [rows] = await queryable.query<OfficialCandidateRow[]>(
+    `SELECT
+      u.user_id,
+      NULLIF(u.display_name, '') AS display_name,
+      r.role_key
+    FROM users u
+    INNER JOIN user_roles ur ON ur.user_id = u.user_id
+    INNER JOIN roles r ON r.role_id = ur.role_id
+    WHERE u.status = 'ACTIVE'
+      AND r.role_key IN ('ADMIN', 'SCORER', 'REFEREE')
+    ORDER BY COALESCE(NULLIF(u.display_name, ''), u.user_id) ASC, r.role_key ASC`
+  );
+
+  const candidates = new Map<string, OfficialCandidate>();
+  for (const row of rows) {
+    const existing = candidates.get(row.user_id);
+    if (existing) {
+      if (!existing.roles.includes(row.role_key)) {
+        existing.roles.push(row.role_key);
+      }
+      continue;
+    }
+
+    candidates.set(row.user_id, {
+      userId: row.user_id,
+      displayName: row.display_name,
+      roles: [row.role_key]
+    });
+  }
+
+  return [...candidates.values()].map((candidate) => ({
+    ...candidate,
+    roles: [...candidate.roles].sort()
+  }));
 }
 
 export async function revokeMatchOfficial(

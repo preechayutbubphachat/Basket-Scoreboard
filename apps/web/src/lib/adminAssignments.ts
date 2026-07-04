@@ -1,6 +1,7 @@
 import type {
   AuthenticatedUser,
   MatchOfficialRoleCode,
+  OfficialCandidate,
   ReasonCode,
   RoleCode
 } from "@basket-scoreboard/api-contracts";
@@ -20,7 +21,12 @@ export type ProtectedRouteDecision =
 
 export type AssignmentFormState = {
   userId: string;
-  roleCode: MatchOfficialRoleCode;
+  roleCode: MatchOfficialRoleCode | "";
+};
+
+export type AssignmentCandidateOption = {
+  value: string;
+  label: string;
 };
 
 export function canManageAssignments(user: AuthenticatedUser | null) {
@@ -45,8 +51,46 @@ export function getProtectedRouteDecision(
 export function createAssignmentFormState(input?: Partial<AssignmentFormState>): AssignmentFormState {
   return {
     userId: input?.userId ?? "",
-    roleCode: input?.roleCode ?? "SCORER"
+    roleCode: input?.roleCode ?? ""
   };
+}
+
+export function getAssignmentFormLabels() {
+  return {
+    official: "Official",
+    officialPlaceholder: "Select official",
+    role: "Role code"
+  };
+}
+
+export function createAssignmentCandidateOptions(candidates: OfficialCandidate[]): AssignmentCandidateOption[] {
+  return candidates.map((candidate) => {
+    const roleLabel = candidate.roles.length ? ` (${candidate.roles.join(", ")})` : "";
+    return {
+      value: candidate.userId,
+      label: `${candidate.displayName?.trim() || candidate.userId}${roleLabel}`
+    };
+  });
+}
+
+export function isAssignmentSubmitDisabled(form: AssignmentFormState, saving: boolean) {
+  return saving || !form.userId.trim() || !form.roleCode || !matchOfficialRoleCodes.includes(form.roleCode);
+}
+
+export function toAssignmentValidationMessage(reasonCode: string) {
+  if (reasonCode === "USER_REQUIRED" || reasonCode === "USER_NOT_FOUND" || reasonCode === "VALIDATION_ERROR") {
+    return "Please select a valid official.";
+  }
+
+  if (reasonCode === "DUPLICATE_ASSIGNMENT") {
+    return "This official is already assigned to this role.";
+  }
+
+  if (reasonCode === "ROLE_REQUIRED" || reasonCode === "INVALID_OFFICIAL_ROLE") {
+    return "Please select a valid role.";
+  }
+
+  return null;
 }
 
 export function validateAssignmentForm(form: AssignmentFormState):
@@ -55,16 +99,16 @@ export function validateAssignmentForm(form: AssignmentFormState):
   if (!form.userId.trim()) {
     return {
       ok: false,
-      reasonCode: "VALIDATION_ERROR",
-      message: "User ID is required"
+      reasonCode: "USER_REQUIRED",
+      message: "Please select a valid official."
     };
   }
 
-  if (!matchOfficialRoleCodes.includes(form.roleCode)) {
+  if (!form.roleCode || !matchOfficialRoleCodes.includes(form.roleCode)) {
     return {
       ok: false,
-      reasonCode: "VALIDATION_ERROR",
-      message: "Role code is invalid"
+      reasonCode: "ROLE_REQUIRED",
+      message: "Please select a valid role."
     };
   }
 
@@ -89,7 +133,7 @@ export async function submitAssignmentForm(
 
   const assignment = await api.assignOfficial(matchId, {
     userId: form.userId.trim(),
-    roleCode: form.roleCode
+    roleCode: form.roleCode as MatchOfficialRoleCode
   });
 
   return {
