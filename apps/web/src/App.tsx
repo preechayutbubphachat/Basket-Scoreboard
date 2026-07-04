@@ -127,6 +127,7 @@ import {
 import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
+  buildReadinessBadges,
   buildPublicTournamentScheduleLink,
   buildPublicTournamentStandingsLink,
   buildSelectedCourtPreview,
@@ -1321,10 +1322,12 @@ function OperatorMatchesPage() {
               <article className="match-card" key={match.matchId}>
                 <h2>{card.title}</h2>
                 <dl>
+                  <div><dt>Tournament</dt><dd>{card.tournamentLabel}</dd></div>
                   <div><dt>Status</dt><dd>{card.statusLabel}</dd></div>
                   <div><dt>Scheduled</dt><dd>{card.scheduledLabel}</dd></div>
                   <div><dt>Venue</dt><dd>{card.venueLabel}</dd></div>
                   <div><dt>Roles</dt><dd>{card.assignedRolesLabel}</dd></div>
+                  <div><dt>Readiness</dt><dd>{card.readinessLabel}</dd></div>
                   <div><dt>Current Seq</dt><dd>{card.currentSeqLabel}</dd></div>
                 </dl>
                 <div className="button-row">
@@ -3315,6 +3318,15 @@ function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; 
                 <td>{meta.locationLabel}</td>
                 <td>
                   {meta.matchupLabel}
+                  {mode === "admin" ? (
+                    <div className="readiness-badges" aria-label="Match readiness derived from current setup data">
+                      {buildReadinessBadges(match).map((badge) => (
+                        <span className="readiness-badge" key={badge.label} title={badge.title}>
+                          {badge.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {mode === "admin" && meta.conflictBadgeLabel ? (
                     <div className="schedule-warning">
                       <strong>{meta.conflictBadgeLabel}</strong>
@@ -3337,12 +3349,20 @@ function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; 
 }
 
 function AdminScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
+  const operations = match.operations;
   const links = [
-    { href: buildOperatorMatchScoreLink(match.matchId), label: "Operator Score" },
+    { href: operations?.operatorScoreUrl ?? buildOperatorMatchScoreLink(match.matchId), label: "Open Match Ops" },
+    { href: operations?.officialsUrl ?? buildAdminMatchLink(match.matchId), label: "Officials" },
+    { href: operations?.rostersUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/rosters`, label: "Rosters" },
+    { href: operations?.lineupUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/lineup`, label: "Lineup" },
     { href: match.publicScoreboardPath, label: "Public Scoreboard" },
-    { href: buildOperatorMatchSummaryLink(match.matchId), label: "Summary" },
-    { href: buildOperatorMatchReplayLink(match.matchId), label: "Replay" },
-    { href: buildOperatorMatchAuditLogLink(match.matchId), label: "Audit Log" }
+    { href: operations?.operatorFoulsUrl ?? buildOperatorMatchFoulsLink(match.matchId), label: "Fouls" },
+    { href: operations?.operatorClockUrl ?? buildOperatorMatchClockLink(match.matchId), label: "Clock" },
+    { href: operations?.operatorTimeoutsUrl ?? buildOperatorMatchTimeoutsLink(match.matchId), label: "Timeouts" },
+    { href: operations?.operatorLifecycleUrl ?? buildOperatorMatchLifecycleLink(match.matchId), label: "Lifecycle" },
+    { href: operations?.summaryUrl ?? buildOperatorMatchSummaryLink(match.matchId), label: "Summary" },
+    { href: operations?.replayUrl ?? buildOperatorMatchReplayLink(match.matchId), label: "Replay" },
+    { href: operations?.auditLogUrl ?? buildOperatorMatchAuditLogLink(match.matchId), label: "Audit Log" }
   ];
 
   return (

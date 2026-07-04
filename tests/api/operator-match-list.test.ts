@@ -5,6 +5,7 @@ import type { Pool, RowDataPacket } from "mysql2/promise";
 import { buildApiApp } from "../../apps/api/src/app";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
+import { listAdminMatches } from "../../apps/api/src/operator/operatorMatchService";
 import {
   MariaDbMigrationConnection,
   getDefaultMigrationsDir,
@@ -129,6 +130,64 @@ describe("operator match list route auth", () => {
     } finally {
       await app.close();
     }
+  });
+
+  it("derives tournament, court, and readiness context for admin match lists", async () => {
+    const pool = {
+      async query(sql: string) {
+        const normalized = sql.replace(/\s+/g, " ");
+        if (normalized.includes("FROM matches m")) {
+          return [[{
+            match_id: "match-1",
+            match_code: "Round 1",
+            tournament_id: "tournament-1",
+            tournament_name: "Alpha Cup",
+            home_team_id: "home-team",
+            home_team_name: "Bangkok Home",
+            away_team_id: "away-team",
+            away_team_name: "Chiang Mai Away",
+            status: "SCHEDULED",
+            scheduled_at: "2026-07-01T10:00:00.000Z",
+            venue_name: "Main Hall",
+            court_label: "Court A",
+            current_seq: 0,
+            home_score: null,
+            away_score: null,
+            assigned_role_codes: "SCORER"
+          }], []];
+        }
+        if (normalized.includes("FROM match_officials")) {
+          return [[{ match_id: "match-1", active_count: 1 }], []];
+        }
+        if (normalized.includes("FROM match_roster_players")) {
+          return [[
+            { match_id: "match-1", team_side: "HOME", player_count: 5, starter_count: 5 },
+            { match_id: "match-1", team_side: "AWAY", player_count: 5, starter_count: 5 }
+          ], []];
+        }
+        if (normalized.includes("FROM match_roster_confirmations")) {
+          return [[
+            { match_id: "match-1", team_side: "HOME" },
+            { match_id: "match-1", team_side: "AWAY" }
+          ], []];
+        }
+        return [[], []];
+      }
+    };
+
+    await expect(listAdminMatches(pool as never)).resolves.toEqual([
+      expect.objectContaining({
+        matchId: "match-1",
+        tournamentName: "Alpha Cup",
+        venueLabel: "Main Hall",
+        courtLabel: "Court A",
+        readiness: expect.objectContaining({
+          officials: { state: "READY", label: "1 active official" },
+          roster: { state: "READY", homeCount: 5, awayCount: 5 },
+          lineup: expect.objectContaining({ state: "READY" })
+        })
+      })
+    ]);
   });
 });
 

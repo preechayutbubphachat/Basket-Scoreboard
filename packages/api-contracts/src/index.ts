@@ -66,6 +66,8 @@ export type MatchAssignment = {
 export type OperatorMatchSummary = {
   matchId: string;
   matchCode: string | null;
+  tournamentId?: string | null;
+  tournamentName?: string | null;
   homeTeamId: string | null;
   homeTeamName: string | null;
   awayTeamId: string | null;
@@ -73,10 +75,13 @@ export type OperatorMatchSummary = {
   status: string;
   scheduledAt: string | null;
   venueName: string | null;
+  venueLabel?: string | null;
+  courtLabel?: string | null;
   assignedRoleCodes: MatchOfficialRoleCode[];
   currentSeq: number;
   homeScore: number | null;
   awayScore: number | null;
+  readiness?: MatchReadiness;
 };
 
 export const playerPositionSchema = z.enum(["GUARD", "FORWARD", "CENTER", "UNKNOWN"]);
@@ -415,6 +420,46 @@ export type ScheduleConflictWarning = {
   courtLabel: string | null;
 };
 
+export type MatchReadinessState = "READY" | "MISSING" | "UNKNOWN" | "INCOMPLETE";
+export type MatchLifecycleReadinessState = "NOT_STARTED" | "LIVE" | "FINISHED" | "UNKNOWN";
+
+export type MatchReadiness = {
+  officials: {
+    state: "READY" | "MISSING" | "UNKNOWN";
+    label: string;
+  };
+  roster: {
+    state: "READY" | "INCOMPLETE" | "MISSING";
+    homeCount: number;
+    awayCount: number;
+  };
+  lineup: {
+    state: "READY" | "INCOMPLETE" | "MISSING";
+    homeStarters: number;
+    awayStarters: number;
+    homeConfirmed: boolean;
+    awayConfirmed: boolean;
+  };
+  lifecycle: {
+    state: MatchLifecycleReadinessState;
+    label: string;
+  };
+};
+
+export type MatchOperationLinks = {
+  operatorScoreUrl: string;
+  operatorFoulsUrl: string;
+  operatorClockUrl: string;
+  operatorTimeoutsUrl: string;
+  operatorLifecycleUrl: string;
+  officialsUrl: string;
+  rostersUrl: string;
+  lineupUrl: string;
+  summaryUrl: string;
+  replayUrl: string;
+  auditLogUrl: string;
+};
+
 export type TournamentScheduleMatch = {
   matchId: string;
   tournamentId: string | null;
@@ -435,6 +480,8 @@ export type TournamentScheduleMatch = {
   currentSeq: number;
   publicScoreboardPath: string;
   conflicts?: ScheduleConflictWarning[];
+  operations?: MatchOperationLinks;
+  readiness?: MatchReadiness;
 };
 
 export type TournamentListResponse = {

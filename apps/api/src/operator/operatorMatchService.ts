@@ -1,9 +1,12 @@
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type { AuthenticatedUser, MatchOfficialRoleCode, OperatorMatchSummary } from "@basket-scoreboard/api-contracts";
+import { getReadinessForMatches } from "../matchReadiness/matchReadinessService.js";
 
 type MatchRow = RowDataPacket & {
   match_id: string;
   match_code: string | null;
+  tournament_id: string | null;
+  tournament_name: string | null;
   home_team_id: string | null;
   home_team_name: string | null;
   away_team_id: string | null;
@@ -11,6 +14,7 @@ type MatchRow = RowDataPacket & {
   status: string;
   scheduled_at: Date | string | null;
   venue_name: string | null;
+  court_label: string | null;
   current_seq: number | string | null;
   home_score: number | string | null;
   away_score: number | string | null;
@@ -31,6 +35,8 @@ function serializeMatch(row: MatchRow): OperatorMatchSummary {
   return {
     matchId: row.match_id,
     matchCode: row.match_code,
+    tournamentId: row.tournament_id,
+    tournamentName: row.tournament_name,
     homeTeamId: row.home_team_id,
     homeTeamName: row.home_team_name,
     awayTeamId: row.away_team_id,
@@ -38,6 +44,8 @@ function serializeMatch(row: MatchRow): OperatorMatchSummary {
     status: row.status,
     scheduledAt: serializeDate(row.scheduled_at),
     venueName: row.venue_name,
+    venueLabel: row.venue_name,
+    courtLabel: row.court_label,
     assignedRoleCodes: row.assigned_role_codes
       ? (row.assigned_role_codes.split(",").filter(Boolean) as MatchOfficialRoleCode[])
       : [],
@@ -45,6 +53,19 @@ function serializeMatch(row: MatchRow): OperatorMatchSummary {
     homeScore: row.home_score === null ? null : Number(row.home_score),
     awayScore: row.away_score === null ? null : Number(row.away_score)
   };
+}
+
+async function serializeMatchesWithReadiness(pool: Pool, rows: MatchRow[]) {
+  const matches = rows.map(serializeMatch);
+  const readinessByMatchId = await getReadinessForMatches(pool, matches.map((match) => ({
+    matchId: match.matchId,
+    status: match.status
+  })));
+
+  return matches.map((match) => ({
+    ...match,
+    readiness: readinessByMatchId.get(match.matchId)
+  }));
 }
 
 export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
@@ -57,6 +78,8 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
     SELECT
       m.match_id,
       m.match_code,
+      m.tournament_id,
+      t.name AS tournament_name,
       m.home_team_id,
       home.name AS home_team_name,
       m.away_team_id,
@@ -64,12 +87,14 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
       m.status,
       m.scheduled_at,
       m.venue_name,
+      JSON_UNQUOTE(JSON_EXTRACT(m.metadata, '$.courtLabel')) AS court_label,
       COALESCE(ms.last_seq_no, 0) AS current_seq,
       CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.homeScore')) AS UNSIGNED) AS home_score,
       CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.awayScore')) AS UNSIGNED) AS away_score,
       GROUP_CONCAT(DISTINCT mo.role_code ORDER BY mo.role_code SEPARATOR ',') AS assigned_role_codes
     FROM match_officials mo
     INNER JOIN matches m ON m.match_id = mo.match_id
+    LEFT JOIN tournaments t ON t.tournament_id = m.tournament_id
     LEFT JOIN teams home ON home.team_id = m.home_team_id
     LEFT JOIN teams away ON away.team_id = m.away_team_id
     LEFT JOIN match_streams ms ON ms.match_id = m.match_id
@@ -80,6 +105,8 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
     GROUP BY
       m.match_id,
       m.match_code,
+      m.tournament_id,
+      t.name,
       m.home_team_id,
       home.name,
       m.away_team_id,
@@ -87,6 +114,7 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
       m.status,
       m.scheduled_at,
       m.venue_name,
+      m.metadata,
       ms.last_seq_no,
       mp.projection_data
     ORDER BY m.scheduled_at IS NULL, m.scheduled_at ASC, m.created_at DESC
@@ -94,7 +122,7 @@ export async function listOperatorMatches(pool: Pool, user: AuthenticatedUser) {
     [user.userId]
   );
 
-  return rows.map(serializeMatch);
+  return serializeMatchesWithReadiness(pool, rows);
 }
 
 export async function listAdminMatches(pool: Pool) {
@@ -102,6 +130,8 @@ export async function listAdminMatches(pool: Pool) {
     SELECT
       m.match_id,
       m.match_code,
+      m.tournament_id,
+      t.name AS tournament_name,
       m.home_team_id,
       home.name AS home_team_name,
       m.away_team_id,
@@ -109,11 +139,13 @@ export async function listAdminMatches(pool: Pool) {
       m.status,
       m.scheduled_at,
       m.venue_name,
+      JSON_UNQUOTE(JSON_EXTRACT(m.metadata, '$.courtLabel')) AS court_label,
       COALESCE(ms.last_seq_no, 0) AS current_seq,
       CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.homeScore')) AS UNSIGNED) AS home_score,
       CAST(JSON_UNQUOTE(JSON_EXTRACT(mp.projection_data, '$.awayScore')) AS UNSIGNED) AS away_score,
       GROUP_CONCAT(DISTINCT mo.role_code ORDER BY mo.role_code SEPARATOR ',') AS assigned_role_codes
     FROM matches m
+    LEFT JOIN tournaments t ON t.tournament_id = m.tournament_id
     LEFT JOIN teams home ON home.team_id = m.home_team_id
     LEFT JOIN teams away ON away.team_id = m.away_team_id
     LEFT JOIN match_streams ms ON ms.match_id = m.match_id
@@ -124,6 +156,8 @@ export async function listAdminMatches(pool: Pool) {
     GROUP BY
       m.match_id,
       m.match_code,
+      m.tournament_id,
+      t.name,
       m.home_team_id,
       home.name,
       m.away_team_id,
@@ -131,10 +165,11 @@ export async function listAdminMatches(pool: Pool) {
       m.status,
       m.scheduled_at,
       m.venue_name,
+      m.metadata,
       ms.last_seq_no,
       mp.projection_data
     ORDER BY m.scheduled_at IS NULL, m.scheduled_at ASC, m.created_at DESC
   `);
 
-  return rows.map(serializeMatch);
+  return serializeMatchesWithReadiness(pool, rows);
 }
