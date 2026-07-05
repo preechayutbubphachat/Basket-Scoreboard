@@ -104,6 +104,7 @@ import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
   buildLifecycleReadinessContext,
+  buildMatchStartChecklist,
   getLifecycleActionPlan,
   getLifecycleControlFeedback,
   getLifecycleControlLinks,
@@ -137,6 +138,7 @@ import {
 import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
+  buildScheduleChecklistBadge,
   buildReadinessBadges,
   buildPublicTournamentScheduleLink,
   buildPublicTournamentStandingsLink,
@@ -2509,6 +2511,7 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   const lifecycleState = projection ? buildLifecycleControlState(projection) : null;
   const actionPlan = projection ? getLifecycleActionPlan(projection) : null;
   const readinessContext = buildLifecycleReadinessContext(readiness);
+  const startChecklist = projection ? buildMatchStartChecklist(projection, readiness) : null;
 
   return (
     <section className="stack">
@@ -2559,6 +2562,55 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
                 ))}
               </dl>
               <p className="muted">Alpha readiness is advisory here; lifecycle command policy remains enforced by the backend.</p>
+            </div>
+          ) : null}
+          {startChecklist ? (
+            <div className="setup-readiness" aria-label="Match start checklist">
+              <h2>Match Start Checklist</h2>
+              {startChecklist.advisoryWarning ? <Notice tone="error" text={startChecklist.advisoryWarning} /> : null}
+              <dl className="state-strip">
+                <div><dt>Checklist</dt><dd>{startChecklist.state}</dd></div>
+                <div><dt>Ready</dt><dd>{startChecklist.readyCount}</dd></div>
+                <div><dt>Warnings</dt><dd>{startChecklist.warningCount}</dd></div>
+                <div><dt>Missing</dt><dd>{startChecklist.missingCount}</dd></div>
+              </dl>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Status</th>
+                      <th>Message</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {startChecklist.items.map((item) => (
+                      <tr key={item.key}>
+                        <td>{item.label}</td>
+                        <td>{item.status}</td>
+                        <td>{item.message}</td>
+                        <td>
+                          {item.actionUrl && item.actionLabel ? (
+                            <a
+                              href={item.actionUrl}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                navigate(item.actionUrl!);
+                              }}
+                            >
+                              {item.actionLabel}
+                            </a>
+                          ) : (
+                            <span className="muted">No action</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted">This Alpha checklist is advisory and is not official certification or scoresheet approval.</p>
             </div>
           ) : null}
           <label className="form-grid compact">
@@ -3346,6 +3398,7 @@ function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; 
         <tbody>
           {matches.map((match) => {
             const meta = buildScheduleRowMeta(match);
+            const checklistBadge = buildScheduleChecklistBadge(match);
             return (
               <tr key={match.matchId}>
                 <td>{meta.scheduleLabel}</td>
@@ -3359,6 +3412,11 @@ function ScheduleTable({ matches, mode }: { matches: TournamentScheduleMatch[]; 
                           {badge.label}
                         </span>
                       ))}
+                      {checklistBadge ? (
+                        <span className="readiness-badge" title={checklistBadge.title}>
+                          {checklistBadge.label}
+                        </span>
+                      ) : null}
                     </div>
                   ) : null}
                   {mode === "admin" && meta.conflictBadgeLabel ? (
