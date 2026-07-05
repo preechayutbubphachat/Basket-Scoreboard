@@ -298,10 +298,14 @@ export function buildReadinessBadges(match: TournamentScheduleMatch) {
     },
     {
       label: `Lineup: ${match.readiness.lineup.state}`,
-      title: `Starters HOME ${match.readiness.lineup.homeStarters} / AWAY ${match.readiness.lineup.awayStarters}`
+      title: `HOME ${match.readiness.lineup.homeStarters} starters, ${confirmationLabel(match.readiness.lineup.homeConfirmed)} / AWAY ${match.readiness.lineup.awayStarters} starters, ${confirmationLabel(match.readiness.lineup.awayConfirmed)}`
     },
     { label: `Lifecycle: ${match.readiness.lifecycle.state.replace("_", " ")}`, title: match.readiness.lifecycle.label }
   ];
+}
+
+function confirmationLabel(confirmed: boolean) {
+  return confirmed ? "confirmed" : "not confirmed";
 }
 
 export function buildVenueCourtOptions(venues: VenueSummary[]): VenueCourtOption[] {

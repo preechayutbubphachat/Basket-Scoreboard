@@ -40,7 +40,10 @@ import {
   buildAdminRosterLink,
   buildCreatePlayerPayload,
   buildPlayerFoulCommandPayload,
+  buildLineupSetupSummary,
   buildRosterReadinessLabel,
+  buildRosterSetupSummary,
+  buildSetupQuickLinks,
   buildScorePlayerOptions,
   createPlayerFormState,
   getRosterPlayerRoleLabels,
@@ -132,6 +135,7 @@ import {
 import {
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
+  buildLifecycleReadinessContext,
   getLifecycleActionPlan,
   getLifecycleControlFeedback,
   getLifecycleControlLinks
@@ -148,6 +152,8 @@ import {
 import type {
   AuthenticatedUser,
   MatchAuditLogResponse,
+  MatchLineupResponse,
+  MatchReadiness,
   MatchReplayResponse,
   MatchRostersResponse,
   MatchSummaryResponse,
@@ -269,6 +275,29 @@ const matchRosters: MatchRostersResponse = {
     home: { playerCount: 2, starterCount: 1, captainSet: true, confirmed: false, ready: false },
     away: { playerCount: 0, starterCount: 0, captainSet: false, confirmed: false, ready: false }
   }
+};
+
+const matchLineup: MatchLineupResponse = {
+  matchId: scoreboardProjection.matchId,
+  home: {
+    teamId: "home-team",
+    teamName: "Bangkok HOME",
+    players: matchRosters.rosters.HOME,
+    readiness: matchRosters.readiness!.home
+  },
+  away: {
+    teamId: "away-team",
+    teamName: "Chiang Mai AWAY",
+    players: matchRosters.rosters.AWAY,
+    readiness: matchRosters.readiness!.away
+  }
+};
+
+const incompleteReadiness: MatchReadiness = {
+  officials: { state: "READY", label: "2 active officials", assignedCount: 2, roles: [] },
+  roster: { state: "READY", homeCount: 7, awayCount: 8 },
+  lineup: { state: "INCOMPLETE", homeStarters: 5, awayStarters: 4, homeConfirmed: true, awayConfirmed: false },
+  lifecycle: { state: "NOT_STARTED", label: "Not started" }
 };
 
 const matchSummary: MatchSummaryResponse = {
@@ -1690,8 +1719,8 @@ describe("operator match landing UI policy", () => {
     expect(buildAdminMatchLink("match-1")).toBe("/admin/matches/match-1/officials");
     expect(buildAdminMatchActions("match-1")).toEqual({
       officials: { href: "/admin/matches/match-1/officials", label: "Officials" },
-      rosters: { href: "/admin/matches/match-1/rosters", label: "Rosters" },
-      lineup: { href: "/admin/matches/match-1/lineup", label: "Lineup" },
+      rosters: { href: "/admin/matches/match-1/rosters", label: "Setup Roster" },
+      lineup: { href: "/admin/matches/match-1/lineup", label: "Setup Lineup" },
       summary: { href: "/admin/matches/match-1/summary", label: "Summary" },
       replay: { href: "/admin/matches/match-1/replay", label: "Replay" },
       auditLog: { href: "/admin/matches/match-1/audit-log", label: "Audit Log" },
@@ -1699,7 +1728,7 @@ describe("operator match landing UI policy", () => {
       fouls: { href: "/operator/matches/match-1/fouls", label: "Operator Fouls" },
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
       timeouts: { href: "/operator/matches/match-1/timeouts", label: "Operator Timeouts" },
-      lifecycle: { href: "/operator/matches/match-1/lifecycle", label: "Operator Lifecycle" },
+      lifecycle: { href: "/operator/matches/match-1/lifecycle", label: "Start / Lifecycle" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
   });
@@ -1723,6 +1752,25 @@ describe("roster control UI policy", () => {
     expect(getRosterPlayerRoleLabels(matchRosters.rosters.HOME[0])).toEqual(["STARTER", "CAPTAIN"]);
     expect(getRosterPlayerRoleLabels(matchRosters.rosters.HOME[1])).toEqual(["BENCH"]);
     expect(buildRosterReadinessLabel(matchRosters.readiness!.home)).toBe("NEEDS STARTERS");
+    expect(buildRosterSetupSummary(matchRosters)).toEqual({
+      state: "INCOMPLETE",
+      homeCount: 2,
+      awayCount: 0,
+      nextAction: "Add players to both teams before lineup confirmation."
+    });
+    expect(buildLineupSetupSummary(matchLineup)).toEqual({
+      state: "INCOMPLETE",
+      homeStarters: 1,
+      awayStarters: 0,
+      homeConfirmed: false,
+      awayConfirmed: false,
+      nextAction: "Select 5 starters for HOME and AWAY before confirmation."
+    });
+    expect(buildSetupQuickLinks(scoreboardProjection.matchId)).toEqual({
+      rosters: { href: `/admin/matches/${scoreboardProjection.matchId}/rosters`, label: "Setup Roster" },
+      lineup: { href: `/admin/matches/${scoreboardProjection.matchId}/lineup`, label: "Setup Lineup" },
+      lifecycle: { href: `/operator/matches/${scoreboardProjection.matchId}/lifecycle`, label: "Start / Lifecycle" }
+    });
     expect(buildPlayerFoulCommandPayload(scoreboardProjection, matchRosters.rosters.HOME[0], {
       foulType: "PERSONAL",
       reason: " reach "
@@ -2178,7 +2226,7 @@ describe("tournament schedule UI policy", () => {
     expect(buildReadinessBadges(tournamentSchedule.matches[0])).toEqual([
       { label: "Officials: READY", title: "2 active officials: REFEREE, SCORER" },
       { label: "Roster: READY", title: "HOME 7 / AWAY 8" },
-      { label: "Lineup: INCOMPLETE", title: "Starters HOME 5 / AWAY 4" },
+      { label: "Lineup: INCOMPLETE", title: "HOME 5 starters, confirmed / AWAY 4 starters, not confirmed" },
       { label: "Lifecycle: LIVE", title: "Live" }
     ]);
     expect(buildScheduleRowMeta({
@@ -2213,6 +2261,9 @@ describe("tournament schedule UI policy", () => {
       replay: null,
       operator: null
     });
+    expect(JSON.stringify(Object.values(getPublicScheduleLinks(tournamentSchedule.matches[0])).filter(Boolean))).not.toMatch(
+      /admin|operator|audit|replay|lineup|roster|lifecycle/i
+    );
   });
 
   test("public schedule dashboard is read-only", () => {
@@ -2640,6 +2691,19 @@ describe("match lifecycle control UI policy", () => {
       clock: { href: `/operator/matches/${scoreboardProjection.matchId}/clock`, label: "Clock" },
       timeouts: { href: `/operator/matches/${scoreboardProjection.matchId}/timeouts`, label: "Timeouts" },
       publicScoreboard: { href: `/public/scoreboard/${scoreboardProjection.matchId}`, label: "Public scoreboard" }
+    });
+  });
+
+  test("builds lifecycle readiness context without hard blocking start controls", () => {
+    expect(buildLifecycleReadinessContext(incompleteReadiness)).toEqual({
+      warning: "Setup readiness is incomplete. Review roster, lineup, and official assignments before starting.",
+      hardBlock: false,
+      items: [
+        { label: "Officials", state: "READY", detail: "2 active officials" },
+        { label: "Roster", state: "READY", detail: "HOME 7 / AWAY 8" },
+        { label: "Lineup", state: "INCOMPLETE", detail: "HOME 5 confirmed / AWAY 4 not confirmed" },
+        { label: "Lifecycle", state: "NOT STARTED", detail: "Not started" }
+      ]
     });
   });
 });
