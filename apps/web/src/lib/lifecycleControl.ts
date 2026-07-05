@@ -14,6 +14,17 @@ export type LifecycleAction =
   | "startOvertime"
   | "finishMatch";
 
+export type MatchStartChecklistStatus = "READY" | "WARNING" | "MISSING" | "NOT_APPLICABLE";
+
+export type MatchStartChecklistItem = {
+  key: "officials" | "roster" | "lineup" | "clock_config" | "public_scoreboard";
+  label: string;
+  status: MatchStartChecklistStatus;
+  message: string;
+  actionLabel: string | null;
+  actionUrl: string | null;
+};
+
 export function buildLifecycleControlState(projection: ScoreboardProjection) {
   const homeName = projection.homeTeamName ?? "HOME";
   const awayName = projection.awayTeamName ?? "AWAY";
@@ -155,6 +166,106 @@ export function buildLifecycleReadinessContext(readiness: MatchReadiness | null 
   };
 }
 
+export function buildMatchStartChecklist(
+  projection: ScoreboardProjection | null,
+  readiness: MatchReadiness | null | undefined
+) {
+  const matchId = projection?.matchId ?? "";
+  const items: MatchStartChecklistItem[] = [
+    buildOfficialsChecklistItem(matchId, readiness),
+    buildRosterChecklistItem(matchId, readiness),
+    buildLineupChecklistItem(matchId, readiness),
+    buildClockConfigChecklistItem(matchId, projection),
+    buildPublicScoreboardChecklistItem(matchId)
+  ];
+  const readyCount = items.filter((item) => item.status === "READY").length;
+  const warningCount = items.filter((item) => item.status === "WARNING").length;
+  const missingCount = items.filter((item) => item.status === "MISSING").length;
+  const state = missingCount > 0 ? "INCOMPLETE" : warningCount > 0 ? "WARNING" : "READY";
+
+  return {
+    state,
+    readyCount,
+    warningCount,
+    missingCount,
+    advisoryWarning:
+      state === "READY"
+        ? null
+        : "Setup checklist has warnings. This Alpha checklist is advisory and does not enforce official start rules.",
+    hardBlock: false,
+    items
+  };
+}
+
+function buildOfficialsChecklistItem(matchId: string, readiness: MatchReadiness | null | undefined): MatchStartChecklistItem {
+  const state = readiness?.officials.state ?? "MISSING";
+  return {
+    key: "officials",
+    label: "Officials",
+    status: state === "READY" ? "READY" : state === "PARTIAL" ? "WARNING" : "MISSING",
+    message: readiness?.officials.label ?? "No active officials assigned.",
+    actionLabel: "Assign Officials",
+    actionUrl: matchId ? `/admin/matches/${encodeURIComponent(matchId)}/officials` : null
+  };
+}
+
+function buildRosterChecklistItem(matchId: string, readiness: MatchReadiness | null | undefined): MatchStartChecklistItem {
+  const roster = readiness?.roster;
+  const state = roster?.state ?? "MISSING";
+  return {
+    key: "roster",
+    label: "Roster",
+    status: state === "READY" ? "READY" : state === "INCOMPLETE" ? "WARNING" : "MISSING",
+    message: roster ? `HOME ${roster.homeCount} / AWAY ${roster.awayCount}` : "Roster setup is missing.",
+    actionLabel: "Setup Roster",
+    actionUrl: matchId ? `/admin/matches/${encodeURIComponent(matchId)}/rosters` : null
+  };
+}
+
+function buildLineupChecklistItem(matchId: string, readiness: MatchReadiness | null | undefined): MatchStartChecklistItem {
+  const lineup = readiness?.lineup;
+  const state = lineup?.state ?? "MISSING";
+  return {
+    key: "lineup",
+    label: "Lineup",
+    status: state === "READY" ? "READY" : state === "INCOMPLETE" ? "WARNING" : "MISSING",
+    message: lineup
+      ? `HOME ${lineup.homeStarters} ${lineup.homeConfirmed ? "confirmed" : "not confirmed"} / AWAY ${lineup.awayStarters} ${lineup.awayConfirmed ? "confirmed" : "not confirmed"}`
+      : "Lineup setup is missing.",
+    actionLabel: "Setup Lineup",
+    actionUrl: matchId ? `/admin/matches/${encodeURIComponent(matchId)}/lineup` : null
+  };
+}
+
+function buildClockConfigChecklistItem(matchId: string, projection: ScoreboardProjection | null): MatchStartChecklistItem {
+  const periodNumber = projection?.periodNumber ?? projection?.period ?? null;
+  const periodType = projection?.periodType ?? "REGULATION";
+  const gameClockMs = projection?.gameClock?.remainingMs ?? projection?.gameClockRemainingMs ?? null;
+  const shotClockMs = projection?.shotClock?.remainingMs ?? projection?.shotClockRemainingMs ?? null;
+  const ready = periodNumber !== null && gameClockMs !== null && shotClockMs !== null;
+  return {
+    key: "clock_config",
+    label: "Clock / Period Config",
+    status: ready ? "READY" : "WARNING",
+    message: ready
+      ? `Period ${periodNumber} ${periodType}, game clock ${formatGameClock(gameClockMs)}, shot clock ${formatShotClock(shotClockMs)}`
+      : "Clock or period values are using defaults or are incomplete.",
+    actionLabel: "Open Clock",
+    actionUrl: matchId ? buildOperatorMatchClockLink(matchId) : null
+  };
+}
+
+function buildPublicScoreboardChecklistItem(matchId: string): MatchStartChecklistItem {
+  return {
+    key: "public_scoreboard",
+    label: "Public Scoreboard",
+    status: matchId ? "READY" : "WARNING",
+    message: matchId ? "Public scoreboard link is available." : "Public scoreboard link is unavailable.",
+    actionLabel: matchId ? "Open Public Scoreboard" : null,
+    actionUrl: matchId ? buildPublicScoreboardLink(matchId) : null
+  };
+}
+
 function successLabel(eventType: string | undefined) {
   switch (eventType) {
     case "MATCH_STARTED":
@@ -177,6 +288,10 @@ function formatGameClock(remainingMs: number) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatShotClock(remainingMs: number) {
+  return String(Math.max(0, Math.ceil(remainingMs / 1000)));
 }
 
 function normalizeReason(reason: string | null) {

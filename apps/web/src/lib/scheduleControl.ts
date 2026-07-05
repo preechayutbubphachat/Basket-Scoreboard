@@ -304,6 +304,38 @@ export function buildReadinessBadges(match: TournamentScheduleMatch) {
   ];
 }
 
+export function buildScheduleChecklistBadge(match: TournamentScheduleMatch) {
+  if (!match.readiness) {
+    return null;
+  }
+
+  const statuses = [
+    readinessStatus(match.readiness.officials.state),
+    readinessStatus(match.readiness.roster.state),
+    readinessStatus(match.readiness.lineup.state),
+    match.publicScoreboardPath ? "READY" : "WARNING"
+  ];
+  const readyCount = statuses.filter((status) => status === "READY").length;
+  const warningCount = statuses.filter((status) => status === "WARNING").length;
+  const missingCount = statuses.filter((status) => status === "MISSING").length;
+  const state = missingCount > 0 ? "INCOMPLETE" : warningCount > 0 ? "WARNINGS" : "READY";
+
+  return {
+    label: `Checklist: ${state}`,
+    title: `Ready ${readyCount} / Warnings ${warningCount} / Missing ${missingCount}`
+  };
+}
+
+function readinessStatus(state: string): "READY" | "WARNING" | "MISSING" {
+  if (state === "READY") {
+    return "READY";
+  }
+  if (state === "MISSING" || state === "UNKNOWN") {
+    return "MISSING";
+  }
+  return "WARNING";
+}
+
 function confirmationLabel(confirmed: boolean) {
   return confirmed ? "confirmed" : "not confirmed";
 }

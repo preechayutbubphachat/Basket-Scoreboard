@@ -103,6 +103,7 @@ import {
 import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
+  buildScheduleChecklistBadge,
   buildReadinessBadges,
   buildPublicTournamentScheduleLink,
   buildPublicTournamentStandingsLink,
@@ -133,6 +134,7 @@ import {
   hasPublicStandingsMutationControls
 } from "../../apps/web/src/lib/scheduleControl";
 import {
+  buildMatchStartChecklist,
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
   buildLifecycleReadinessContext,
@@ -2229,6 +2231,10 @@ describe("tournament schedule UI policy", () => {
       { label: "Lineup: INCOMPLETE", title: "HOME 5 starters, confirmed / AWAY 4 starters, not confirmed" },
       { label: "Lifecycle: LIVE", title: "Live" }
     ]);
+    expect(buildScheduleChecklistBadge(tournamentSchedule.matches[0])).toEqual({
+      label: "Checklist: WARNINGS",
+      title: "Ready 3 / Warnings 1 / Missing 0"
+    });
     expect(buildScheduleRowMeta({
       ...tournamentSchedule.matches[0],
       courtLabel: "Court A",
@@ -2705,6 +2711,61 @@ describe("match lifecycle control UI policy", () => {
         { label: "Lifecycle", state: "NOT STARTED", detail: "Not started" }
       ]
     });
+  });
+
+  test("builds advisory match start checklist without hard blocking start controls", () => {
+    expect(buildMatchStartChecklist(scoreboardProjection, incompleteReadiness)).toEqual({
+      state: "WARNING",
+      readyCount: 4,
+      warningCount: 1,
+      missingCount: 0,
+      advisoryWarning: "Setup checklist has warnings. This Alpha checklist is advisory and does not enforce official start rules.",
+      hardBlock: false,
+      items: [
+        {
+          key: "officials",
+          label: "Officials",
+          status: "READY",
+          message: "2 active officials",
+          actionLabel: "Assign Officials",
+          actionUrl: `/admin/matches/${scoreboardProjection.matchId}/officials`
+        },
+        {
+          key: "roster",
+          label: "Roster",
+          status: "READY",
+          message: "HOME 7 / AWAY 8",
+          actionLabel: "Setup Roster",
+          actionUrl: `/admin/matches/${scoreboardProjection.matchId}/rosters`
+        },
+        {
+          key: "lineup",
+          label: "Lineup",
+          status: "WARNING",
+          message: "HOME 5 confirmed / AWAY 4 not confirmed",
+          actionLabel: "Setup Lineup",
+          actionUrl: `/admin/matches/${scoreboardProjection.matchId}/lineup`
+        },
+        {
+          key: "clock_config",
+          label: "Clock / Period Config",
+          status: "READY",
+          message: "Period 1 REGULATION, game clock 8:32, shot clock 24",
+          actionLabel: "Open Clock",
+          actionUrl: `/operator/matches/${scoreboardProjection.matchId}/clock`
+        },
+        {
+          key: "public_scoreboard",
+          label: "Public Scoreboard",
+          status: "READY",
+          message: "Public scoreboard link is available.",
+          actionLabel: "Open Public Scoreboard",
+          actionUrl: `/public/scoreboard/${scoreboardProjection.matchId}`
+        }
+      ]
+    });
+
+    expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "READY" }).startMatch.enabled).toBe(true);
   });
 });
 
