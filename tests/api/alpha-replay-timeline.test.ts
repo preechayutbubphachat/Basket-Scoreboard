@@ -42,7 +42,16 @@ function createReplayPool(options: { matchExists?: boolean; events?: Array<Recor
       periodNumber: 4,
       periodType: "REGULATION"
     }),
-    eventRow(7, "LEGACY_CUSTOM_EVENT", {})
+    eventRow(7, "SCORE_CORRECTED", {
+      correctedEventSeq: 1,
+      correctedEventType: "SCORE_ADDED",
+      correctionKind: "SCORE_UNDO",
+      reason: "wrong team",
+      oldValue: { teamSide: "HOME", points: 2 },
+      newValue: { teamSide: "HOME", points: 0 },
+      delta: { teamSide: "HOME", points: -2 }
+    }),
+    eventRow(8, "LEGACY_CUSTOM_EVENT", {})
   ];
 
   const queries: string[] = [];
@@ -70,15 +79,15 @@ function createReplayPool(options: { matchExists?: boolean; events?: Array<Recor
                     gameClock: { remainingMs: 0, running: false, lastStartedAt: null },
                     shotClock: { remainingMs: 0, running: false, lastStartedAt: null },
                     status: "FINISHED",
-                    currentSeq: 7,
+                    currentSeq: 8,
                     projectionVersion: "scoreboard-v1"
                   }),
-                  last_event_seq: 7,
+                  last_event_seq: 8,
                   home_team_id: "home-team",
                   home_team_name: "Bangkok HOME",
                   away_team_id: "away-team",
                   away_team_name: "Chiang Mai AWAY",
-                  updated_at: new Date("2026-07-01T10:00:07.000Z")
+                   updated_at: new Date("2026-07-01T10:00:08.000Z")
                 }
               ]
             : [],
@@ -145,7 +154,7 @@ describe("alpha replay timeline", () => {
       expect(body).toMatchObject({
         matchId,
         status: "FINISHED",
-        currentSeq: 7,
+        currentSeq: 8,
         homeTeamName: "Bangkok HOME",
         awayTeamName: "Chiang Mai AWAY"
       });
@@ -184,6 +193,19 @@ describe("alpha replay timeline", () => {
         eventType: "LEGACY_CUSTOM_EVENT",
         eventGroup: "OTHER",
         title: "LEGACY_CUSTOM_EVENT"
+      });
+      expect(body.items.find((item: { eventType: string }) => item.eventType === "SCORE_CORRECTED")).toMatchObject({
+        seq: 7,
+        eventGroup: "CORRECTION",
+        correctionDetails: {
+          correctedEventSeq: 1,
+          correctedEventType: "SCORE_ADDED",
+          correctionKind: "SCORE_UNDO",
+          reason: "wrong team",
+          oldValue: { teamSide: "HOME", points: 2 },
+          newValue: { teamSide: "HOME", points: 0 },
+          delta: { teamSide: "HOME", points: -2 }
+        }
       });
       expect(body.generatedAt).toEqual(expect.any(String));
       expect(queries.some((sql) => /^(INSERT|UPDATE|DELETE)\b/i.test(sql.trim()))).toBe(false);

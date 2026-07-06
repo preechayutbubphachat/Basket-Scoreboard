@@ -6,7 +6,15 @@ const matchId = "11111111-1111-4111-8111-111111111111";
 function createAuditPool(options: { matchExists?: boolean; events?: Array<Record<string, unknown>> } = {}) {
   const matchExists = options.matchExists ?? true;
   const events = options.events ?? [
-    eventRow(3, "SCORE_REMOVED_BY_CORRECTION", { targetSeq: 1, reason: "wrong team" }, "wrong team"),
+    eventRow(3, "SCORE_CORRECTED", {
+      correctedEventSeq: 1,
+      correctedEventType: "SCORE_ADDED",
+      correctionKind: "SCORE_UNDO",
+      reason: "wrong team",
+      oldValue: { teamSide: "HOME", points: 2 },
+      newValue: { teamSide: "HOME", points: 0 },
+      delta: { teamSide: "HOME", points: -2 }
+    }, "wrong team"),
     eventRow(1, "SCORE_ADDED", { teamSide: "HOME", points: 2, periodNumber: 1 }),
     eventRow(2, "PLAYER_FOUL_ADDED", { teamSide: "HOME", playerId: "player-1", foulType: "PERSONAL" }),
     eventRow(4, "GAME_CLOCK_SET", { remainingMs: 512000, reason: "table correction" }, "table correction"),
@@ -140,7 +148,16 @@ describe("alpha audit correction review", () => {
           group: "CORRECTION",
           status: "CORRECTED",
           reason: "wrong team",
-          causationId: "event-1"
+          causationId: "event-1",
+          correctionDetails: {
+            correctedEventSeq: 1,
+            correctedEventType: "SCORE_ADDED",
+            correctionKind: "SCORE_UNDO",
+            reason: "wrong team",
+            oldValue: { teamSide: "HOME", points: 2 },
+            newValue: { teamSide: "HOME", points: 0 },
+            delta: { teamSide: "HOME", points: -2 }
+          }
         }
       ]);
       expect(body.rows.at(-1)).toMatchObject({

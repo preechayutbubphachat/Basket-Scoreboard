@@ -263,6 +263,16 @@ export type ReplayEventGroup =
   | "CORRECTION"
   | "OTHER";
 
+export type CorrectionDetail = {
+  correctedEventSeq: number | null;
+  correctedEventType: string | null;
+  correctionKind: string | null;
+  reason: string | null;
+  oldValue: Record<string, unknown> | null;
+  newValue: Record<string, unknown> | null;
+  delta: Record<string, unknown> | null;
+};
+
 export type ReplayItem = {
   matchId: string;
   seq: number;
@@ -287,6 +297,7 @@ export type ReplayItem = {
     displayName: string | null;
     role: string | null;
   } | null;
+  correctionDetails?: CorrectionDetail | null;
   createdAt: string;
 };
 
@@ -362,6 +373,7 @@ export type AuditLogRow = {
   commandId: string | null;
   correlationId: string | null;
   causationId: string | null;
+  correctionDetails?: CorrectionDetail | null;
   createdAt: string;
 };
 

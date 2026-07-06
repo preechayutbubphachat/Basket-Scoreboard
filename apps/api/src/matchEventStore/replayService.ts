@@ -1,5 +1,6 @@
 import type { Pool, PoolConnection } from "mysql2/promise";
 import type {
+  CorrectionDetail,
   MatchReplayResponse,
   ReplayEventGroup,
   ReplayGroupFilter,
@@ -124,6 +125,7 @@ function toReplayItem(event: MatchEventRecord, score: { home: number; away: numb
       displayName: null,
       role: stringOrNull(event.actorRole)
     },
+    correctionDetails: eventGroup === "CORRECTION" ? buildCorrectionDetail(payload, event.reason) : null,
     createdAt: event.recordedAt
   };
 }
@@ -266,6 +268,22 @@ function buildPlayer(payload: Record<string, unknown>): ReplayItem["player"] {
 
 function payloadRecord(payload: unknown) {
   return payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+}
+
+function recordOrNull(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function buildCorrectionDetail(payload: Record<string, unknown>, eventReason: string | null): CorrectionDetail {
+  return {
+    correctedEventSeq: numberOrNull(payload.correctedEventSeq),
+    correctedEventType: stringOrNull(payload.correctedEventType),
+    correctionKind: stringOrNull(payload.correctionKind),
+    reason: stringOrNull(eventReason) ?? stringOrNull(payload.reason),
+    oldValue: recordOrNull(payload.oldValue),
+    newValue: recordOrNull(payload.newValue),
+    delta: recordOrNull(payload.delta)
+  };
 }
 
 function parseTeamSide(value: unknown) {

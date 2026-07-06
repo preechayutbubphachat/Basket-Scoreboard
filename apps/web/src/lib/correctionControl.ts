@@ -4,6 +4,32 @@ import type {
   CorrectionEligibleEvent,
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
+import {
+  buildOperatorMatchAuditLogLink,
+  buildOperatorMatchClockLink,
+  buildOperatorMatchFoulsLink,
+  buildOperatorMatchReplayLink,
+  buildOperatorMatchScoreLink,
+  buildOperatorMatchTimeoutsLink
+} from "./operatorMatches";
+
+export function buildCorrectionNavItems(matchId: string, currentLabel: string | null = null) {
+  const items = [
+    { href: buildOperatorMatchScoreLink(matchId), label: "Score" },
+    { href: buildOperatorMatchFoulsLink(matchId), label: "Fouls" },
+    { href: buildOperatorMatchClockLink(matchId), label: "Clock" },
+    { href: buildOperatorMatchTimeoutsLink(matchId), label: "Timeouts" },
+    { href: `/operator/matches/${encodeURIComponent(matchId)}/corrections`, label: "Corrections" },
+    { href: buildOperatorMatchReplayLink(matchId), label: "Replay" },
+    { href: buildOperatorMatchAuditLogLink(matchId), label: "Audit Log" }
+  ];
+
+  return items.map((item) => ({
+    ...item,
+    current: currentLabel === item.label,
+    className: "button-link"
+  }));
+}
 
 export function buildCorrectionEventMeta(event: CorrectionEligibleEvent) {
   return {

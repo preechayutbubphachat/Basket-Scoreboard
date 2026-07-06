@@ -131,16 +131,21 @@ import {
 import {
   buildReplayEventGroupOptions,
   buildReplayEventMeta,
+  buildReplayCorrectionDetail,
+  buildReplayRowClassName,
   getReplayScoreAfterLabel
 } from "./lib/replayControl";
 import {
+  buildAuditCorrectionDetailRows,
   buildAuditLogFilterOptions,
   buildAuditLogRowMeta,
+  buildAuditRowClassName,
   getAuditCorrectionRows
 } from "./lib/auditLogControl";
 import {
   buildCorrectionCommandPayload,
   buildCorrectionEventMeta,
+  buildCorrectionNavItems,
   canSubmitCorrectionReason,
   getCorrectionControlFeedback
 } from "./lib/correctionControl";
@@ -2727,14 +2732,7 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
     }
   }
 
-  const correctionLinks = {
-    score: { href: buildOperatorMatchScoreLink(matchId), label: "Score" },
-    fouls: { href: buildOperatorMatchFoulsLink(matchId), label: "Fouls" },
-    clock: { href: buildOperatorMatchClockLink(matchId), label: "Clock" },
-    timeouts: { href: buildOperatorMatchTimeoutsLink(matchId), label: "Timeouts" },
-    replay: { href: buildOperatorMatchReplayLink(matchId), label: "Replay" },
-    auditLog: { href: buildOperatorMatchAuditLogLink(matchId), label: "Audit Log" }
-  };
+  const correctionLinks = buildCorrectionNavItems(matchId, "Corrections");
 
   return (
     <section className="stack">
@@ -2744,10 +2742,12 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
           <h1>Corrections</h1>
         </div>
         <div className="quick-links">
-          {Object.values(correctionLinks).map((link) => (
+          {correctionLinks.map((link) => (
             <a
               key={link.href}
+              className={`${link.className}${link.current ? " current" : ""}`}
               href={link.href}
+              aria-current={link.current ? "page" : undefined}
               onClick={(event) => {
                 event.preventDefault();
                 navigate(link.href);
@@ -3124,11 +3124,12 @@ function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: str
 function ReplayTimelineRow({ item, replay }: { item: ReplayItem; replay: MatchReplayResponse }) {
   const meta = buildReplayEventMeta(item);
   const scoreAfter = getReplayScoreAfterLabel(item, replay);
+  const correctionDetails = buildReplayCorrectionDetail(item);
   const playerLabel = item.player
     ? `${item.player.jerseyNumber ? `#${item.player.jerseyNumber} ` : ""}${item.player.displayName}`
     : null;
   return (
-    <tr>
+    <tr className={buildReplayRowClassName(item)}>
       <td>{item.seq}</td>
       <td>{meta.badge}</td>
       <td>{meta.timestamp}</td>
@@ -3139,6 +3140,16 @@ function ReplayTimelineRow({ item, replay }: { item: ReplayItem; replay: MatchRe
       <td>
         <span>{meta.description}</span>
         {playerLabel ? <div className="muted">{playerLabel}</div> : null}
+        {correctionDetails.length > 0 ? (
+          <dl className="detail-list compact">
+            {correctionDetails.map((detail) => (
+              <div key={detail}>
+                <dt>Correction</dt>
+                <dd>{detail}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
       </td>
       <td>{scoreAfter ?? "-"}</td>
       <td>{item.actor?.role ?? "-"}</td>
@@ -3291,8 +3302,9 @@ function MatchAuditLogPage({ matchId, backHref }: { matchId: string; backHref: s
 
 function AuditLogRowView({ row }: { row: AuditLogRow }) {
   const meta = buildAuditLogRowMeta(row);
+  const correctionDetails = buildAuditCorrectionDetailRows(row);
   return (
-    <tr>
+    <tr className={buildAuditRowClassName(row)}>
       <td>{row.seq ?? "-"}</td>
       <td>{meta.timestamp}</td>
       <td>{meta.badge}</td>
@@ -3300,6 +3312,16 @@ function AuditLogRowView({ row }: { row: AuditLogRow }) {
         <strong>{meta.title}</strong>
         <div className="muted">{row.eventType}</div>
         <div className="muted">{row.description}</div>
+        {row.group === "CORRECTION" ? (
+          <dl className="detail-list compact">
+            {correctionDetails.map((detail) => (
+              <div key={detail.label}>
+                <dt>{detail.label}</dt>
+                <dd>{detail.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
       </td>
       <td>{meta.actorLabel}</td>
       <td>{row.actor.role ?? "Unavailable"}</td>
