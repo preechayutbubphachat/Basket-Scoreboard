@@ -6,6 +6,7 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 import {
   buildOperatorMatchAuditLogLink,
+  buildOperatorMatchCorrectionsLink,
   buildOperatorMatchReplayLink,
   buildOperatorMatchSummaryLink,
   buildPublicScoreboardLink,
@@ -114,6 +115,10 @@ export function getScoreControlLinks(matchId: string, user: AuthenticatedUser | 
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Open Public Scoreboard"
+    },
+    corrections: {
+      href: buildOperatorMatchCorrectionsLink(matchId),
+      label: "Open Corrections"
     },
     adminMatches: user?.role === "ADMIN" ? { href: "/admin/matches", label: "Admin Match List" } : null
   };

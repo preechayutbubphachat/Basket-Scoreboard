@@ -1,6 +1,8 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AlphaCorrectionResponse,
   CommandResult,
+  CorrectionEligibleEvent,
   FoulType,
   AuditLogGroupFilter,
   AuditLogRow,
@@ -48,6 +50,7 @@ import {
   buildAdminMatchLink,
   buildOperatorMatchAuditLogLink,
   buildOperatorMatchClockLink,
+  buildOperatorMatchCorrectionsLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchLifecycleLink,
@@ -136,6 +139,12 @@ import {
   getAuditCorrectionRows
 } from "./lib/auditLogControl";
 import {
+  buildCorrectionCommandPayload,
+  buildCorrectionEventMeta,
+  canSubmitCorrectionReason,
+  getCorrectionControlFeedback
+} from "./lib/correctionControl";
+import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
   buildScheduleChecklistBadge,
@@ -203,6 +212,7 @@ type Route =
   | { name: "operator-clock"; matchId: string }
   | { name: "operator-timeouts"; matchId: string }
   | { name: "operator-lifecycle"; matchId: string }
+  | { name: "operator-corrections"; matchId: string }
   | { name: "operator-summary"; matchId: string }
   | { name: "operator-replay"; matchId: string }
   | { name: "operator-audit-log"; matchId: string }
@@ -277,6 +287,11 @@ function parseRoute(pathname: string): Route {
   const operatorLifecycleMatchId = operatorLifecycleMatch?.[1];
   if (operatorLifecycleMatchId) {
     return { name: "operator-lifecycle", matchId: decodeURIComponent(operatorLifecycleMatchId) };
+  }
+  const operatorCorrectionsMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/corrections$/);
+  const operatorCorrectionsMatchId = operatorCorrectionsMatch?.[1];
+  if (operatorCorrectionsMatchId) {
+    return { name: "operator-corrections", matchId: decodeURIComponent(operatorCorrectionsMatchId) };
   }
   const operatorSummaryMatch = pathname.match(/^\/operator\/matches\/([^/]+)\/summary$/);
   const operatorSummaryMatchId = operatorSummaryMatch?.[1];
@@ -2653,6 +2668,163 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   );
 }
 
+function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
+  const { api } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [events, setEvents] = useState<CorrectionEligibleEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<CorrectionEligibleEvent | null>(null);
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadCorrections() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const [nextProjection, eligible] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getEligibleCorrectionEvents(matchId, { limit: 20 })
+      ]);
+      setProjection(nextProjection);
+      setEvents(eligible.events);
+      setSelectedEvent((current) =>
+        current ? eligible.events.find((event) => event.seqNo === current.seqNo) ?? null : eligible.events[0] ?? null
+      );
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadCorrections();
+  }, [matchId]);
+
+  async function applyCorrection() {
+    if (!projection || !selectedEvent || !canSubmitCorrectionReason(reason)) {
+      return;
+    }
+
+    setPending(true);
+    setMessage(null);
+    try {
+      const result = await api.applyAlphaCorrection(
+        matchId,
+        buildCorrectionCommandPayload(projection, selectedEvent, reason)
+      );
+      setMessage(getCorrectionControlFeedback(result));
+      if ("ok" in result && result.projection) {
+        setProjection(result.projection);
+      }
+      setReason("");
+      await loadCorrections();
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const correctionLinks = {
+    score: { href: buildOperatorMatchScoreLink(matchId), label: "Score" },
+    fouls: { href: buildOperatorMatchFoulsLink(matchId), label: "Fouls" },
+    clock: { href: buildOperatorMatchClockLink(matchId), label: "Clock" },
+    timeouts: { href: buildOperatorMatchTimeoutsLink(matchId), label: "Timeouts" },
+    replay: { href: buildOperatorMatchReplayLink(matchId), label: "Replay" },
+    auditLog: { href: buildOperatorMatchAuditLogLink(matchId), label: "Audit Log" }
+  };
+
+  return (
+    <section className="stack">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Operator</p>
+          <h1>Corrections</h1>
+        </div>
+        <div className="quick-links">
+          {Object.values(correctionLinks).map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate(link.href);
+              }}
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      </div>
+      {message ? <Notice tone={message.tone} text={message.code ? `${message.code}: ${message.text}` : message.text} /> : null}
+      {loading ? <p className="muted">Loading corrections...</p> : null}
+      {projection ? (
+        <dl className="state-strip">
+          <div><dt>Current Seq</dt><dd>{projection.currentSeq}</dd></div>
+          <div><dt>Status</dt><dd>{projection.status}</dd></div>
+          <div><dt>Score</dt><dd>{projection.homeScore} - {projection.awayScore}</dd></div>
+        </dl>
+      ) : null}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Seq</th>
+              <th>Type</th>
+              <th>Summary</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((event) => {
+              const meta = buildCorrectionEventMeta(event);
+              return (
+                <tr key={event.seqNo}>
+                  <td>{meta.seqLabel}</td>
+                  <td>{meta.typeLabel}</td>
+                  <td>{meta.summary}</td>
+                  <td>{meta.statusLabel}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(event)}
+                      disabled={!event.eligible}
+                    >
+                      {meta.actionLabel}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!loading && events.length === 0 ? <p className="muted">No eligible recent events.</p> : null}
+      {selectedEvent ? (
+        <div className="control-panel">
+          <h2>Selected Event</h2>
+          <p>{selectedEvent.summary}</p>
+          <label className="form-grid compact">
+            Reason
+            <textarea value={reason} onChange={(event) => setReason(event.target.value)} />
+          </label>
+          <button
+            type="button"
+            disabled={!canSubmitCorrectionReason(reason) || pending}
+            onClick={() => void applyCorrection()}
+          >
+            {pending ? "Saving..." : "Append Correction"}
+          </button>
+          <p className="muted">Original event remains in replay and audit log.</p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function MatchSummaryPage({ matchId, backHref }: { matchId: string; backHref: string }) {
   const { api } = useCurrentUser();
   const [summary, setSummary] = useState<MatchSummaryResponse | null>(null);
@@ -4336,6 +4508,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorLifecyclePage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "operator-corrections":
+        return (
+          <ProtectedRoute requireOperator>
+            <OperatorCorrectionsPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "operator-summary":

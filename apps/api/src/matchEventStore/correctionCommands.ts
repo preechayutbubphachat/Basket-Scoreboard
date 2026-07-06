@@ -1,8 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolConnection } from "mysql2/promise";
 import type {
+  AlphaCorrectionCommand,
+  AlphaCorrectionKind,
   ApplyScoreCorrectionCommand,
   CommandResult,
+  CorrectionEligibleEvent,
+  CorrectionEligibleEventsResponse,
+  AlphaCorrectionResponse,
   CorrectionRequestCommand,
   MatchEventType,
   RejectCorrectionCommand,
@@ -15,23 +20,32 @@ import {
   ensurePlaceholderUser,
   findDuplicateCommand,
   getMatchEventBySeq,
+  getScoreboardProjectionView,
   getScoreboardProjection,
   insertCommandResult,
   listMatchEvents,
   lockMatchStream,
-  updateScoreboardProjection
+  updateScoreboardProjection,
+  type MatchEventRecord
 } from "./repositories.js";
 import {
   advanceProjectionSeq,
+  applyGameClockCorrected,
+  applyPlayerFoulCorrected,
   applyScoreAdded,
+  applyScoreCorrected,
   applyScoreRemovedByCorrection,
+  applyShotClockCorrected,
+  applyTeamFoulCorrected,
+  applyTimeoutCorrected,
   type ScoreboardProjection
 } from "./projection.js";
 
 type CorrectionCommand =
   | CorrectionRequestCommand
   | ApplyScoreCorrectionCommand
-  | RejectCorrectionCommand;
+  | RejectCorrectionCommand
+  | AlphaCorrectionCommand;
 
 type AppendedEvent = CommandResult["appendedEvents"][number];
 
@@ -154,12 +168,12 @@ async function findCorrectionFinalEvent(
   });
 }
 
-async function runCorrectionTransaction(
+async function runCorrectionTransaction<T extends CommandResult = CommandResult>(
   pool: Pool,
   command: CorrectionCommand,
   commandType: string,
   user: AuthenticatedUser,
-  handler: (connection: PoolConnection, currentSeq: number) => Promise<CommandResult>
+  handler: (connection: PoolConnection, currentSeq: number) => Promise<T>
 ) {
   const connection = await pool.getConnection();
 
@@ -175,7 +189,7 @@ async function runCorrectionTransaction(
         ...duplicate,
         status: "DUPLICATE_ACCEPTED",
         appendedEvents: []
-      };
+      } satisfies CommandResult;
     }
 
     const currentSeq = await lockMatchStream(connection, command.matchId);
@@ -582,6 +596,169 @@ export async function rejectScoreCorrection(options: {
   );
 }
 
+export async function listEligibleCorrectionEvents(options: {
+  pool: Pool;
+  matchId: string;
+  limit: number;
+  eventTypes?: string[] | undefined;
+}): Promise<CorrectionEligibleEventsResponse | null> {
+  const connection = await options.pool.getConnection();
+
+  try {
+    const projection = await getScoreboardProjectionView(connection, options.matchId);
+    if (!projection) {
+      return null;
+    }
+
+    const events = await listMatchEvents(connection, options.matchId);
+    const correctedKeys = new Set(
+      events
+        .map((event) => event.payload as { correctedEventSeq?: unknown; correctionKind?: unknown })
+        .filter((payload) => Number.isInteger(payload.correctedEventSeq) && typeof payload.correctionKind === "string")
+        .map((payload) => `${payload.correctedEventSeq}:${payload.correctionKind}`)
+    );
+    const eventTypeFilter = options.eventTypes && options.eventTypes.length > 0
+      ? new Set(options.eventTypes)
+      : null;
+    const eligibleEvents = events
+      .filter((event) => !eventTypeFilter || eventTypeFilter.has(event.eventType))
+      .map((event) => toEligibleCorrectionEvent(event, correctedKeys))
+      .filter((event) => event.eligible)
+      .sort((left, right) => right.seqNo - left.seqNo)
+      .slice(0, options.limit);
+
+    return {
+      matchId: options.matchId,
+      currentSeq: projection.currentSeq,
+      events: eligibleEvents
+    };
+  } finally {
+    connection.release();
+  }
+}
+
+export async function appendAlphaCorrection(options: {
+  pool: Pool;
+  command: AlphaCorrectionCommand;
+  user: AuthenticatedUser;
+}): Promise<(AlphaCorrectionResponse & CommandResult) | CommandResult> {
+  return runCorrectionTransaction(
+    options.pool,
+    options.command,
+    "corrections/alpha-undo",
+    options.user,
+    async (connection, currentSeq) => {
+      const targetEvent = await getMatchEventBySeq(
+        connection,
+        options.command.matchId,
+        options.command.correctedEventSeq
+      );
+
+      if (!targetEvent) {
+        return rejected(
+          options.command,
+          reasonCodes.MATCH_NOT_FOUND,
+          "Correction target event was not found",
+          currentSeq
+        );
+      }
+
+      const expectedKind = correctionKindForEvent(targetEvent);
+      if (!expectedKind || expectedKind !== options.command.correctionKind) {
+        return rejected(
+          options.command,
+          reasonCodes.VALIDATION_ERROR,
+          "This event is not eligible for the requested correction",
+          currentSeq
+        );
+      }
+
+      const events = await listMatchEvents(connection, options.command.matchId);
+      if (hasDuplicateCorrection(events, options.command.correctedEventSeq, options.command.correctionKind)) {
+        return rejected(
+          options.command,
+          reasonCodes.DUPLICATE_COMMAND,
+          "This event has already been corrected",
+          currentSeq
+        );
+      }
+
+      const projection = await getProjectionOrThrow(connection, options.command.matchId);
+      const correction = buildCorrectionEventPayload({
+        command: options.command,
+        targetEvent,
+        projection,
+        user: options.user
+      });
+
+      if (!correction) {
+        return rejected(
+          options.command,
+          reasonCodes.VALIDATION_ERROR,
+          "Correction payload could not be derived safely",
+          currentSeq
+        );
+      }
+
+      const nextSeq = currentSeq + 1;
+      const eventId = randomUUID();
+      const appendedEvent = await appendMatchEvent(connection, {
+        eventId,
+        matchId: options.command.matchId,
+        seqNo: nextSeq,
+        eventType: correction.eventType,
+        payload: correction.payload,
+        user: options.user,
+        occurredAt: new Date(options.command.clientTimestamp),
+        commandId: options.command.commandId,
+        expectedSeq: options.command.expectedSeq,
+        correlationId: options.command.correlationId,
+        causationId: targetEvent.eventId,
+        reason: options.command.reason
+      });
+      const updatedProjection = applyAlphaCorrectionProjection(
+        projection,
+        correction.eventType,
+        correction.payload,
+        nextSeq
+      );
+
+      await updateStreamSeq(connection, options.command.matchId, nextSeq);
+      await updateScoreboardProjection(connection, updatedProjection);
+      await insertAuditLog(connection, {
+        entityType: "match",
+        entityId: options.command.matchId,
+        action: correction.eventType,
+        actorUserId: options.user.userId,
+        actorRole: options.user.role,
+        deviceId: options.user.deviceId,
+        oldValue: correction.payload.oldValue,
+        newValue: correction.payload.newValue,
+        reason: options.command.reason,
+        correlationId: options.command.correlationId,
+        causationId: eventId,
+        eventSeq: nextSeq
+      });
+
+      const result: AlphaCorrectionResponse & CommandResult = {
+        ok: true,
+        matchId: options.command.matchId,
+        seqNo: nextSeq,
+        eventType: correction.eventType,
+        projection: updatedProjection,
+        status: "ACCEPTED",
+        commandId: options.command.commandId,
+        currentSeq: nextSeq,
+        appendedEvents: [appendedEvent],
+        reasonCode: null,
+        message: null
+      };
+
+      return result;
+    }
+  );
+}
+
 export async function listCorrectionsForMatch(pool: Pool, matchId: string) {
   const connection = await pool.getConnection();
 
@@ -623,4 +800,295 @@ export async function listCorrectionsForMatch(pool: Pool, matchId: string) {
   } finally {
     connection.release();
   }
+}
+
+function toEligibleCorrectionEvent(
+  event: MatchEventRecord,
+  correctedKeys: Set<string>
+): CorrectionEligibleEvent {
+  const correctionKind = correctionKindForEvent(event) ?? "SCORE_UNDO";
+  const alreadyCorrected = correctedKeys.has(`${event.seqNo}:${correctionKind}`);
+  const eligible = Boolean(correctionKindForEvent(event)) && !alreadyCorrected;
+  const payload = payloadRecord(event.payload);
+
+  return {
+    seqNo: event.seqNo,
+    eventType: event.eventType,
+    occurredAt: event.occurredAt,
+    actorDisplayName: null,
+    summary: summarizeCorrectionTarget(event),
+    eligible,
+    ineligibleReason: eligible
+      ? null
+      : alreadyCorrected
+        ? "This event has already been corrected."
+        : "This event is not eligible for Alpha correction.",
+    correctionKind,
+    currentValue: payload,
+    proposedCompensation: buildProposedCompensation(event, correctionKind)
+  };
+}
+
+function correctionKindForEvent(event: MatchEventRecord): AlphaCorrectionKind | null {
+  switch (event.eventType) {
+    case "SCORE_ADDED":
+      return "SCORE_UNDO";
+    case "TEAM_FOUL_ADDED":
+      return "TEAM_FOUL_UNDO";
+    case "PLAYER_FOUL_ADDED":
+      return "PLAYER_FOUL_UNDO";
+    case "TIMEOUT_GRANTED":
+    case "TIMEOUT_ENDED":
+      return "TIMEOUT_UNDO";
+    case "GAME_CLOCK_SET":
+      return "GAME_CLOCK_SET_CORRECTION";
+    case "SHOT_CLOCK_SET":
+    case "SHOT_CLOCK_RESET":
+      return "SHOT_CLOCK_SET_CORRECTION";
+    default:
+      return null;
+  }
+}
+
+function hasDuplicateCorrection(
+  events: MatchEventRecord[],
+  correctedEventSeq: number,
+  correctionKind: AlphaCorrectionKind
+) {
+  return events.some((event) => {
+    const payload = payloadRecord(event.payload);
+    return payload.correctedEventSeq === correctedEventSeq && payload.correctionKind === correctionKind;
+  });
+}
+
+function buildCorrectionEventPayload(options: {
+  command: AlphaCorrectionCommand;
+  targetEvent: MatchEventRecord;
+  projection: ScoreboardProjection;
+  user: AuthenticatedUser;
+}): { eventType: MatchEventType; payload: Record<string, unknown> } | null {
+  const targetPayload = payloadRecord(options.targetEvent.payload);
+  const common = {
+    correctedEventSeq: options.targetEvent.seqNo,
+    correctedEventType: options.targetEvent.eventType,
+    correctionKind: options.command.correctionKind,
+    reason: options.command.reason,
+    actorId: options.user.userId,
+    actorRole: options.user.role,
+    deviceId: options.user.deviceId,
+    correlationId: options.command.correlationId,
+    causationId: options.targetEvent.eventId,
+    createdAt: options.command.clientTimestamp
+  };
+
+  switch (options.command.correctionKind) {
+    case "SCORE_UNDO": {
+      const teamSide = parseTeamSide(targetPayload.teamSide);
+      const points = numberOrDefault(targetPayload.points, 0);
+      if (!teamSide || points <= 0) return null;
+      return {
+        eventType: "SCORE_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: { teamSide, points },
+          newValue: { teamSide, points: 0 },
+          delta: { teamSide, points: -points }
+        }
+      };
+    }
+    case "TEAM_FOUL_UNDO": {
+      const teamSide = parseTeamSide(targetPayload.teamSide);
+      if (!teamSide) return null;
+      return {
+        eventType: "TEAM_FOUL_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: { teamSide, periodNumber: numberOrNull(targetPayload.periodNumber), fouls: 1 },
+          newValue: { teamSide, fouls: 0 },
+          delta: { teamSide, fouls: -1 }
+        }
+      };
+    }
+    case "PLAYER_FOUL_UNDO": {
+      const teamSide = parseTeamSide(targetPayload.teamSide);
+      const playerId = stringOrNull(targetPayload.playerId);
+      if (!teamSide || !playerId) return null;
+      return {
+        eventType: "PLAYER_FOUL_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: {
+            teamSide,
+            playerId,
+            playerName: stringOrNull(targetPayload.playerName),
+            jerseyNumber: stringOrNull(targetPayload.jerseyNumber),
+            periodNumber: numberOrNull(targetPayload.periodNumber),
+            fouls: 1
+          },
+          newValue: { teamSide, playerId, fouls: 0 },
+          delta: { teamSide, playerId, fouls: -1 }
+        }
+      };
+    }
+    case "TIMEOUT_UNDO": {
+      const teamSide = parseTeamSide(targetPayload.teamSide);
+      return {
+        eventType: "TIMEOUT_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: {
+            teamSide,
+            activeTimeout: options.projection.activeTimeout,
+            periodNumber: numberOrNull(targetPayload.periodNumber)
+          },
+          newValue: { teamSide, activeTimeout: null },
+          delta: teamSide ? { teamSide, timeoutsUsed: -1 } : null
+        }
+      };
+    }
+    case "GAME_CLOCK_SET_CORRECTION": {
+      const newValue = payloadRecord(options.command.payload.newValue);
+      const remainingMs = numberOrDefault(newValue.remainingMs, options.projection.gameClock.remainingMs);
+      return {
+        eventType: "GAME_CLOCK_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: { ...options.projection.gameClock },
+          newValue: {
+            remainingMs,
+            running: newValue.running === true
+          },
+          delta: null
+        }
+      };
+    }
+    case "SHOT_CLOCK_SET_CORRECTION": {
+      const newValue = payloadRecord(options.command.payload.newValue);
+      const remainingMs = numberOrDefault(newValue.remainingMs, options.projection.shotClock.remainingMs);
+      return {
+        eventType: "SHOT_CLOCK_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: { ...options.projection.shotClock },
+          newValue: {
+            remainingMs,
+            running: newValue.running === true
+          },
+          delta: null
+        }
+      };
+    }
+  }
+}
+
+function applyAlphaCorrectionProjection(
+  projection: ScoreboardProjection,
+  eventType: MatchEventType,
+  payload: Record<string, unknown>,
+  seqNo: number
+): ScoreboardProjection {
+  const oldValue = payloadRecord(payload.oldValue);
+  const newValue = payloadRecord(payload.newValue);
+
+  switch (eventType) {
+    case "SCORE_CORRECTED":
+      return applyScoreCorrected(projection, {
+        teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
+        points: numberOrDefault(oldValue.points, 0) as 1 | 2 | 3
+      }, seqNo);
+    case "TEAM_FOUL_CORRECTED":
+      return applyTeamFoulCorrected(projection, {
+        teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
+        periodNumber: numberOrNull(oldValue.periodNumber)
+      }, seqNo);
+    case "PLAYER_FOUL_CORRECTED":
+      return applyPlayerFoulCorrected(projection, {
+        teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
+        playerId: stringOrNull(oldValue.playerId) ?? "",
+        periodNumber: numberOrNull(oldValue.periodNumber)
+      }, seqNo);
+    case "TIMEOUT_CORRECTED":
+      return applyTimeoutCorrected(projection, {
+        teamSide: parseTeamSide(oldValue.teamSide),
+        periodNumber: numberOrNull(oldValue.periodNumber)
+      }, seqNo);
+    case "GAME_CLOCK_CORRECTED":
+      return applyGameClockCorrected(projection, {
+        remainingMs: numberOrDefault(newValue.remainingMs, projection.gameClock.remainingMs),
+        running: newValue.running === true,
+        correctedAt: stringOrNull(payload.createdAt) ?? new Date().toISOString()
+      }, seqNo);
+    case "SHOT_CLOCK_CORRECTED":
+      return applyShotClockCorrected(projection, {
+        remainingMs: numberOrDefault(newValue.remainingMs, projection.shotClock.remainingMs),
+        running: newValue.running === true,
+        correctedAt: stringOrNull(payload.createdAt) ?? new Date().toISOString()
+      }, seqNo);
+    default:
+      return advanceProjectionSeq(projection, seqNo);
+  }
+}
+
+function summarizeCorrectionTarget(event: MatchEventRecord) {
+  const payload = payloadRecord(event.payload);
+  const teamSide = stringOrNull(payload.teamSide) ?? "Team";
+
+  switch (event.eventType) {
+    case "SCORE_ADDED":
+      return `${teamSide} +${numberOrDefault(payload.points, 0)}`;
+    case "TEAM_FOUL_ADDED":
+      return `${teamSide} team foul`;
+    case "PLAYER_FOUL_ADDED":
+      return `${teamSide} player foul`;
+    case "TIMEOUT_GRANTED":
+      return `${teamSide} timeout granted`;
+    case "TIMEOUT_ENDED":
+      return "Timeout ended";
+    case "GAME_CLOCK_SET":
+      return "Game clock set";
+    case "SHOT_CLOCK_RESET":
+      return "Shot clock reset";
+    case "SHOT_CLOCK_SET":
+      return "Shot clock set";
+    default:
+      return event.eventType;
+  }
+}
+
+function buildProposedCompensation(event: MatchEventRecord, correctionKind: AlphaCorrectionKind) {
+  const payload = payloadRecord(event.payload);
+  switch (correctionKind) {
+    case "SCORE_UNDO":
+      return { teamSide: payload.teamSide, points: -numberOrDefault(payload.points, 0) };
+    case "TEAM_FOUL_UNDO":
+    case "PLAYER_FOUL_UNDO":
+      return { teamSide: payload.teamSide, fouls: -1 };
+    case "TIMEOUT_UNDO":
+      return { teamSide: payload.teamSide ?? null, timeoutsUsed: payload.teamSide ? -1 : 0 };
+    case "GAME_CLOCK_SET_CORRECTION":
+    case "SHOT_CLOCK_SET_CORRECTION":
+      return { requiresNewValue: true };
+  }
+}
+
+function payloadRecord(payload: unknown) {
+  return payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+}
+
+function parseTeamSide(value: unknown): "HOME" | "AWAY" | null {
+  return value === "HOME" || value === "AWAY" ? value : null;
+}
+
+function numberOrDefault(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function numberOrNull(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

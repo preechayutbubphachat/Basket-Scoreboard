@@ -184,7 +184,18 @@ function countEvents(events: MatchEventRecord[]): MatchSummaryResponse["events"]
     foulEvents: countBy(events, ["TEAM_FOUL_ADDED", "PLAYER_FOUL_ADDED"]),
     timeoutEvents: countBy(events, ["TIMEOUT_GRANTED", "TIMEOUT_ENDED"]),
     lifecycleEvents: countBy(events, ["MATCH_STARTED", "PERIOD_STARTED", "PERIOD_ENDED", "OVERTIME_STARTED", "MATCH_FINISHED"]),
-    correctionEvents: countBy(events, ["CORRECTION_REQUESTED", "SCORE_REMOVED_BY_CORRECTION", "CORRECTION_APPLIED", "CORRECTION_REJECTED"])
+    correctionEvents: countBy(events, [
+      "CORRECTION_REQUESTED",
+      "SCORE_REMOVED_BY_CORRECTION",
+      "CORRECTION_APPLIED",
+      "CORRECTION_REJECTED",
+      "SCORE_CORRECTED",
+      "TEAM_FOUL_CORRECTED",
+      "PLAYER_FOUL_CORRECTED",
+      "TIMEOUT_CORRECTED",
+      "GAME_CLOCK_CORRECTED",
+      "SHOT_CLOCK_CORRECTED"
+    ])
   };
 }
 

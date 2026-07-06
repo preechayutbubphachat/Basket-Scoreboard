@@ -5,10 +5,12 @@ import {
   addScoreCommandSchema,
   addPlayerFoulCommandSchema,
   addTeamFoulCommandSchema,
+  alphaCorrectionCommandSchema,
   applyScoreCorrectionCommandSchema,
   auditLogQuerySchema,
   correctionRequestCommandSchema,
   createMatchSchema,
+  eligibleCorrectionEventsQuerySchema,
   gameClockSetCommandSchema,
   gameClockStartCommandSchema,
   gameClockStopCommandSchema,
@@ -46,6 +48,8 @@ import {
   appendPeriodStartedCommand
 } from "../matchEventStore/appendLifecycleCommand.js";
 import {
+  appendAlphaCorrection,
+  listEligibleCorrectionEvents,
   applyScoreCorrection,
   listCorrectionsForMatch,
   rejectScoreCorrection,
@@ -736,6 +740,60 @@ export function registerMatchRoutes(
         user: request.user!
       });
 
+      return reply.send(result);
+    }
+  );
+
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/corrections/eligible-events",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission(
+          "match.correction.request",
+          (request) => (request.params as { matchId: string }).matchId
+        )
+      ]
+    },
+    async (request, reply) => {
+      const query = eligibleCorrectionEventsQuerySchema.parse(request.query);
+      const result = await listEligibleCorrectionEvents({
+        pool,
+        matchId: request.params.matchId,
+        limit: query.limit,
+        eventTypes: query.eventTypes?.split(",").map((eventType) => eventType.trim()).filter(Boolean)
+      });
+
+      if (!result) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match correction events were not found"));
+      }
+
+      return result;
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/corrections",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission(
+          "match.correction.request",
+          (request) => (request.params as { matchId: string }).matchId
+        ),
+        auth.requireCsrf
+      ]
+    },
+    async (request, reply) => {
+      const command = alphaCorrectionCommandSchema.parse(request.body);
+
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendAlphaCorrection({ pool, command, user: request.user! });
+
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, "status" in result ? result.status : "ACCEPTED");
       return reply.send(result);
     }
   );

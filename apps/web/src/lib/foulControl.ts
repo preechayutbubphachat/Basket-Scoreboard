@@ -5,6 +5,7 @@ import type {
   TeamFoulAddedPayload
 } from "@basket-scoreboard/api-contracts";
 import {
+  buildOperatorMatchCorrectionsLink,
   buildOperatorMatchScoreLink,
   buildOperatorMatchReplayLink,
   buildOperatorMatchSummaryLink,
@@ -85,6 +86,7 @@ export function getFoulControlLinks(matchId: string) {
     scoreControl: { href: buildOperatorMatchScoreLink(matchId), label: "Open Score Control" },
     summary: { href: buildOperatorMatchSummaryLink(matchId), label: "Open Match Summary" },
     replay: { href: buildOperatorMatchReplayLink(matchId), label: "Open Replay" },
+    corrections: { href: buildOperatorMatchCorrectionsLink(matchId), label: "Corrections" },
     publicScoreboard: {
       href: buildPublicScoreboardLink(matchId),
       label: "Open Public Scoreboard"
