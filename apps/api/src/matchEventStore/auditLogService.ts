@@ -3,6 +3,7 @@ import type {
   AuditLogGroupFilter,
   AuditLogRow,
   AuditLogRowGroup,
+  CorrectionDetail,
   MatchAuditLogResponse
 } from "@basket-scoreboard/api-contracts";
 import { getScoreboardProjectionView, listMatchEvents, type MatchEventRecord } from "./repositories.js";
@@ -152,6 +153,7 @@ function toAuditRow(event: MatchEventRecord): AuditLogRow {
     commandId: stringOrNull(event.commandId),
     correlationId: stringOrNull(event.correlationId),
     causationId: stringOrNull(event.causationId),
+    correctionDetails: group === "CORRECTION" ? buildCorrectionDetail(payload, event.reason) : null,
     createdAt: event.recordedAt
   };
 }
@@ -214,9 +216,30 @@ function payloadRecord(payload: unknown) {
   return payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
 }
 
+function recordOrNull(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function buildCorrectionDetail(payload: Record<string, unknown>, eventReason: string | null): CorrectionDetail {
+  return {
+    correctedEventSeq: numberOrNull(payload.correctedEventSeq),
+    correctedEventType: stringOrNull(payload.correctedEventType),
+    correctionKind: stringOrNull(payload.correctionKind),
+    reason: stringOrNull(eventReason) ?? stringOrNull(payload.reason),
+    oldValue: recordOrNull(payload.oldValue),
+    newValue: recordOrNull(payload.newValue),
+    delta: recordOrNull(payload.delta)
+  };
+}
+
 function numberOrDefault(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function numberOrNull(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function stringOrNull(value: unknown) {

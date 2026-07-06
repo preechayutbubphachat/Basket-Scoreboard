@@ -57,6 +57,11 @@ button.danger {
   background: #344054;
 }
 
+.button-link.current {
+  background: #0f3e9e;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
 input,
 select {
   min-height: 40px;
@@ -209,6 +214,48 @@ label {
   background: #ecfdf3;
   border: 1px solid #abefc6;
   color: #05603a;
+}
+
+.quick-links,
+.button-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.correction-row {
+  background: #fffbeb;
+}
+
+.correction-row td {
+  border-top: 1px solid #fedf89;
+}
+
+.detail-list {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.detail-list.compact {
+  font-size: 13px;
+}
+
+.detail-list div {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: minmax(140px, auto) 1fr;
+}
+
+.detail-list dt {
+  color: #667085;
+  font-weight: 700;
+}
+
+.detail-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .notice.warning,

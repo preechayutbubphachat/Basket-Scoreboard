@@ -21,6 +21,24 @@ export function buildReplayEventMeta(item: ReplayItem) {
   };
 }
 
+export function buildReplayRowClassName(item: ReplayItem) {
+  return item.eventGroup === "CORRECTION" ? "correction-row" : "";
+}
+
+export function buildReplayCorrectionDetail(item: ReplayItem) {
+  if (item.eventGroup !== "CORRECTION") {
+    return [];
+  }
+
+  const details = item.correctionDetails ?? null;
+  return [
+    `Correction: ${details?.correctionKind ?? "Unknown"}`,
+    `Corrected event seq: ${details?.correctedEventSeq?.toString() ?? "Not recorded"}`,
+    `Reason: ${details?.reason ?? "Not recorded"}`,
+    `Effect: ${formatCorrectionEffect(details?.delta)}`
+  ];
+}
+
 export function getReplayScoreAfterLabel(item: ReplayItem, replay: Pick<MatchReplayResponse, "homeTeamName" | "awayTeamName">) {
   if (!item.scoreAfter) {
     return null;
@@ -35,4 +53,33 @@ export function hasReplayMutationControls() {
 function formatTimestamp(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function formatCorrectionEffect(value: Record<string, unknown> | null | undefined) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  const teamSide = typeof value.teamSide === "string" ? value.teamSide : null;
+  const points = numberOrNull(value.points);
+  if (teamSide && points !== null) {
+    return `${teamSide} ${points >= 0 ? "+" : ""}${points} points`;
+  }
+
+  const fouls = numberOrNull(value.fouls);
+  if (teamSide && fouls !== null) {
+    return `${teamSide} ${fouls >= 0 ? "+" : ""}${fouls} fouls`;
+  }
+
+  const remainingMs = numberOrNull(value.remainingMs);
+  if (remainingMs !== null) {
+    return `${Math.round(remainingMs / 1000)}s remaining`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function numberOrNull(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

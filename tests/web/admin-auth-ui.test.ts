@@ -93,19 +93,24 @@ import {
 import {
   buildReplayEventGroupOptions,
   buildReplayEventMeta,
+  buildReplayRowClassName,
+  buildReplayCorrectionDetail,
   getReplayScoreAfterLabel,
   hasReplayMutationControls
 } from "../../apps/web/src/lib/replayControl";
 import {
   buildCorrectionCommandPayload,
   buildCorrectionEventMeta,
+  buildCorrectionNavItems,
   canSubmitCorrectionReason,
   getCorrectionControlFeedback,
   hasCorrectionPublicExposure
 } from "../../apps/web/src/lib/correctionControl";
 import {
+  buildAuditCorrectionDetailRows,
   buildAuditLogFilterOptions,
   buildAuditLogRowMeta,
+  buildAuditRowClassName,
   getAuditCorrectionRows,
   hasAuditLogMutationControls
 } from "../../apps/web/src/lib/auditLogControl";
@@ -2158,6 +2163,32 @@ describe("match replay UI policy", () => {
     expect(getReplayScoreAfterLabel(matchReplay.items[1], matchReplay)).toBeNull();
     expect(hasReplayMutationControls()).toBe(false);
   });
+
+  test("highlights correction replay rows and summarizes protected correction details", () => {
+    const correctionItem = {
+      ...matchReplay.items[1],
+      eventGroup: "CORRECTION" as const,
+      eventType: "SCORE_CORRECTED",
+      title: "Score corrected",
+      description: "Correction applied.",
+      correctionDetails: {
+        correctedEventSeq: 7,
+        correctedEventType: "SCORE_ADDED",
+        correctionKind: "SCORE_UNDO",
+        reason: "Wrong team score",
+        delta: { teamSide: "HOME", points: -2 }
+      }
+    };
+
+    expect(buildReplayRowClassName(correctionItem)).toBe("correction-row");
+    expect(buildReplayCorrectionDetail(correctionItem)).toEqual([
+      "Correction: SCORE_UNDO",
+      "Corrected event seq: 7",
+      "Reason: Wrong team score",
+      "Effect: HOME -2 points"
+    ]);
+    expect(buildReplayRowClassName(matchReplay.items[0])).toBe("");
+  });
 });
 
 describe("match audit log UI policy", () => {
@@ -2183,6 +2214,43 @@ describe("match audit log UI policy", () => {
       timestamp: expect.any(String)
     });
     expect(getAuditCorrectionRows(matchAuditLog)).toEqual([matchAuditLog.rows[1]]);
+  });
+
+  test("highlights correction audit rows and renders missing correction fields safely", () => {
+    const correctionRow = {
+      ...matchAuditLog.rows[1],
+      seq: 12,
+      eventType: "SCORE_CORRECTED",
+      reason: "Wrong team score",
+      correctionDetails: {
+        correctedEventSeq: 7,
+        correctedEventType: "SCORE_ADDED",
+        correctionKind: "SCORE_UNDO",
+        reason: "Wrong team score",
+        oldValue: { teamSide: "HOME", points: 2 },
+        newValue: { teamSide: "HOME", points: 0 },
+        delta: { teamSide: "HOME", points: -2 }
+      }
+    };
+    const missingFieldsRow = {
+      ...correctionRow,
+      reason: null,
+      correctionDetails: null
+    };
+
+    expect(buildAuditRowClassName(correctionRow)).toBe("correction-row");
+    expect(buildAuditCorrectionDetailRows(correctionRow)).toEqual([
+      { label: "Correction event seq", value: "12" },
+      { label: "Corrected event seq", value: "7" },
+      { label: "Corrected event type", value: "SCORE_ADDED" },
+      { label: "Correction kind", value: "SCORE_UNDO" },
+      { label: "Reason", value: "Wrong team score" },
+      { label: "Old value", value: "HOME +2" },
+      { label: "New value", value: "HOME +0" },
+      { label: "Delta", value: "HOME -2 points" }
+    ]);
+    expect(buildAuditCorrectionDetailRows(missingFieldsRow).map((row) => row.value)).toContain("Not recorded");
+    expect(buildAuditRowClassName(matchAuditLog.rows[0])).toBe("");
   });
 
   test("audit log dashboard is read-only", () => {
@@ -2731,6 +2799,19 @@ describe("correction control UI policy", () => {
   };
 
   test("builds correction event metadata and reason validation", () => {
+    expect(buildCorrectionNavItems(scoreboardProjection.matchId).map((item) => item.label)).toEqual([
+      "Score",
+      "Fouls",
+      "Clock",
+      "Timeouts",
+      "Corrections",
+      "Replay",
+      "Audit Log"
+    ]);
+    expect(buildCorrectionNavItems(scoreboardProjection.matchId, "Corrections").find((item) => item.current)).toMatchObject({
+      label: "Corrections",
+      className: "button-link"
+    });
     expect(buildCorrectionEventMeta(eligibleScoreEvent)).toEqual({
       seqLabel: "#1",
       typeLabel: "SCORE_ADDED",
