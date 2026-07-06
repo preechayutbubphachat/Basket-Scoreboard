@@ -582,6 +582,132 @@ export function applyScoreRemovedByCorrection(
   };
 }
 
+export function applyScoreCorrected(
+  projection: ScoreboardProjection,
+  payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
+  seqNo: number
+): ScoreboardProjection {
+  return applyScoreRemovedByCorrection(projection, payload, seqNo);
+}
+
+export function applyTeamFoulCorrected(
+  projection: ScoreboardProjection,
+  payload: { teamSide: "HOME" | "AWAY"; periodNumber?: number | null },
+  seqNo: number
+): ScoreboardProjection {
+  const periodKey = String(payload.periodNumber ?? projection.periodNumber);
+  const currentPeriodFouls = projection.teamFoulsByPeriod[periodKey] ?? projection.teamFouls;
+  const sideKey = payload.teamSide === "HOME" ? "home" : "away";
+  const nextPeriodFouls = {
+    ...currentPeriodFouls,
+    [sideKey]: Math.max(0, currentPeriodFouls[sideKey] - 1)
+  };
+
+  return {
+    ...projection,
+    teamFouls: nextPeriodFouls,
+    teamFoulsByPeriod: {
+      ...projection.teamFoulsByPeriod,
+      [periodKey]: nextPeriodFouls
+    },
+    currentSeq: seqNo
+  };
+}
+
+export function applyPlayerFoulCorrected(
+  projection: ScoreboardProjection,
+  payload: { teamSide: "HOME" | "AWAY"; playerId: string; periodNumber?: number | null },
+  seqNo: number
+): ScoreboardProjection {
+  const nextProjection = applyTeamFoulCorrected(projection, payload, seqNo);
+
+  return {
+    ...nextProjection,
+    playerFouls: nextProjection.playerFouls.map((player) =>
+      player.playerId === payload.playerId
+        ? { ...player, fouls: Math.max(0, player.fouls - 1) }
+        : player
+    )
+  };
+}
+
+export function applyTimeoutCorrected(
+  projection: ScoreboardProjection,
+  payload: { teamSide?: "HOME" | "AWAY" | null; periodNumber?: number | null },
+  seqNo: number
+): ScoreboardProjection {
+  if (!payload.teamSide) {
+    return advanceProjectionSeq({ ...projection, activeTimeout: null }, seqNo);
+  }
+
+  const sideKey = payload.teamSide === "HOME" ? "home" : "away";
+  const halfKey = getHalfKey(payload.periodNumber ?? projection.periodNumber);
+  const timeouts = normalizeTimeouts(projection.timeouts);
+  const timeoutsByHalf = normalizeTimeoutsByHalf(projection.timeoutsByHalf);
+  const nextUsed = Math.max(0, timeouts[sideKey].used - 1);
+  const nextHalf = {
+    ...timeoutsByHalf[halfKey],
+    [sideKey]: Math.max(0, timeoutsByHalf[halfKey][sideKey] - 1)
+  };
+
+  return {
+    ...projection,
+    timeouts: {
+      ...timeouts,
+      [sideKey]: {
+        used: nextUsed,
+        remaining: Math.max(0, 5 - nextUsed)
+      }
+    },
+    timeoutsByHalf: {
+      ...timeoutsByHalf,
+      [halfKey]: nextHalf
+    },
+    activeTimeout: projection.activeTimeout?.teamSide === payload.teamSide ? null : projection.activeTimeout,
+    currentSeq: seqNo
+  };
+}
+
+export function applyGameClockCorrected(
+  projection: ScoreboardProjection,
+  payload: { remainingMs: number; running?: boolean; correctedAt: string },
+  seqNo: number
+): ScoreboardProjection {
+  const remainingMs = Math.max(0, payload.remainingMs);
+
+  return {
+    ...projection,
+    gameClockRemainingMs: remainingMs,
+    gameClock: {
+      remainingMs,
+      running: payload.running === true,
+      lastStartedAt: payload.running === true ? payload.correctedAt : null
+    },
+    clockUpdatedAt: payload.correctedAt,
+    currentSeq: seqNo
+  };
+}
+
+export function applyShotClockCorrected(
+  projection: ScoreboardProjection,
+  payload: { remainingMs: number; running?: boolean; correctedAt: string },
+  seqNo: number
+): ScoreboardProjection {
+  const remainingMs = Math.max(0, payload.remainingMs);
+
+  return {
+    ...projection,
+    shotClockRemainingMs: remainingMs,
+    shotClock: {
+      remainingMs,
+      running: payload.running === true,
+      lastStartedAt: payload.running === true ? payload.correctedAt : null
+    },
+    clockUpdatedAt: payload.correctedAt,
+    currentSeq: seqNo
+  };
+}
+
 export function advanceProjectionSeq(
   projection: ScoreboardProjection,
   seqNo: number

@@ -33,7 +33,13 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   CORRECTION_REQUESTED: "CORRECTION",
   SCORE_REMOVED_BY_CORRECTION: "CORRECTION",
   CORRECTION_APPLIED: "CORRECTION",
-  CORRECTION_REJECTED: "CORRECTION"
+  CORRECTION_REJECTED: "CORRECTION",
+  SCORE_CORRECTED: "CORRECTION",
+  TEAM_FOUL_CORRECTED: "CORRECTION",
+  PLAYER_FOUL_CORRECTED: "CORRECTION",
+  TIMEOUT_CORRECTED: "CORRECTION",
+  GAME_CLOCK_CORRECTED: "CORRECTION",
+  SHOT_CLOCK_CORRECTED: "CORRECTION"
 };
 
 const filterToGroup: Record<Exclude<ReplayGroupFilter, "all">, ReplayEventGroup> = {
@@ -177,6 +183,18 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
       return "Correction applied";
     case "CORRECTION_REJECTED":
       return "Correction rejected";
+    case "SCORE_CORRECTED":
+      return "Score corrected";
+    case "TEAM_FOUL_CORRECTED":
+      return "Team foul corrected";
+    case "PLAYER_FOUL_CORRECTED":
+      return "Player foul corrected";
+    case "TIMEOUT_CORRECTED":
+      return "Timeout corrected";
+    case "GAME_CLOCK_CORRECTED":
+      return "Game clock corrected";
+    case "SHOT_CLOCK_CORRECTED":
+      return "Shot clock corrected";
     default:
       return eventType;
   }
@@ -219,6 +237,12 @@ function buildDescription(
     case "SCORE_REMOVED_BY_CORRECTION":
     case "CORRECTION_APPLIED":
     case "CORRECTION_REJECTED":
+    case "SCORE_CORRECTED":
+    case "TEAM_FOUL_CORRECTED":
+    case "PLAYER_FOUL_CORRECTED":
+    case "TIMEOUT_CORRECTED":
+    case "GAME_CLOCK_CORRECTED":
+    case "SHOT_CLOCK_CORRECTED":
       return "Correction event recorded.";
     default:
       return "Legacy or unknown event recorded.";

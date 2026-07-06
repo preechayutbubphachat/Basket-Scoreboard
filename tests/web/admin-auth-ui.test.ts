@@ -64,7 +64,8 @@ import {
 import {
   buildFoulControlPanels,
   buildTeamFoulCommandPayload,
-  getFoulControlFeedback
+  getFoulControlFeedback,
+  getFoulControlLinks
 } from "../../apps/web/src/lib/foulControl";
 import {
   buildClockControlState,
@@ -72,7 +73,8 @@ import {
   buildShotClockResetPayload,
   buildShotClockSetPayload,
   deriveDisplayClockMs,
-  getClockControlFeedback
+  getClockControlFeedback,
+  getClockControlLinks
 } from "../../apps/web/src/lib/clockControl";
 import {
   buildTimeoutControlPanels,
@@ -94,6 +96,13 @@ import {
   getReplayScoreAfterLabel,
   hasReplayMutationControls
 } from "../../apps/web/src/lib/replayControl";
+import {
+  buildCorrectionCommandPayload,
+  buildCorrectionEventMeta,
+  canSubmitCorrectionReason,
+  getCorrectionControlFeedback,
+  hasCorrectionPublicExposure
+} from "../../apps/web/src/lib/correctionControl";
 import {
   buildAuditLogFilterOptions,
   buildAuditLogRowMeta,
@@ -1167,6 +1176,70 @@ describe("web API client", () => {
     );
   });
 
+  test("reads eligible correction events without CSRF and applies correction with CSRF", async () => {
+    const correctionEvents = {
+      matchId: scoreboardProjection.matchId,
+      currentSeq: 3,
+      events: [
+        {
+          seqNo: 1,
+          eventType: "SCORE_ADDED",
+          occurredAt: "2026-07-06T09:00:01.000Z",
+          actorDisplayName: null,
+          summary: "HOME +2",
+          eligible: true,
+          ineligibleReason: null,
+          correctionKind: "SCORE_UNDO",
+          currentValue: { teamSide: "HOME", points: 2 },
+          proposedCompensation: { teamSide: "HOME", points: -2 }
+        }
+      ]
+    };
+    const correctionResult = {
+      ok: true,
+      matchId: scoreboardProjection.matchId,
+      seqNo: 4,
+      eventType: "SCORE_CORRECTED",
+      projection: scoreboardProjection
+    };
+    const fetchMock = vi
+      .fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse(correctionEvents))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(jsonResponse(correctionResult));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getEligibleCorrectionEvents(scoreboardProjection.matchId, { limit: 20 })).resolves.toEqual(correctionEvents);
+    await expect(client.applyAlphaCorrection(scoreboardProjection.matchId, {
+      expectedSeq: 3,
+      correctedEventSeq: 1,
+      correctionKind: "SCORE_UNDO",
+      reason: "Wrong team score",
+      payload: {
+        correctionKind: "SCORE_UNDO",
+        target: { seqNo: 1 },
+        delta: null,
+        newValue: null
+      }
+    })).resolves.toEqual(correctionResult);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      `/api/v1/matches/${scoreboardProjection.matchId}/corrections/eligible-events?limit=20`,
+      expect.objectContaining({ credentials: "include", method: "GET" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/v1/auth/csrf", expect.any(Object));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      `/api/v1/matches/${scoreboardProjection.matchId}/corrections`,
+      expect.objectContaining({
+        credentials: "include",
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" })
+      })
+    );
+  });
+
   test("reads protected and public tournament schedules without CSRF", async () => {
     const fetchMock = vi.fn<FetchLike>()
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentList }))
@@ -1731,6 +1804,7 @@ describe("operator match landing UI policy", () => {
       clock: { href: "/operator/matches/match-1/clock", label: "Operator Clock" },
       timeouts: { href: "/operator/matches/match-1/timeouts", label: "Operator Timeouts" },
       lifecycle: { href: "/operator/matches/match-1/lifecycle", label: "Start / Lifecycle" },
+      corrections: { href: "/operator/matches/match-1/corrections", label: "Corrections" },
       publicScoreboard: { href: "/public/scoreboard/match-1", label: "Public scoreboard" }
     });
   });
@@ -1951,10 +2025,21 @@ describe("score control UI policy", () => {
         href: `/public/scoreboard/${scoreboardProjection.matchId}`,
         label: "Open Public Scoreboard"
       },
+      corrections: {
+        href: `/operator/matches/${scoreboardProjection.matchId}/corrections`,
+        label: "Open Corrections"
+      },
       adminMatches: { href: "/admin/matches", label: "Admin Match List" }
     });
     expect(getScoreControlLinks(scoreboardProjection.matchId, viewerUser).adminMatches).toBeNull();
     expect(getScoreControlLinks(scoreboardProjection.matchId, viewerUser).auditLog).toBeNull();
+  });
+
+  test("builds foul page correction link", () => {
+    expect(getFoulControlLinks(scoreboardProjection.matchId).corrections).toEqual({
+      href: `/operator/matches/${scoreboardProjection.matchId}/corrections`,
+      label: "Corrections"
+    });
   });
 });
 
@@ -2557,6 +2642,13 @@ describe("clock control UI policy", () => {
       text: "Conflict: refreshed, please try again."
     });
   });
+
+  test("builds clock page correction link", () => {
+    expect(getClockControlLinks(scoreboardProjection.matchId).corrections).toEqual({
+      href: `/operator/matches/${scoreboardProjection.matchId}/corrections`,
+      label: "Corrections"
+    });
+  });
 });
 
 describe("timeout control UI policy", () => {
@@ -2617,6 +2709,62 @@ describe("timeout control UI policy", () => {
     expect(Object.values(getTimeoutControlLinks(scoreboardProjection.matchId)).map((link) => link.href)).toContain(
       `/public/scoreboard/${scoreboardProjection.matchId}`
     );
+    expect(getTimeoutControlLinks(scoreboardProjection.matchId).corrections).toEqual({
+      href: `/operator/matches/${scoreboardProjection.matchId}/corrections`,
+      label: "Corrections"
+    });
+  });
+});
+
+describe("correction control UI policy", () => {
+  const eligibleScoreEvent = {
+    seqNo: 1,
+    eventType: "SCORE_ADDED",
+    occurredAt: "2026-07-06T09:00:01.000Z",
+    actorDisplayName: null,
+    summary: "HOME +2",
+    eligible: true,
+    ineligibleReason: null,
+    correctionKind: "SCORE_UNDO" as const,
+    currentValue: { teamSide: "HOME", points: 2 },
+    proposedCompensation: { teamSide: "HOME", points: -2 }
+  };
+
+  test("builds correction event metadata and reason validation", () => {
+    expect(buildCorrectionEventMeta(eligibleScoreEvent)).toEqual({
+      seqLabel: "#1",
+      typeLabel: "SCORE_ADDED",
+      statusLabel: "Eligible",
+      actionLabel: "Correct",
+      summary: "HOME +2"
+    });
+    expect(canSubmitCorrectionReason("    ")).toBe(false);
+    expect(canSubmitCorrectionReason("bad")).toBe(false);
+    expect(canSubmitCorrectionReason("Wrong team score")).toBe(true);
+  });
+
+  test("builds correction command payload and safe feedback", () => {
+    expect(buildCorrectionCommandPayload(scoreboardProjection, eligibleScoreEvent, " Wrong team score ")).toEqual({
+      expectedSeq: scoreboardProjection.currentSeq,
+      correctedEventSeq: 1,
+      correctionKind: "SCORE_UNDO",
+      reason: "Wrong team score",
+      payload: {
+        correctionKind: "SCORE_UNDO",
+        target: { seqNo: 1, eventType: "SCORE_ADDED" },
+        delta: { teamSide: "HOME", points: -2 },
+        newValue: null
+      }
+    });
+    expect(getCorrectionControlFeedback({
+      ok: true,
+      matchId: scoreboardProjection.matchId,
+      seqNo: 4,
+      eventType: "SCORE_CORRECTED",
+      projection: scoreboardProjection
+    })).toEqual({ tone: "success", text: "Correction appended at seq 4." });
+    expect(hasCorrectionPublicExposure(JSON.stringify(eligibleScoreEvent))).toBe(true);
+    expect(hasCorrectionPublicExposure(JSON.stringify({ homeScore: 8, awayScore: 6 }))).toBe(false);
   });
 });
 

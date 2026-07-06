@@ -4,7 +4,13 @@ export const correctionEventTypes = [
   "CORRECTION_REQUESTED",
   "CORRECTION_APPLIED",
   "CORRECTION_REJECTED",
-  "SCORE_REMOVED_BY_CORRECTION"
+  "SCORE_REMOVED_BY_CORRECTION",
+  "SCORE_CORRECTED",
+  "TEAM_FOUL_CORRECTED",
+  "PLAYER_FOUL_CORRECTED",
+  "TIMEOUT_CORRECTED",
+  "GAME_CLOCK_CORRECTED",
+  "SHOT_CLOCK_CORRECTED"
 ] as const;
 
 export type CorrectionEventType = (typeof correctionEventTypes)[number];
@@ -55,6 +61,28 @@ export type ScoreRemovedByCorrectionPayload = {
   teamSide: TeamSide;
   points: 1 | 2 | 3;
   reason: string;
+};
+
+export type AlphaCorrectionPayload = {
+  correctedEventSeq: number;
+  correctedEventType: string;
+  correctionKind:
+    | "SCORE_UNDO"
+    | "TEAM_FOUL_UNDO"
+    | "PLAYER_FOUL_UNDO"
+    | "TIMEOUT_UNDO"
+    | "GAME_CLOCK_SET_CORRECTION"
+    | "SHOT_CLOCK_SET_CORRECTION";
+  reason: string;
+  oldValue: Record<string, unknown>;
+  newValue: Record<string, unknown>;
+  delta: Record<string, unknown> | null;
+  actorId: string;
+  actorRole: string;
+  deviceId: string | null;
+  correlationId: string;
+  causationId: string;
+  createdAt: string;
 };
 
 export type ScoreAddedPayload = {

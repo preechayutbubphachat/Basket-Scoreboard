@@ -42,6 +42,10 @@ export function buildAdminMatchActions(matchId: string) {
       href: `/admin/matches/${encodeURIComponent(matchId)}/audit-log`,
       label: "Audit Log"
     },
+    corrections: {
+      href: buildOperatorMatchCorrectionsLink(matchId),
+      label: "Corrections"
+    },
     operator: {
       href: buildOperatorMatchScoreLink(matchId),
       label: "Operator Score"
@@ -99,6 +103,10 @@ export function buildOperatorMatchReplayLink(matchId: string) {
 
 export function buildOperatorMatchAuditLogLink(matchId: string) {
   return `/operator/matches/${encodeURIComponent(matchId)}/audit-log`;
+}
+
+export function buildOperatorMatchCorrectionsLink(matchId: string) {
+  return `/operator/matches/${encodeURIComponent(matchId)}/corrections`;
 }
 
 export function canReadAuditLog(user: AuthenticatedUser | null) {

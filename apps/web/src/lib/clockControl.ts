@@ -1,5 +1,10 @@
 import type { CommandResult, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
-import { buildOperatorMatchFoulsLink, buildOperatorMatchScoreLink, buildPublicScoreboardLink } from "./operatorMatches";
+import {
+  buildOperatorMatchCorrectionsLink,
+  buildOperatorMatchFoulsLink,
+  buildOperatorMatchScoreLink,
+  buildPublicScoreboardLink
+} from "./operatorMatches";
 
 export type ClockCommandKind = "game-start" | "game-stop" | "game-set" | "shot-reset-24" | "shot-reset-14" | "shot-set";
 type DisplayClock = {
@@ -144,6 +149,7 @@ export function getClockControlLinks(matchId: string) {
     operatorMatches: { href: "/operator/matches", label: "Back to Operator Matches" },
     scoreControl: { href: buildOperatorMatchScoreLink(matchId), label: "Open Score Control" },
     foulControl: { href: buildOperatorMatchFoulsLink(matchId), label: "Open Foul Control" },
+    corrections: { href: buildOperatorMatchCorrectionsLink(matchId), label: "Corrections" },
     publicScoreboard: { href: buildPublicScoreboardLink(matchId), label: "Open Public Scoreboard" }
   };
 }

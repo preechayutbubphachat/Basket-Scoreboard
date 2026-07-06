@@ -1,6 +1,8 @@
 import type {
   AuthenticatedUser,
+  AlphaCorrectionResponse,
   CommandResult,
+  CorrectionEligibleEventsResponse,
   CreateCourtRequest,
   CreateTeamRequest,
   CreateTournamentMatchRequest,
@@ -158,7 +160,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     const payload = (await response.json().catch(() => ({}))) as ApiSuccess<T> | ApiErrorEnvelope;
 
     const isEnvelopeSuccess = "ok" in payload && payload.ok === true;
-    if (response.ok && !isEnvelopeSuccess && options.acceptRawSuccess) {
+    if (response.ok && options.acceptRawSuccess && (!isEnvelopeSuccess || !("data" in payload))) {
       return payload as T;
     }
 
@@ -437,6 +439,48 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       return request<MatchAuditLogResponse>(
         `/matches/${encodeURIComponent(matchId)}/audit-log${query ? `?${query}` : ""}`,
         { method: "GET" },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async getEligibleCorrectionEvents(matchId: string, options: { limit?: number; eventTypes?: string[] } = {}) {
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.set("limit", String(options.limit));
+      if (options.eventTypes?.length) params.set("eventTypes", options.eventTypes.join(","));
+      const query = params.toString();
+      return request<CorrectionEligibleEventsResponse>(
+        `/matches/${encodeURIComponent(matchId)}/corrections/eligible-events${query ? `?${query}` : ""}`,
+        { method: "GET" },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async applyAlphaCorrection(
+      matchId: string,
+      input: {
+        expectedSeq: number;
+        correctedEventSeq: number;
+        correctionKind: string;
+        reason: string;
+        payload: Record<string, unknown>;
+      }
+    ) {
+      return request<AlphaCorrectionResponse | CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/corrections`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            commandId: createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: createCommandId(),
+            clientTimestamp: new Date().toISOString(),
+            correctedEventSeq: input.correctedEventSeq,
+            correctionKind: input.correctionKind,
+            reason: input.reason,
+            payload: input.payload
+          })
+        },
         false,
         { acceptRawSuccess: true }
       );

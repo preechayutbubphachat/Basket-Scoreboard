@@ -726,6 +726,22 @@ export const rejectCorrectionPayloadSchema = z.object({
   reason: z.string().trim().min(1).max(500)
 });
 
+export const alphaCorrectionKindSchema = z.enum([
+  "SCORE_UNDO",
+  "TEAM_FOUL_UNDO",
+  "PLAYER_FOUL_UNDO",
+  "TIMEOUT_UNDO",
+  "GAME_CLOCK_SET_CORRECTION",
+  "SHOT_CLOCK_SET_CORRECTION"
+]);
+
+export const alphaCorrectionPayloadSchema = z.object({
+  correctionKind: alphaCorrectionKindSchema,
+  target: z.record(z.unknown()).default({}),
+  delta: z.record(z.unknown()).nullable().default(null),
+  newValue: z.record(z.unknown()).nullable().default(null)
+});
+
 export const addScoreCommandSchema = z.object({
   commandId: z.string().uuid(),
   matchId: z.string().uuid(),
@@ -795,6 +811,21 @@ export const rejectCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: rejectCorrectionPayloadSchema
 });
 
+export const alphaCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
+  correctedEventSeq: z.number().int().positive(),
+  correctionKind: alphaCorrectionKindSchema,
+  reason: z.string().trim().min(5).max(500),
+  payload: alphaCorrectionPayloadSchema
+}).refine((command) => command.correctionKind === command.payload.correctionKind, {
+  message: "payload.correctionKind must match correctionKind",
+  path: ["payload", "correctionKind"]
+});
+
+export const eligibleCorrectionEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  eventTypes: z.string().optional()
+});
+
 export const syncQuerySchema = z.object({
   lastEventSeq: z.coerce.number().int().min(0).default(0)
 });
@@ -848,6 +879,9 @@ export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSche
 export type CorrectionRequestCommand = z.infer<typeof correctionRequestCommandSchema>;
 export type ApplyScoreCorrectionCommand = z.infer<typeof applyScoreCorrectionCommandSchema>;
 export type RejectCorrectionCommand = z.infer<typeof rejectCorrectionCommandSchema>;
+export type AlphaCorrectionKind = z.infer<typeof alphaCorrectionKindSchema>;
+export type AlphaCorrectionCommand = z.infer<typeof alphaCorrectionCommandSchema>;
+export type EligibleCorrectionEventsQuery = z.infer<typeof eligibleCorrectionEventsQuerySchema>;
 export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
 export type RealtimeView = z.infer<typeof realtimeViewSchema>;
 export type MatchJoinPayload = z.infer<typeof matchJoinPayloadSchema>;
@@ -871,7 +905,40 @@ export type MatchEventType =
   | "CORRECTION_REQUESTED"
   | "SCORE_REMOVED_BY_CORRECTION"
   | "CORRECTION_APPLIED"
-  | "CORRECTION_REJECTED";
+  | "CORRECTION_REJECTED"
+  | "SCORE_CORRECTED"
+  | "TEAM_FOUL_CORRECTED"
+  | "PLAYER_FOUL_CORRECTED"
+  | "TIMEOUT_CORRECTED"
+  | "GAME_CLOCK_CORRECTED"
+  | "SHOT_CLOCK_CORRECTED";
+
+export type CorrectionEligibleEvent = {
+  seqNo: number;
+  eventType: string;
+  occurredAt: string;
+  actorDisplayName: string | null;
+  summary: string;
+  eligible: boolean;
+  ineligibleReason: string | null;
+  correctionKind: AlphaCorrectionKind;
+  currentValue: Record<string, unknown>;
+  proposedCompensation: Record<string, unknown>;
+};
+
+export type CorrectionEligibleEventsResponse = {
+  matchId: string;
+  currentSeq: number;
+  events: CorrectionEligibleEvent[];
+};
+
+export type AlphaCorrectionResponse = {
+  ok: true;
+  matchId: string;
+  seqNo: number;
+  eventType: MatchEventType;
+  projection: ScoreboardProjection | null;
+};
 
 export type CommandResult = {
   status: CommandResultStatus;

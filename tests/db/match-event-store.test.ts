@@ -1037,7 +1037,13 @@ describe("correction event type foundation", () => {
       "CORRECTION_REQUESTED",
       "CORRECTION_APPLIED",
       "CORRECTION_REJECTED",
-      "SCORE_REMOVED_BY_CORRECTION"
+      "SCORE_REMOVED_BY_CORRECTION",
+      "SCORE_CORRECTED",
+      "TEAM_FOUL_CORRECTED",
+      "PLAYER_FOUL_CORRECTED",
+      "TIMEOUT_CORRECTED",
+      "GAME_CLOCK_CORRECTED",
+      "SHOT_CLOCK_CORRECTED"
     ]);
   });
 });

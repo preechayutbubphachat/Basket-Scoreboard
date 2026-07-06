@@ -7,6 +7,7 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 import {
   buildOperatorMatchClockLink,
+  buildOperatorMatchCorrectionsLink,
   buildOperatorMatchFoulsLink,
   buildOperatorMatchScoreLink,
   buildPublicScoreboardLink
@@ -116,6 +117,7 @@ export function getTimeoutControlLinks(matchId: string) {
     score: { href: buildOperatorMatchScoreLink(matchId), label: "Score" },
     fouls: { href: buildOperatorMatchFoulsLink(matchId), label: "Fouls" },
     clock: { href: buildOperatorMatchClockLink(matchId), label: "Clock" },
+    corrections: { href: buildOperatorMatchCorrectionsLink(matchId), label: "Corrections" },
     publicScoreboard: { href: buildPublicScoreboardLink(matchId), label: "Public scoreboard" }
   };
 }
