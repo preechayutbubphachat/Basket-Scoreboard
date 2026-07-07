@@ -174,6 +174,11 @@ import {
   parseRealtimeSocketTransports,
   shouldRefetchAfterRealtimeProjection
 } from "../../apps/web/src/lib/realtimeProjectionSync";
+import {
+  buildPublicScoreboardDisplayLink,
+  buildPublicScoreboardDisplayModel,
+  publicScoreboardDisplayHasPrivateExposure
+} from "../../apps/web/src/lib/publicScoreboardDisplay";
 import type {
   AuthenticatedUser,
   MatchAuditLogResponse,
@@ -1599,6 +1604,75 @@ describe("web API client", () => {
       expect.objectContaining({ credentials: "include" })
     );
   });
+
+  test("builds public 16:9 display model from public projection without private links or metadata", () => {
+    const display = buildPublicScoreboardDisplayModel(scoreboardProjection, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "POLLING_FALLBACK"
+    });
+
+    expect(buildPublicScoreboardDisplayLink("match 1")).toBe("/public/scoreboard/match%201/display");
+    expect(display).toMatchObject({
+      home: {
+        label: "HOME",
+        teamName: "Bangkok HOME",
+        score: 10,
+        fouls: 2,
+        timeouts: 5
+      },
+      away: {
+        label: "AWAY",
+        teamName: "Chiang Mai AWAY",
+        score: 8,
+        fouls: 1,
+        timeouts: 5
+      },
+      gameClock: {
+        label: "8:32",
+        stateLabel: "Stopped"
+      },
+      shotClock: {
+        label: "24",
+        stateLabel: "Stopped"
+      },
+      periodLabel: "REG P1",
+      statusLabel: "LIVE",
+      seqLabel: "Seq 3",
+      syncLabel: "Polling fallback active"
+    });
+    expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
+  });
+
+  test("public display model derives running clocks and final label safely", () => {
+    const display = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      status: "FINAL",
+      finalScore: { home: 88, away: 84 },
+      gameClock: {
+        remainingMs: 60000,
+        running: true,
+        lastStartedAt: "2026-07-01T10:00:00.000Z"
+      },
+      shotClock: {
+        remainingMs: 9000,
+        running: true,
+        lastStartedAt: "2026-07-01T10:00:00.000Z"
+      },
+      serverTime: "2026-07-01T10:00:00.000Z",
+      lastEventSeq: 12
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:02.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "CONNECTED"
+    });
+
+    expect(display.gameClock).toMatchObject({ label: "0:58", stateLabel: "Running" });
+    expect(display.shotClock).toMatchObject({ label: "7", stateLabel: "Running" });
+    expect(display.finalLabel).toBe("Final 88 - 84");
+    expect(display.seqLabel).toBe("Seq 12");
+    expect(display.syncLabel).toBe("Realtime connected");
+  });
 });
 
 describe("auth state", () => {
@@ -2443,6 +2517,10 @@ describe("tournament schedule UI policy", () => {
       scoreboard: {
         href: `/public/scoreboard/${scoreboardProjection.matchId}`,
         label: "Open Scoreboard"
+      },
+      display: {
+        href: `/public/scoreboard/${scoreboardProjection.matchId}/display`,
+        label: "Display Mode"
       },
       summary: null,
       auditLog: null,

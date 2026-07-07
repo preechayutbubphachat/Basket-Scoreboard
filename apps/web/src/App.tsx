@@ -197,6 +197,10 @@ import {
   getLiveDashboardEmptyState,
   type LiveDashboardFilter
 } from "./lib/liveDashboardControl";
+import {
+  buildPublicScoreboardDisplayLink,
+  buildPublicScoreboardDisplayModel
+} from "./lib/publicScoreboardDisplay";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
   applyRealtimeProjectionUpdate,
@@ -235,6 +239,7 @@ type Route =
   | { name: "operator-replay"; matchId: string }
   | { name: "operator-audit-log"; matchId: string }
   | { name: "public-scoreboard"; matchId: string }
+  | { name: "public-scoreboard-display"; matchId: string }
   | { name: "public-tournaments" }
   | { name: "public-tournament-schedule"; tournamentId: string }
   | { name: "public-tournament-standings"; tournamentId: string }
@@ -335,6 +340,11 @@ function parseRoute(pathname: string): Route {
   const operatorLiveDashboardTournamentId = operatorTournamentLiveDashboardMatch?.[1];
   if (operatorLiveDashboardTournamentId) {
     return { name: "operator-tournament-live-dashboard", tournamentId: decodeURIComponent(operatorLiveDashboardTournamentId) };
+  }
+  const publicScoreboardDisplayMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)\/display$/);
+  const publicDisplayMatchId = publicScoreboardDisplayMatch?.[1];
+  if (publicDisplayMatchId) {
+    return { name: "public-scoreboard-display", matchId: decodeURIComponent(publicDisplayMatchId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -3584,6 +3594,18 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
     <section className="panel public-scoreboard">
       <h1>Public Scoreboard</h1>
       <p className="muted">Match ID: {matchId}</p>
+      <div className="button-row">
+        <a
+          className="button-link"
+          href={buildPublicScoreboardDisplayLink(matchId)}
+          onClick={(event) => {
+            event.preventDefault();
+            navigate(buildPublicScoreboardDisplayLink(matchId));
+          }}
+        >
+          Display Mode
+        </a>
+      </div>
       {message ? <Notice {...message} /> : null}
       {projection ? (
         <>
@@ -3635,6 +3657,141 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
         <p>Loading scoreboard...</p>
       )}
     </section>
+  );
+}
+
+function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
+  const { api } = useCurrentUser();
+  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
+    setProjectionReceivedAtMs(Date.now());
+    setMessage(null);
+  }, refreshPublicScoreboard);
+
+  async function refreshPublicScoreboard(cancelled?: () => boolean) {
+    try {
+      const next = await api.getPublicScoreboard(matchId);
+      if (!cancelled?.()) {
+        setProjection(next);
+        setProjectionReceivedAtMs(Date.now());
+        setMessage(null);
+      }
+    } catch (error) {
+      if (!cancelled?.()) {
+        setMessage(toUiMessage(error));
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void refreshPublicScoreboard(() => cancelled);
+    const timer = window.setInterval(
+      () => void refreshPublicScoreboard(() => cancelled),
+      getPublicPollingIntervalMs(realtimeState)
+    );
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [api, matchId, realtimeState]);
+
+  const display = projection
+    ? buildPublicScoreboardDisplayModel(projection, {
+      nowMs,
+      receivedAtMs: projectionReceivedAtMs,
+      realtimeState
+    })
+    : null;
+
+  return (
+    <main className="public-display-page">
+      <section className="public-display-frame" aria-label="16:9 public scoreboard display">
+        <header className="public-display-header">
+          <div>
+            <span>Public Display</span>
+            <strong>{display?.statusLabel ?? "Loading"}</strong>
+          </div>
+          <div>
+            <span>{display?.periodLabel ?? "Period pending"}</span>
+            <small>{display?.seqLabel ?? "Seq pending"} / {display?.syncLabel ?? "Polling"}</small>
+          </div>
+          <nav className="public-display-actions" aria-label="Public display actions">
+            <a
+              href={buildPublicScoreboardLink(matchId)}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate(buildPublicScoreboardLink(matchId));
+              }}
+            >
+              Normal Scoreboard
+            </a>
+            <button type="button" onClick={() => void refreshPublicScoreboard()}>
+              Refresh
+            </button>
+          </nav>
+        </header>
+
+        {message ? <Notice {...message} /> : null}
+        {!display ? <p className="public-display-loading">Loading scoreboard...</p> : null}
+        {display ? (
+          <>
+            <div className="public-display-scoreboard">
+              <PublicDisplayTeamPanel side="home" team={display.home} />
+              <div className="public-display-center">
+                <div className="public-display-game-clock">
+                  <span>Game Clock</span>
+                  <strong>{display.gameClock.label}</strong>
+                  <small>{display.gameClock.stateLabel}</small>
+                </div>
+                <div className="public-display-shot-clock">
+                  <span>Shot</span>
+                  <strong>{display.shotClock.label}</strong>
+                  <small>{display.shotClock.stateLabel}</small>
+                </div>
+              </div>
+              <PublicDisplayTeamPanel side="away" team={display.away} />
+            </div>
+
+            <dl className="public-display-strip">
+              <div><dt>HOME Fouls</dt><dd>{display.home.fouls}</dd></div>
+              <div><dt>HOME Timeouts</dt><dd>{display.home.timeouts}</dd></div>
+              <div><dt>Active Timeout</dt><dd>{display.activeTimeoutLabel}</dd></div>
+              <div><dt>AWAY Timeouts</dt><dd>{display.away.timeouts}</dd></div>
+              <div><dt>AWAY Fouls</dt><dd>{display.away.fouls}</dd></div>
+            </dl>
+
+            {display.finalLabel ? (
+              <div className="public-display-final" role="status">{display.finalLabel}</div>
+            ) : null}
+          </>
+        ) : null}
+      </section>
+    </main>
+  );
+}
+
+function PublicDisplayTeamPanel({
+  side,
+  team
+}: {
+  side: "home" | "away";
+  team: {
+    label: string;
+    teamName: string;
+    score: number;
+  };
+}) {
+  return (
+    <article className={`public-display-team ${side}`}>
+      <span>{team.label}</span>
+      <h1>{team.teamName}</h1>
+      <strong>{team.score}</strong>
+    </article>
   );
 }
 
@@ -3877,15 +4034,18 @@ function PublicScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
   const links = getPublicScheduleLinks(match);
   return (
     <span className="inline-actions">
-      <a
-        href={links.scoreboard.href}
-        onClick={(event) => {
-          event.preventDefault();
-          navigate(links.scoreboard.href);
-        }}
-      >
-        {links.scoreboard.label}
-      </a>
+      {[links.scoreboard, links.display].map((link) => (
+        <a
+          key={link.href}
+          href={link.href}
+          onClick={(event) => {
+            event.preventDefault();
+            navigate(link.href);
+          }}
+        >
+          {link.label}
+        </a>
+      ))}
     </span>
   );
 }
@@ -4785,6 +4945,8 @@ function RoutedApp() {
         );
       case "public-scoreboard":
         return <PublicScoreboardPage matchId={route.matchId} />;
+      case "public-scoreboard-display":
+        return <PublicScoreboardDisplayPage matchId={route.matchId} />;
       case "public-tournaments":
         return <PublicTournamentsPage />;
       case "public-tournament-schedule":
@@ -4797,6 +4959,10 @@ function RoutedApp() {
         return <HomePage />;
     }
   }, [route]);
+
+  if (route.name === "public-scoreboard-display") {
+    return content;
+  }
 
   return <Shell>{content}</Shell>;
 }

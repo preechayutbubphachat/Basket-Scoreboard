@@ -508,6 +508,191 @@ label {
   font-size: 48px;
 }
 
+.public-display-page {
+  align-items: center;
+  background: #070a12;
+  color: #f8fafc;
+  display: flex;
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.public-display-frame {
+  aspect-ratio: 16 / 9;
+  background: #0d1424;
+  border: 1px solid #2d3a52;
+  border-radius: 8px;
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 18px;
+  grid-template-rows: auto 1fr auto auto;
+  margin: 0 auto;
+  max-height: calc(100vh - 36px);
+  max-width: calc(100vw - 36px);
+  overflow: hidden;
+  padding: 24px;
+  width: min(100%, 1600px);
+}
+
+.public-display-header {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr auto auto;
+}
+
+.public-display-header span,
+.public-display-team span,
+.public-display-game-clock span,
+.public-display-shot-clock span,
+.public-display-strip dt {
+  color: #9fb2d2;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.public-display-header strong {
+  color: #f8fafc;
+  display: block;
+  font-size: 1.6rem;
+}
+
+.public-display-header small {
+  color: #dbeafe;
+  display: block;
+  font-weight: 700;
+  text-align: right;
+}
+
+.public-display-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.public-display-actions a,
+.public-display-actions button {
+  background: #eab308;
+  border: 0;
+  border-radius: 6px;
+  color: #111827;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.public-display-scoreboard {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.72fr) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.public-display-team,
+.public-display-center,
+.public-display-game-clock,
+.public-display-shot-clock,
+.public-display-strip div {
+  background: #111827;
+  border: 1px solid #314158;
+  border-radius: 8px;
+}
+
+.public-display-team {
+  display: grid;
+  gap: 12px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 22px;
+  text-align: center;
+}
+
+.public-display-team h1 {
+  align-self: center;
+  color: #f8fafc;
+  font-size: 2.4rem;
+  line-height: 1.05;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.public-display-team strong {
+  color: #facc15;
+  font-size: 8rem;
+  line-height: 0.9;
+}
+
+.public-display-center {
+  display: grid;
+  gap: 14px;
+  grid-template-rows: 1fr 0.72fr;
+  padding: 14px;
+}
+
+.public-display-game-clock,
+.public-display-shot-clock {
+  align-content: center;
+  display: grid;
+  gap: 8px;
+  text-align: center;
+}
+
+.public-display-game-clock strong {
+  color: #67e8f9;
+  font-size: 4.7rem;
+  line-height: 0.95;
+}
+
+.public-display-shot-clock strong {
+  color: #fb7185;
+  font-size: 4.2rem;
+  line-height: 0.95;
+}
+
+.public-display-game-clock small,
+.public-display-shot-clock small {
+  color: #dbeafe;
+  font-weight: 800;
+}
+
+.public-display-strip {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+}
+
+.public-display-strip div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 13px;
+  text-align: center;
+}
+
+.public-display-strip dd {
+  color: #f8fafc;
+  font-size: 1.25rem;
+  font-weight: 900;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.public-display-final,
+.public-display-loading {
+  background: #14532d;
+  border-radius: 8px;
+  color: #dcfce7;
+  font-size: 1.4rem;
+  font-weight: 900;
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+}
+
 .state-strip {
   display: grid;
   gap: 10px;
@@ -603,6 +788,43 @@ th {
   .score-actions,
   .clock-display {
     grid-template-columns: 1fr;
+  }
+
+  .public-display-page {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .public-display-frame {
+    aspect-ratio: auto;
+    border-radius: 0;
+    max-height: none;
+    max-width: none;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  .public-display-header,
+  .public-display-scoreboard,
+  .public-display-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .public-display-header small {
+    text-align: left;
+  }
+
+  .public-display-actions {
+    flex-wrap: wrap;
+  }
+
+  .public-display-team strong {
+    font-size: 5.5rem;
+  }
+
+  .public-display-game-clock strong,
+  .public-display-shot-clock strong {
+    font-size: 3.4rem;
   }
 
   .user-summary {
