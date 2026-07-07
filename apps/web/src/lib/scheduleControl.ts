@@ -79,6 +79,10 @@ export function buildAdminTournamentStandingsLink(tournamentId: string) {
   return `/admin/tournaments/${encodeURIComponent(tournamentId)}/standings`;
 }
 
+export function buildAdminTournamentLiveDashboardLink(tournamentId: string) {
+  return `/admin/tournaments/${encodeURIComponent(tournamentId)}/live-dashboard`;
+}
+
 export function buildPublicTournamentScheduleLink(tournamentId: string) {
   return `/public/tournaments/${encodeURIComponent(tournamentId)}/schedule`;
 }
@@ -90,6 +94,7 @@ export function buildPublicTournamentStandingsLink(tournamentId: string) {
 export function buildTournamentQuickLinks(tournamentId: string): TournamentQuickLink[] {
   return [
     { href: buildAdminTournamentScheduleLink(tournamentId), label: "Schedule", private: true },
+    { href: buildAdminTournamentLiveDashboardLink(tournamentId), label: "Live Dashboard", private: true },
     { href: buildAdminTournamentStandingsLink(tournamentId), label: "Standings", private: true },
     { href: buildPublicTournamentScheduleLink(tournamentId), label: "Public Schedule", private: false },
     { href: buildPublicTournamentStandingsLink(tournamentId), label: "Public Standings", private: false }

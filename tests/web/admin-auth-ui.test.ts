@@ -148,6 +148,15 @@ import {
   hasPublicStandingsMutationControls
 } from "../../apps/web/src/lib/scheduleControl";
 import {
+  buildAdminTournamentLiveDashboardLink,
+  buildLiveDashboardCard,
+  buildLiveDashboardFilters,
+  buildLiveDashboardSummary,
+  buildOperatorTournamentLiveDashboardLink,
+  filterLiveDashboardMatches,
+  getLiveDashboardEmptyState
+} from "../../apps/web/src/lib/liveDashboardControl";
+import {
   buildMatchStartChecklist,
   buildLifecycleCommandPayload,
   buildLifecycleControlState,
@@ -499,6 +508,12 @@ const tournamentSchedule: TournamentScheduleResponse = {
       awayTeamId: "away-team",
       awayTeamName: "Chiang Mai AWAY",
       status: "LIVE",
+      periodNumber: 2,
+      periodType: "REGULATION",
+      gameClockRemainingMs: 385000,
+      gameClockRunning: false,
+      shotClockRemainingMs: 12000,
+      shotClockRunning: false,
       homeScore: 10,
       awayScore: 8,
       currentSeq: 3,
@@ -1246,15 +1261,23 @@ describe("web API client", () => {
   });
 
   test("reads protected and public tournament schedules without CSRF", async () => {
+    const liveDashboard = {
+      tournamentId: "tournament-1",
+      tournament: tournamentList.tournaments[0],
+      generatedAt: tournamentSchedule.generatedAt,
+      matches: []
+    };
     const fetchMock = vi.fn<FetchLike>()
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentList }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentSchedule }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: liveDashboard }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentList }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, data: tournamentSchedule }));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
 
     await expect(client.getTournaments()).resolves.toEqual(tournamentList.tournaments);
     await expect(client.getTournamentSchedule("tournament-1")).resolves.toEqual(tournamentSchedule);
+    await expect(client.getTournamentLiveDashboard("tournament-1")).resolves.toEqual(liveDashboard);
     await expect(client.getPublicTournaments()).resolves.toEqual(tournamentList.tournaments);
     await expect(client.getPublicTournamentSchedule("tournament-1")).resolves.toEqual(tournamentSchedule);
 
@@ -1270,11 +1293,16 @@ describe("web API client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/v1/public/tournaments",
+      "/api/v1/tournaments/tournament-1/live-dashboard",
       expect.objectContaining({ credentials: "include" })
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
+      "/api/v1/public/tournaments",
+      expect.objectContaining({ credentials: "include" })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
       "/api/v1/public/tournaments/tournament-1/schedule",
       expect.objectContaining({ credentials: "include" })
     );
@@ -2268,6 +2296,7 @@ describe("tournament schedule UI policy", () => {
     });
     expect(buildTournamentQuickLinks("tournament 1")).toEqual([
       { href: "/admin/tournaments/tournament%201/schedule", label: "Schedule", private: true },
+      { href: "/admin/tournaments/tournament%201/live-dashboard", label: "Live Dashboard", private: true },
       { href: "/admin/tournaments/tournament%201/standings", label: "Standings", private: true },
       { href: "/public/tournaments/tournament%201/schedule", label: "Public Schedule", private: false },
       { href: "/public/tournaments/tournament%201/standings", label: "Public Standings", private: false }
@@ -2431,6 +2460,67 @@ describe("tournament schedule UI policy", () => {
       title: "No scheduled matches",
       description: "This tournament does not have scheduled matches yet."
     });
+  });
+
+  test("builds protected live dashboard links, filters, card labels, and warning summaries", () => {
+    const match = {
+      ...tournamentSchedule.matches[0],
+      tournamentId: "tournament-1",
+      period: tournamentSchedule.matches[0].periodNumber ?? 1,
+      periodType: tournamentSchedule.matches[0].periodType ?? "REGULATION",
+      gameClockRemainingMs: tournamentSchedule.matches[0].gameClockRemainingMs ?? 0,
+      gameClockRunning: tournamentSchedule.matches[0].gameClockRunning ?? false,
+      shotClockRemainingMs: tournamentSchedule.matches[0].shotClockRemainingMs ?? null,
+      shotClockRunning: tournamentSchedule.matches[0].shotClockRunning ?? false,
+      warnings: [
+        { code: "CLOCK_STOPPED_LIVE", label: "Live game clock stopped", severity: "WARNING" as const },
+        { code: "CHECKLIST_INCOMPLETE", label: "Checklist incomplete", severity: "INFO" as const }
+      ],
+      links: {
+        score: `/operator/matches/${scoreboardProjection.matchId}/score`,
+        fouls: `/operator/matches/${scoreboardProjection.matchId}/fouls`,
+        clock: `/operator/matches/${scoreboardProjection.matchId}/clock`,
+        timeouts: `/operator/matches/${scoreboardProjection.matchId}/timeouts`,
+        corrections: `/operator/matches/${scoreboardProjection.matchId}/corrections`,
+        summary: `/operator/matches/${scoreboardProjection.matchId}/summary`,
+        replay: `/operator/matches/${scoreboardProjection.matchId}/replay`,
+        auditLog: `/operator/matches/${scoreboardProjection.matchId}/audit-log`,
+        publicScoreboard: `/public/scoreboard/${scoreboardProjection.matchId}`
+      }
+    };
+
+    expect(buildAdminTournamentLiveDashboardLink("tournament 1")).toBe("/admin/tournaments/tournament%201/live-dashboard");
+    expect(buildOperatorTournamentLiveDashboardLink("tournament 1")).toBe("/operator/tournaments/tournament%201/live-dashboard");
+    expect(buildLiveDashboardFilters()).toEqual([
+      { value: "all", label: "All" },
+      { value: "live", label: "Live" },
+      { value: "scheduled", label: "Scheduled" },
+      { value: "finished", label: "Finished" },
+      { value: "warnings", label: "Warnings" }
+    ]);
+    expect(buildLiveDashboardSummary([match])).toEqual({
+      total: 1,
+      live: 1,
+      scheduled: 0,
+      finished: 0,
+      warnings: 1
+    });
+    expect(filterLiveDashboardMatches([match], "warnings")).toHaveLength(1);
+    expect(buildLiveDashboardCard(match)).toMatchObject({
+      matchupLabel: "Bangkok HOME vs Chiang Mai AWAY",
+      scoreLabel: "10 - 8",
+      locationLabel: "Court A",
+      periodLabel: "REGULATION P2",
+      gameClockLabel: "6:25 stopped",
+      shotClockLabel: "12 stopped",
+      seqLabel: "Seq 3"
+    });
+    expect(getLiveDashboardEmptyState(0, 0, "all")).toBe("No matches scheduled yet.");
+    expect(getLiveDashboardEmptyState(1, 0, "live")).toBe("No live matches right now.");
+    expect(JSON.stringify(match.links)).toContain("/operator/matches/");
+    expect(JSON.stringify(Object.values(getPublicScheduleLinks(tournamentSchedule.matches[0])).filter(Boolean))).not.toMatch(
+      /live-dashboard|operator|admin|audit-log|replay|corrections/i
+    );
   });
 
   test("builds venue and court management payloads and court dropdown options", () => {

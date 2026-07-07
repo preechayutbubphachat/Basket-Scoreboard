@@ -229,6 +229,64 @@ describe("alpha tournament public schedule", () => {
     }
   });
 
+  it("lets ADMIN read protected live dashboard rows without appending match events or exposing private metadata", async () => {
+    const { pool, calls } = createTournamentSchedulePool();
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/tournaments/${tournamentId}/live-dashboard`,
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        ok: true,
+        data: {
+          tournamentId,
+          tournament: {
+            tournamentId,
+            name: "Alpha Cup"
+          },
+          matches: expect.arrayContaining([
+            expect.objectContaining({
+              matchId,
+              homeTeamName: "Bangkok Home",
+              awayTeamName: "Chiang Mai Away",
+              homeScore: 18,
+              awayScore: 14,
+              status: "LIVE",
+              period: 1,
+              periodType: "REGULATION",
+              gameClockRemainingMs: 600000,
+              gameClockRunning: false,
+              currentSeq: 8,
+              warnings: expect.arrayContaining([
+                expect.objectContaining({ code: "CLOCK_STOPPED_LIVE" }),
+                expect.objectContaining({ code: "OFFICIALS_MISSING" })
+              ]),
+              links: expect.objectContaining({
+                score: `/operator/matches/${matchId}/score`,
+                fouls: `/operator/matches/${matchId}/fouls`,
+                clock: `/operator/matches/${matchId}/clock`,
+                corrections: `/operator/matches/${matchId}/corrections`,
+                publicScoreboard: `/public/scoreboard/${matchId}`
+              })
+            })
+          ])
+        }
+      });
+      expect(JSON.stringify(response.json())).not.toMatch(/actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|correctionDetails/i);
+      const sqlText = calls.map((call) => call.sql).join("\n").toLowerCase();
+      expect(sqlText).not.toContain("insert into match_events");
+      expect(sqlText).not.toContain(`update ${"match_events"}`);
+      expect(sqlText).not.toContain(`delete from ${"match_events"}`);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("derives role-aware officials, roster, and lineup state from existing setup rows", async () => {
     const { pool } = createTournamentSchedulePool([], {
       officials: [
@@ -490,8 +548,15 @@ describe("alpha tournament public schedule", () => {
         url: `/api/v1/tournaments/${tournamentId}/schedule`,
         headers: { "x-dev-user-role": "VIEWER" }
       });
+      const dashboardViewer = await app.inject({
+        method: "GET",
+        url: `/api/v1/tournaments/${tournamentId}/live-dashboard`,
+        headers: { "x-dev-user-role": "VIEWER" }
+      });
       expect(viewer.statusCode).toBe(403);
       expect(viewer.json()).toMatchObject({ error: { reasonCode: "FORBIDDEN" } });
+      expect(dashboardViewer.statusCode).toBe(403);
+      expect(dashboardViewer.json()).toMatchObject({ error: { reasonCode: "FORBIDDEN" } });
     } finally {
       await app.close();
     }
@@ -540,11 +605,18 @@ describe("alpha tournament public schedule", () => {
     const app = buildApiApp({ pool: pool as never });
 
     try {
+      const protectedDashboardResponse = await app.inject({
+        method: "GET",
+        url: "/api/v1/tournaments/unknown-tournament/live-dashboard",
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
       const response = await app.inject({
         method: "GET",
         url: "/api/v1/public/tournaments/unknown-tournament/schedule"
       });
 
+      expect(protectedDashboardResponse.statusCode).toBe(404);
+      expect(protectedDashboardResponse.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_FOUND" } });
       expect(response.statusCode).toBe(404);
       expect(response.json()).toMatchObject({ error: { reasonCode: "MATCH_NOT_FOUND" } });
     } finally {

@@ -31,6 +31,7 @@ import type {
   ShotClockSetPayload,
   TimeoutEndedPayload,
   TimeoutGrantedPayload,
+  TournamentLiveDashboardResponse,
   TournamentScheduleResponse,
   TournamentStandingsResponse,
   TournamentSetupTeam,
@@ -299,6 +300,12 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     },
     async getTournamentSchedule(tournamentId: string) {
       const data = await request<TournamentScheduleResponse>(`/tournaments/${encodeURIComponent(tournamentId)}/schedule`);
+      return data;
+    },
+    async getTournamentLiveDashboard(tournamentId: string) {
+      const data = await request<TournamentLiveDashboardResponse>(
+        `/tournaments/${encodeURIComponent(tournamentId)}/live-dashboard`
+      );
       return data;
     },
     async getTournamentStandings(tournamentId: string) {

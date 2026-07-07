@@ -1,7 +1,10 @@
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type {
+  LiveDashboardMatchItem,
+  LiveDashboardWarning,
   ScheduleConflictWarning,
   TournamentScheduleMatch,
+  TournamentLiveDashboardResponse,
   TournamentScheduleResponse,
   TournamentSummary
 } from "@basket-scoreboard/api-contracts";
@@ -49,6 +52,19 @@ type ProjectionLike = {
   homeScore?: unknown;
   awayScore?: unknown;
   currentSeq?: unknown;
+  periodNumber?: unknown;
+  period?: unknown;
+  periodType?: unknown;
+  gameClockRemainingMs?: unknown;
+  shotClockRemainingMs?: unknown;
+  gameClock?: {
+    remainingMs?: unknown;
+    running?: unknown;
+  };
+  shotClock?: {
+    remainingMs?: unknown;
+    running?: unknown;
+  };
 };
 
 export async function listTournamentSummaries(pool: Pool, options: { publicOnly?: boolean } = {}) {
@@ -126,6 +142,23 @@ export async function getTournamentSchedule(
   };
 }
 
+export async function getTournamentLiveDashboard(
+  pool: Pool,
+  tournamentId: string
+): Promise<TournamentLiveDashboardResponse | null> {
+  const schedule = await getTournamentSchedule(pool, tournamentId);
+  if (!schedule) {
+    return null;
+  }
+
+  return {
+    tournamentId: schedule.tournament.tournamentId,
+    tournament: schedule.tournament,
+    generatedAt: schedule.generatedAt,
+    matches: schedule.matches.map(toLiveDashboardMatch)
+  };
+}
+
 export async function getTournamentSummary(
   pool: Pool,
   tournamentId: string,
@@ -187,6 +220,14 @@ function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
     ? row.match_status
     : projectedStatus ?? row.match_status ?? "SCHEDULED";
   const currentSeq = numberOrDefault(projection.currentSeq, numberOrDefault(row.last_event_seq, 0));
+  const gameClockRemainingMs = numberOrDefault(
+    projection.gameClock?.remainingMs,
+    numberOrDefault(projection.gameClockRemainingMs, 600000)
+  );
+  const shotClockRemainingMs = numberOrDefault(
+    projection.shotClock?.remainingMs,
+    numberOrDefault(projection.shotClockRemainingMs, 24000)
+  );
 
   return {
     matchId: row.match_id,
@@ -203,11 +244,95 @@ function serializeScheduleRow(row: ScheduleRow): TournamentScheduleMatch {
     awayTeamId: row.away_team_id,
     awayTeamName: labelOrNull(row.away_team_name) ?? "AWAY",
     status,
+    periodNumber: numberOrDefault(projection.periodNumber, numberOrDefault(projection.period, 1)),
+    periodType: stringOrNull(projection.periodType) ?? "REGULATION",
+    gameClockRemainingMs,
+    gameClockRunning: booleanOrDefault(projection.gameClock?.running, false),
+    shotClockRemainingMs,
+    shotClockRunning: booleanOrDefault(projection.shotClock?.running, false),
     homeScore: numberOrDefault(projection.homeScore, 0),
     awayScore: numberOrDefault(projection.awayScore, 0),
     currentSeq,
     publicScoreboardPath: `/public/scoreboard/${encodeURIComponent(row.match_id)}`
   };
+}
+
+function toLiveDashboardMatch(match: TournamentScheduleMatch): LiveDashboardMatchItem {
+  const links = match.operations ?? buildMatchOperationLinks(match.matchId);
+  const warnings = deriveLiveDashboardWarnings(match);
+
+  return {
+    matchId: match.matchId,
+    tournamentId: match.tournamentId ?? "",
+    homeTeamName: match.homeTeamName,
+    awayTeamName: match.awayTeamName,
+    venueLabel: match.venueLabel,
+    courtLabel: match.courtLabel,
+    scheduledAt: match.scheduledAt,
+    status: match.status,
+    period: match.periodNumber ?? 1,
+    periodType: match.periodType ?? "REGULATION",
+    homeScore: match.homeScore,
+    awayScore: match.awayScore,
+    gameClockRemainingMs: match.gameClockRemainingMs ?? 600000,
+    gameClockRunning: match.gameClockRunning ?? false,
+    shotClockRemainingMs: match.shotClockRemainingMs ?? 24000,
+    shotClockRunning: match.shotClockRunning ?? false,
+    currentSeq: match.currentSeq,
+    readiness: match.readiness ?? null,
+    warnings,
+    links: {
+      score: links.operatorScoreUrl,
+      fouls: links.operatorFoulsUrl,
+      clock: links.operatorClockUrl,
+      timeouts: links.operatorTimeoutsUrl,
+      corrections: `/operator/matches/${encodeURIComponent(match.matchId)}/corrections`,
+      summary: links.summaryUrl,
+      replay: links.replayUrl,
+      auditLog: links.auditLogUrl,
+      publicScoreboard: match.publicScoreboardPath
+    }
+  };
+}
+
+function deriveLiveDashboardWarnings(match: TournamentScheduleMatch): LiveDashboardWarning[] {
+  const warnings: LiveDashboardWarning[] = [];
+  const normalizedStatus = match.status.toUpperCase();
+
+  if (normalizedStatus === "LIVE" && !match.gameClockRunning) {
+    warnings.push({ code: "CLOCK_STOPPED_LIVE", label: "Live game clock stopped", severity: "WARNING" });
+  }
+  if (normalizedStatus === "LIVE" && !match.shotClockRunning) {
+    warnings.push({ code: "SHOT_CLOCK_STOPPED_LIVE", label: "Live shot clock stopped", severity: "WARNING" });
+  }
+  if (!match.readiness) {
+    warnings.push({ code: "PROJECTION_STALE", label: "Readiness unknown", severity: "INFO" });
+  } else {
+    if (match.readiness.officials.state === "MISSING") {
+      warnings.push({ code: "OFFICIALS_MISSING", label: "Officials missing", severity: "WARNING" });
+    }
+    if (match.readiness.roster.state === "MISSING") {
+      warnings.push({ code: "ROSTER_MISSING", label: "Roster missing", severity: "WARNING" });
+    }
+    if (match.readiness.lineup.state === "MISSING") {
+      warnings.push({ code: "LINEUP_MISSING", label: "Lineup missing", severity: "WARNING" });
+    }
+    if (
+      match.readiness.officials.state !== "READY"
+      || match.readiness.roster.state !== "READY"
+      || match.readiness.lineup.state !== "READY"
+    ) {
+      warnings.push({ code: "CHECKLIST_INCOMPLETE", label: "Checklist incomplete", severity: "INFO" });
+    }
+  }
+  if ((match.conflicts?.length ?? 0) > 0) {
+    warnings.push({ code: "SCHEDULE_CONFLICT", label: "Schedule conflict warning", severity: "WARNING" });
+  }
+  if (!Number.isFinite(match.currentSeq)) {
+    warnings.push({ code: "PROJECTION_STALE", label: "Projection sequence unknown", severity: "INFO" });
+  }
+
+  return warnings;
 }
 
 function deriveScheduleConflicts(matches: TournamentScheduleMatch[]) {
@@ -289,6 +414,10 @@ function serializeDate(value: Date | string | null) {
 function numberOrDefault(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function booleanOrDefault(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function stringOrNull(value: unknown) {

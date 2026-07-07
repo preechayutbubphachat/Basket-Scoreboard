@@ -22,6 +22,7 @@ import type {
   ReplayItem,
   ScoreboardProjection,
   TimeoutRequestedBy,
+  TournamentLiveDashboardResponse,
   TournamentScheduleMatch,
   TournamentScheduleResponse,
   TournamentStandingsResponse,
@@ -186,6 +187,16 @@ import {
   type ScheduleStatusFilter,
   type VenueFormState
 } from "./lib/scheduleControl";
+import {
+  buildAdminTournamentLiveDashboardLink,
+  buildLiveDashboardCard,
+  buildLiveDashboardFilters,
+  buildLiveDashboardSummary,
+  buildOperatorTournamentLiveDashboardLink,
+  filterLiveDashboardMatches,
+  getLiveDashboardEmptyState,
+  type LiveDashboardFilter
+} from "./lib/liveDashboardControl";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
   applyRealtimeProjectionUpdate,
@@ -204,6 +215,7 @@ type Route =
   | { name: "admin-matches" }
   | { name: "admin-tournaments" }
   | { name: "admin-tournament-schedule"; tournamentId: string }
+  | { name: "admin-tournament-live-dashboard"; tournamentId: string }
   | { name: "admin-tournament-standings"; tournamentId: string }
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
@@ -212,6 +224,7 @@ type Route =
   | { name: "admin-replay"; matchId: string }
   | { name: "admin-audit-log"; matchId: string }
   | { name: "operator-matches" }
+  | { name: "operator-tournament-live-dashboard"; tournamentId: string }
   | { name: "operator-score"; matchId: string }
   | { name: "operator-fouls"; matchId: string }
   | { name: "operator-clock"; matchId: string }
@@ -237,6 +250,11 @@ function parseRoute(pathname: string): Route {
   const adminTournamentId = adminTournamentScheduleMatch?.[1];
   if (adminTournamentId) {
     return { name: "admin-tournament-schedule", tournamentId: decodeURIComponent(adminTournamentId) };
+  }
+  const adminTournamentLiveDashboardMatch = pathname.match(/^\/admin\/tournaments\/([^/]+)\/live-dashboard$/);
+  const adminLiveDashboardTournamentId = adminTournamentLiveDashboardMatch?.[1];
+  if (adminLiveDashboardTournamentId) {
+    return { name: "admin-tournament-live-dashboard", tournamentId: decodeURIComponent(adminLiveDashboardTournamentId) };
   }
   const adminTournamentStandingsMatch = pathname.match(/^\/admin\/tournaments\/([^/]+)\/standings$/);
   const adminStandingsTournamentId = adminTournamentStandingsMatch?.[1];
@@ -312,6 +330,11 @@ function parseRoute(pathname: string): Route {
   const operatorAuditMatchId = operatorAuditMatch?.[1];
   if (operatorAuditMatchId) {
     return { name: "operator-audit-log", matchId: decodeURIComponent(operatorAuditMatchId) };
+  }
+  const operatorTournamentLiveDashboardMatch = pathname.match(/^\/operator\/tournaments\/([^/]+)\/live-dashboard$/);
+  const operatorLiveDashboardTournamentId = operatorTournamentLiveDashboardMatch?.[1];
+  if (operatorLiveDashboardTournamentId) {
+    return { name: "operator-tournament-live-dashboard", tournamentId: decodeURIComponent(operatorLiveDashboardTournamentId) };
   }
   const publicScoreboardMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)$/);
   const publicMatchId = publicScoreboardMatch?.[1];
@@ -881,6 +904,9 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           <a className="button-link secondary" href={buildAdminTournamentStandingsLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentStandingsLink(tournamentId)); }}>
             Open Standings
           </a>
+          <a className="button-link secondary" href={buildAdminTournamentLiveDashboardLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentLiveDashboardLink(tournamentId)); }}>
+            Main Live Dashboard
+          </a>
           <a className="button-link secondary public-link" href={buildPublicTournamentScheduleLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentScheduleLink(tournamentId)); }}>
             Public Schedule
           </a>
@@ -1109,6 +1135,184 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
       ) : null}
       {matches.length > 0 ? <ScheduleTable matches={matches} mode="admin" /> : null}
     </section>
+  );
+}
+
+function TournamentLiveDashboardPage({
+  tournamentId,
+  mode
+}: {
+  tournamentId: string;
+  mode: "admin" | "operator";
+}) {
+  const { api } = useCurrentUser();
+  const [dashboard, setDashboard] = useState<TournamentLiveDashboardResponse | null>(null);
+  const [filter, setFilter] = useState<LiveDashboardFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+
+  async function loadDashboard(options: { silent?: boolean } = {}) {
+    if (!options.silent) {
+      setLoading(true);
+      setMessage(null);
+    }
+    try {
+      const nextDashboard = await api.getTournamentLiveDashboard(tournamentId);
+      setDashboard(nextDashboard);
+      setLastUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      if (!options.silent) {
+        setMessage(toUiMessage(error));
+      }
+    } finally {
+      if (!options.silent) {
+        setLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [api, tournamentId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadDashboard({ silent: true }), 5000);
+    return () => window.clearInterval(timer);
+  }, [api, tournamentId]);
+
+  const matches = dashboard?.matches ?? [];
+  const filteredMatches = filterLiveDashboardMatches(matches, filter);
+  const summary = buildLiveDashboardSummary(matches);
+  const emptyState = getLiveDashboardEmptyState(matches.length, filteredMatches.length, filter);
+  const scheduleHref = buildAdminTournamentScheduleLink(tournamentId);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">{mode === "admin" ? "Admin" : "Operator"}</p>
+          <h1>Main Live Dashboard</h1>
+          <p className="muted">{dashboard ? dashboard.tournament.name : `Tournament ID: ${tournamentId}`}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href={mode === "admin" ? "/admin/tournaments" : "/operator/matches"} onClick={(event) => { event.preventDefault(); navigate(mode === "admin" ? "/admin/tournaments" : "/operator/matches"); }}>
+            Back
+          </a>
+          {mode === "admin" ? (
+            <a className="button-link secondary" href={scheduleHref} onClick={(event) => { event.preventDefault(); navigate(scheduleHref); }}>
+              Schedule
+            </a>
+          ) : null}
+          <button type="button" onClick={() => void loadDashboard()}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {dashboard ? (
+        <dl className="state-strip">
+          <div><dt>Total</dt><dd>{summary.total}</dd></div>
+          <div><dt>Live</dt><dd>{summary.live}</dd></div>
+          <div><dt>Scheduled</dt><dd>{summary.scheduled}</dd></div>
+          <div><dt>Finished</dt><dd>{summary.finished}</dd></div>
+          <div><dt>Warnings</dt><dd>{summary.warnings}</dd></div>
+          <div><dt>Last updated</dt><dd>{lastUpdatedAt ? formatDate(lastUpdatedAt) : formatDate(dashboard.generatedAt)}</dd></div>
+        </dl>
+      ) : null}
+      <div className="button-row" role="group" aria-label="Live dashboard filter">
+        {buildLiveDashboardFilters().map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            className={filter === item.value ? "active" : undefined}
+            onClick={() => setFilter(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {loading ? <p>Loading live dashboard...</p> : null}
+      {!loading && message && !dashboard ? <p className="muted">Live dashboard data unavailable. Refresh to retry.</p> : null}
+      {!loading && emptyState ? <section className="empty-state"><p>{emptyState}</p></section> : null}
+      {filteredMatches.length > 0 ? (
+        <div className="live-dashboard-grid" aria-label="Tournament live dashboard matches">
+          {filteredMatches.map((match) => (
+            <LiveDashboardMatchCard key={match.matchId} match={match} />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function LiveDashboardMatchCard({ match }: { match: TournamentLiveDashboardResponse["matches"][number] }) {
+  const card = buildLiveDashboardCard(match);
+  const hasCriticalWarning = match.warnings.some((warning) => warning.severity === "CRITICAL");
+  const hasWarning = match.warnings.some((warning) => warning.severity === "WARNING");
+  const cardClassName = ["live-dashboard-card", hasCriticalWarning ? "critical" : hasWarning ? "warning" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const links = [
+    { href: match.links.score, label: "Score" },
+    { href: match.links.fouls, label: "Fouls" },
+    { href: match.links.clock, label: "Clock" },
+    { href: match.links.timeouts, label: "Timeouts" },
+    { href: match.links.corrections, label: "Corrections" },
+    { href: match.links.summary, label: "Summary" },
+    { href: match.links.replay, label: "Replay" },
+    { href: match.links.auditLog, label: "Audit Log" },
+    { href: match.links.publicScoreboard, label: "Public Scoreboard" }
+  ];
+
+  return (
+    <article className={cardClassName}>
+      <div className="live-dashboard-card-header">
+        <div>
+          <p className="eyebrow">{card.locationLabel}</p>
+          <h2>{card.matchupLabel}</h2>
+          <p className="muted">{card.scheduleLabel}</p>
+        </div>
+        <div className="score-display compact" aria-label="Dashboard score">
+          {card.scoreLabel}
+        </div>
+      </div>
+      <dl className="state-strip compact">
+        <div><dt>Status</dt><dd>{match.status}</dd></div>
+        <div><dt>Period</dt><dd>{card.periodLabel}</dd></div>
+        <div><dt>Game clock</dt><dd>{card.gameClockLabel}</dd></div>
+        <div><dt>Shot clock</dt><dd>{card.shotClockLabel}</dd></div>
+        <div><dt>Seq</dt><dd>{card.seqLabel}</dd></div>
+      </dl>
+      <div className="readiness-badges" aria-label="Live dashboard warnings">
+        {match.warnings.length > 0 ? match.warnings.map((warning) => (
+          <span className={`readiness-badge ${warning.severity.toLowerCase()}`} key={warning.code}>
+            {warning.label}
+          </span>
+        )) : <span className="readiness-badge">No dashboard warnings</span>}
+      </div>
+      {match.readiness ? (
+        <dl className="setup-readiness compact" aria-label="Dashboard readiness">
+          <div><dt>Officials</dt><dd>{match.readiness.officials.state}</dd></div>
+          <div><dt>Roster</dt><dd>{match.readiness.roster.state}</dd></div>
+          <div><dt>Lineup</dt><dd>{match.readiness.lineup.state}</dd></div>
+          <div><dt>Checklist</dt><dd>{match.warnings.some((warning) => warning.code === "CHECKLIST_INCOMPLETE") ? "INCOMPLETE" : "READY"}</dd></div>
+        </dl>
+      ) : null}
+      <div className="inline-actions">
+        {links.map((link) => (
+          <a
+            key={link.href}
+            className={link.label === "Public Scoreboard" ? "public-link" : undefined}
+            href={link.href}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(link.href);
+            }}
+          >
+            {link.label}
+          </a>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -3726,6 +3930,17 @@ function MatchTable({ matches, mode }: { matches: OperatorMatchSummary[]; mode: 
                   </span>
                 ) : (
                   <span className="inline-actions">
+                    {match.tournamentId ? (
+                      <a
+                        href={buildOperatorTournamentLiveDashboardLink(match.tournamentId)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigate(buildOperatorTournamentLiveDashboardLink(match.tournamentId!));
+                        }}
+                      >
+                        Live Dashboard
+                      </a>
+                    ) : null}
                     <a
                       href={buildOperatorMatchScoreLink(match.matchId)}
                       onClick={(event) => {
@@ -4454,6 +4669,12 @@ function RoutedApp() {
             <AdminTournamentSchedulePage tournamentId={route.tournamentId} />
           </ProtectedRoute>
         );
+      case "admin-tournament-live-dashboard":
+        return (
+          <ProtectedRoute requireAdmin>
+            <TournamentLiveDashboardPage tournamentId={route.tournamentId} mode="admin" />
+          </ProtectedRoute>
+        );
       case "admin-tournament-standings":
         return (
           <ProtectedRoute requireAdmin>
@@ -4500,6 +4721,12 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireOperator>
             <OperatorMatchesPage />
+          </ProtectedRoute>
+        );
+      case "operator-tournament-live-dashboard":
+        return (
+          <ProtectedRoute requireOperator>
+            <TournamentLiveDashboardPage tournamentId={route.tournamentId} mode="operator" />
           </ProtectedRoute>
         );
       case "operator-score":
