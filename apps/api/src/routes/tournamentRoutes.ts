@@ -11,7 +11,12 @@ import {
 } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { apiError } from "../errors/apiErrors.js";
-import { getTournamentSchedule, listTournamentSummaries } from "../tournaments/tournamentScheduleService.js";
+import { canAccessOperatorMatches } from "../operator/operatorMatchService.js";
+import {
+  getTournamentLiveDashboard,
+  getTournamentSchedule,
+  listTournamentSummaries
+} from "../tournaments/tournamentScheduleService.js";
 import { getTournamentStandings } from "../tournaments/tournamentStandingsService.js";
 import {
   createScheduledTournamentMatch,
@@ -226,6 +231,41 @@ export function registerTournamentRoutes(
       return {
         ok: true,
         data: schedule
+      };
+    }
+  );
+
+  app.get<{ Params: { tournamentId: string } }>(
+    "/api/v1/tournaments/:tournamentId/live-dashboard",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      const user = request.user as AuthenticatedUser;
+      if (!canAccessOperatorMatches(user)) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Operator access is required"));
+      }
+
+      if (user.role !== "ADMIN" && user.assignedMatchIds.length === 0) {
+        return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Active match assignment is required"));
+      }
+
+      if (user.role !== "ADMIN") {
+        const schedule = await getTournamentSchedule(pool, request.params.tournamentId);
+        const hasTournamentAssignment = schedule?.matches.some((match) => user.assignedMatchIds.includes(match.matchId)) ?? false;
+        if (!hasTournamentAssignment) {
+          return reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Tournament match assignment is required"));
+        }
+      }
+
+      const dashboard = await getTournamentLiveDashboard(pool, request.params.tournamentId);
+      if (!dashboard) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Tournament live dashboard was not found"));
+      }
+
+      return {
+        ok: true,
+        data: dashboard
       };
     }
   );

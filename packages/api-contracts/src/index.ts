@@ -502,6 +502,12 @@ export type TournamentScheduleMatch = {
   awayTeamId: string | null;
   awayTeamName: string;
   status: string;
+  periodNumber?: number;
+  periodType?: string;
+  gameClockRemainingMs?: number;
+  gameClockRunning?: boolean;
+  shotClockRemainingMs?: number | null;
+  shotClockRunning?: boolean;
   homeScore: number;
   awayScore: number;
   currentSeq: number;
@@ -527,6 +533,54 @@ export type TournamentScheduleResponse = {
   tournament: TournamentSummary;
   matches: TournamentScheduleMatch[];
   generatedAt: string;
+};
+
+export type LiveDashboardWarning = {
+  code: string;
+  label: string;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+};
+
+export type LiveDashboardMatchLinks = {
+  score: string;
+  fouls: string;
+  clock: string;
+  timeouts: string;
+  corrections: string;
+  summary: string;
+  replay: string;
+  auditLog: string;
+  publicScoreboard: string;
+};
+
+export type LiveDashboardMatchItem = {
+  matchId: string;
+  tournamentId: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  venueLabel: string | null;
+  courtLabel: string | null;
+  scheduledAt: string | null;
+  status: string;
+  period: number;
+  periodType: string;
+  homeScore: number;
+  awayScore: number;
+  gameClockRemainingMs: number;
+  gameClockRunning: boolean;
+  shotClockRemainingMs: number | null;
+  shotClockRunning: boolean;
+  currentSeq: number;
+  readiness: MatchReadiness | null;
+  warnings: LiveDashboardWarning[];
+  links: LiveDashboardMatchLinks;
+};
+
+export type TournamentLiveDashboardResponse = {
+  tournamentId: string;
+  tournament: TournamentSummary;
+  generatedAt: string;
+  matches: LiveDashboardMatchItem[];
 };
 
 export type TournamentStandingsTieStatus = "CLEAR" | "TIE_UNRESOLVED";
