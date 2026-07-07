@@ -369,6 +369,10 @@ export function getPublicScheduleLinks(match: TournamentScheduleMatch) {
       href: match.publicScoreboardPath,
       label: "Open Scoreboard"
     },
+    display: {
+      href: `${match.publicScoreboardPath}/display`,
+      label: "Display Mode"
+    },
     summary: null,
     auditLog: null,
     replay: null,
