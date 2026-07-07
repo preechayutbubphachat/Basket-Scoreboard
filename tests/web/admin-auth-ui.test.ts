@@ -1634,13 +1634,25 @@ describe("web API client", () => {
       },
       shotClock: {
         label: "24",
-        stateLabel: "Stopped"
+        stateLabel: "Stopped",
+        className: "public-display-shot-clock"
       },
       periodLabel: "REG P1",
       statusLabel: "LIVE",
       seqLabel: "Seq 3",
       syncLabel: "Polling fallback active"
     });
+    expect(display.home.panelClassName).toContain("home-panel");
+    expect(display.away.panelClassName).toContain("away-panel");
+    expect(display.home.scoreClassName).toContain("score-pulse");
+    expect(display.systemStatus).toEqual([
+      { icon: "DB", label: "Projection", value: "Public" },
+      { icon: "SY", label: "Sync", value: "Poll" },
+      { icon: "WF", label: "Connection", value: "Poll" },
+      { icon: "SQ", label: "Seq", value: "3" },
+      { icon: "LS", label: "Last sync", value: expect.any(String) }
+    ]);
+    expect(display.recentEventTicker).toContain("Recent play updates");
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });
 
@@ -1672,6 +1684,34 @@ describe("web API client", () => {
     expect(display.finalLabel).toBe("Final 88 - 84");
     expect(display.seqLabel).toBe("Seq 12");
     expect(display.syncLabel).toBe("Realtime connected");
+  });
+
+  test("public display marks low and critical shot clock states without exposing commands", () => {
+    const lowDisplay = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      shotClockRemainingMs: 5000,
+      shotClock: { remainingMs: 5000, running: false, lastStartedAt: null }
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "RECONNECTING"
+    });
+    const criticalDisplay = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      shotClockRemainingMs: 3000,
+      shotClock: { remainingMs: 3000, running: false, lastStartedAt: null }
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "CONNECTED"
+    });
+
+    expect(lowDisplay.shotClock.className).toContain("shot-clock-low");
+    expect(lowDisplay.shotClock.className).not.toContain("shot-clock-critical");
+    expect(lowDisplay.systemStatus[1]).toEqual({ icon: "SY", label: "Sync", value: "Rejoin" });
+    expect(criticalDisplay.shotClock.className).toContain("shot-clock-low");
+    expect(criticalDisplay.shotClock.className).toContain("shot-clock-critical");
+    expect(JSON.stringify(criticalDisplay)).not.toMatch(/Add Score|Add Foul|Start Clock|Stop Clock|Submit Correction|command/i);
   });
 });
 
