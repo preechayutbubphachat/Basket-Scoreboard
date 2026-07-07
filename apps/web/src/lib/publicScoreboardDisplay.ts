@@ -9,6 +9,18 @@ export function buildPublicScoreboardDisplayLink(matchId: string) {
   return `${buildPublicScoreboardLink(matchId)}/display`;
 }
 
+export function isPublicDisplayKioskMode(search: string) {
+  return new URLSearchParams(search).get("kiosk") === "1";
+}
+
+export function getPublicDisplayControlsClassName(input: { kioskMode: boolean; controlsVisible: boolean }) {
+  return [
+    "public-display-shell",
+    input.kioskMode ? "kiosk-mode" : "",
+    input.controlsVisible ? "controls-visible" : "controls-hidden"
+  ].filter(Boolean).join(" ");
+}
+
 export function buildPublicScoreboardDisplayModel(
   projection: ScoreboardProjection,
   options: {

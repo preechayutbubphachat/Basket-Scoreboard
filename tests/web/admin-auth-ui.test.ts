@@ -177,6 +177,8 @@ import {
 import {
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardDisplayModel,
+  getPublicDisplayControlsClassName,
+  isPublicDisplayKioskMode,
   publicScoreboardDisplayHasPrivateExposure
 } from "../../apps/web/src/lib/publicScoreboardDisplay";
 import type {
@@ -1712,6 +1714,19 @@ describe("web API client", () => {
     expect(criticalDisplay.shotClock.className).toContain("shot-clock-low");
     expect(criticalDisplay.shotClock.className).toContain("shot-clock-critical");
     expect(JSON.stringify(criticalDisplay)).not.toMatch(/Add Score|Add Foul|Start Clock|Stop Clock|Submit Correction|command/i);
+  });
+
+  test("public display kiosk controls start hidden and remain compact without private links", () => {
+    expect(isPublicDisplayKioskMode("?kiosk=1")).toBe(true);
+    expect(isPublicDisplayKioskMode("?kiosk=true")).toBe(false);
+    expect(isPublicDisplayKioskMode("")).toBe(false);
+
+    const hiddenKioskClass = getPublicDisplayControlsClassName({ kioskMode: true, controlsVisible: false });
+    const visibleClass = getPublicDisplayControlsClassName({ kioskMode: false, controlsVisible: true });
+
+    expect(hiddenKioskClass).toBe("public-display-shell kiosk-mode controls-hidden");
+    expect(visibleClass).toBe("public-display-shell controls-visible");
+    expect(`${hiddenKioskClass} ${visibleClass}`).not.toMatch(/\/admin|\/operator|audit-log|replay|corrections|commandId|correlationId|correctionDetails/i);
   });
 });
 

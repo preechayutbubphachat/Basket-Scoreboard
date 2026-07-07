@@ -199,7 +199,9 @@ import {
 } from "./lib/liveDashboardControl";
 import {
   buildPublicScoreboardDisplayLink,
-  buildPublicScoreboardDisplayModel
+  buildPublicScoreboardDisplayModel,
+  getPublicDisplayControlsClassName,
+  isPublicDisplayKioskMode
 } from "./lib/publicScoreboardDisplay";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
@@ -3662,9 +3664,13 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
 
 function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
+  const kioskMode = isPublicDisplayKioskMode(window.location.search);
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const [controlsVisible, setControlsVisible] = useState(() => !kioskMode);
+  const [fullscreenSupported, setFullscreenSupported] = useState(false);
+  const [fullscreenActive, setFullscreenActive] = useState(false);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
@@ -3700,6 +3706,38 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     };
   }, [api, matchId, realtimeState]);
 
+  useEffect(() => {
+    const supportsFullscreen = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
+    setFullscreenSupported(supportsFullscreen);
+    const updateFullscreenState = () => setFullscreenActive(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", updateFullscreenState);
+  }, []);
+
+  useEffect(() => {
+    if (!controlsVisible) return;
+    const timeout = window.setTimeout(() => setControlsVisible(false), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [controlsVisible]);
+
+  useEffect(() => {
+    const revealControls = () => setControlsVisible(true);
+    window.addEventListener("keydown", revealControls);
+    return () => window.removeEventListener("keydown", revealControls);
+  }, []);
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen?.();
+        return;
+      }
+      await document.documentElement.requestFullscreen?.();
+    } catch {
+      setFullscreenSupported(false);
+    }
+  }
+
   const display = projection
     ? buildPublicScoreboardDisplayModel(projection, {
       nowMs,
@@ -3709,28 +3747,39 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     : null;
 
   return (
-    <main className="public-display-shell">
+    <main
+      className={getPublicDisplayControlsClassName({ kioskMode, controlsVisible })}
+      onClick={() => setControlsVisible(true)}
+      onFocus={() => setControlsVisible(true)}
+      onMouseMove={() => setControlsVisible(true)}
+      onPointerDown={() => setControlsVisible(true)}
+    >
       <section className="public-display-frame arena-layout" aria-label="16:9 public scoreboard display">
         <header className="arena-header">
           <div className="arena-match-state">
             <span>{display?.statusLabel ?? "Loading"}</span>
             <strong>{display?.periodLabel ?? "Period pending"}</strong>
           </div>
-          <nav className="arena-display-actions" aria-label="Public display actions">
-            <a
-              href={buildPublicScoreboardLink(matchId)}
-              onClick={(event) => {
-                event.preventDefault();
-                navigate(buildPublicScoreboardLink(matchId));
-              }}
-            >
-              Normal
-            </a>
-            <button type="button" onClick={() => void refreshPublicScoreboard()}>
-              Refresh
-            </button>
-          </nav>
         </header>
+        <nav className="arena-display-actions" aria-label="Public display actions">
+          <a
+            href={buildPublicScoreboardLink(matchId)}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate(buildPublicScoreboardLink(matchId));
+            }}
+          >
+            Normal
+          </a>
+          <button type="button" onClick={() => void refreshPublicScoreboard()}>
+            Refresh
+          </button>
+          {fullscreenSupported ? (
+            <button type="button" onClick={() => void toggleFullscreen()}>
+              {fullscreenActive ? "Exit" : "Fullscreen"}
+            </button>
+          ) : null}
+        </nav>
 
         {message ? <Notice {...message} /> : null}
         {!display ? <p className="public-display-loading">Loading scoreboard...</p> : null}
