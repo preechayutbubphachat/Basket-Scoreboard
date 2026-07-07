@@ -3709,18 +3709,14 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     : null;
 
   return (
-    <main className="public-display-page">
-      <section className="public-display-frame" aria-label="16:9 public scoreboard display">
-        <header className="public-display-header">
-          <div>
-            <span>Public Display</span>
-            <strong>{display?.statusLabel ?? "Loading"}</strong>
+    <main className="public-display-shell">
+      <section className="public-display-frame arena-layout" aria-label="16:9 public scoreboard display">
+        <header className="arena-header">
+          <div className="arena-match-state">
+            <span>{display?.statusLabel ?? "Loading"}</span>
+            <strong>{display?.periodLabel ?? "Period pending"}</strong>
           </div>
-          <div>
-            <span>{display?.periodLabel ?? "Period pending"}</span>
-            <small>{display?.seqLabel ?? "Seq pending"} / {display?.syncLabel ?? "Polling"}</small>
-          </div>
-          <nav className="public-display-actions" aria-label="Public display actions">
+          <nav className="arena-display-actions" aria-label="Public display actions">
             <a
               href={buildPublicScoreboardLink(matchId)}
               onClick={(event) => {
@@ -3728,7 +3724,7 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
                 navigate(buildPublicScoreboardLink(matchId));
               }}
             >
-              Normal Scoreboard
+              Normal
             </a>
             <button type="button" onClick={() => void refreshPublicScoreboard()}>
               Refresh
@@ -3740,15 +3736,19 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
         {!display ? <p className="public-display-loading">Loading scoreboard...</p> : null}
         {display ? (
           <>
-            <div className="public-display-scoreboard">
+            <div className="arena-scoreboard-grid">
               <PublicDisplayTeamPanel side="home" team={display.home} />
-              <div className="public-display-center">
+              <div className="central-clock-panel">
                 <div className="public-display-game-clock">
-                  <span>Game Clock</span>
+                  <span>Game</span>
                   <strong>{display.gameClock.label}</strong>
                   <small>{display.gameClock.stateLabel}</small>
                 </div>
-                <div className="public-display-shot-clock">
+                <div className="arena-period-chip">
+                  <span>Period</span>
+                  <strong>{display.periodLabel}</strong>
+                </div>
+                <div className={display.shotClock.className}>
                   <span>Shot</span>
                   <strong>{display.shotClock.label}</strong>
                   <small>{display.shotClock.stateLabel}</small>
@@ -3757,12 +3757,28 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
               <PublicDisplayTeamPanel side="away" team={display.away} />
             </div>
 
-            <dl className="public-display-strip">
+            <dl className="arena-stat-strip">
               <div><dt>HOME Fouls</dt><dd>{display.home.fouls}</dd></div>
               <div><dt>HOME Timeouts</dt><dd>{display.home.timeouts}</dd></div>
+              <div><dt>HOME Bonus</dt><dd>--</dd></div>
               <div><dt>Active Timeout</dt><dd>{display.activeTimeoutLabel}</dd></div>
+              <div><dt>AWAY Bonus</dt><dd>--</dd></div>
               <div><dt>AWAY Timeouts</dt><dd>{display.away.timeouts}</dd></div>
               <div><dt>AWAY Fouls</dt><dd>{display.away.fouls}</dd></div>
+            </dl>
+
+            <div className="recent-event-ticker" aria-label="Recent event ticker">
+              <span>Recent</span>
+              <strong>{display.recentEventTicker}</strong>
+            </div>
+
+            <dl className="compact-system-strip" aria-label="Compact system status">
+              {display.systemStatus.map((item) => (
+                <div key={item.label}>
+                  <dt aria-hidden="true">{item.icon}</dt>
+                  <dd><span>{item.label}</span><strong>{item.value}</strong></dd>
+                </div>
+              ))}
             </dl>
 
             {display.finalLabel ? (
@@ -3784,13 +3800,15 @@ function PublicDisplayTeamPanel({
     label: string;
     teamName: string;
     score: number;
+    panelClassName: string;
+    scoreClassName: string;
   };
 }) {
   return (
-    <article className={`public-display-team ${side}`}>
+    <article className={`${team.panelClassName} ${side}`}>
       <span>{team.label}</span>
       <h1>{team.teamName}</h1>
-      <strong>{team.score}</strong>
+      <strong key={`${side}-${team.score}`} className={team.scoreClassName}>{team.score}</strong>
     </article>
   );
 }
