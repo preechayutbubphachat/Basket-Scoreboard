@@ -4314,16 +4314,6 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
               <PublicDisplayTeamPanel side="away" team={display.away} />
             </div>
 
-            <dl className="arena-stat-strip">
-              <div><dt>HOME Fouls</dt><dd>{display.home.fouls}</dd></div>
-              <div><dt>HOME Timeouts</dt><dd>{display.home.timeouts}</dd></div>
-              <div><dt>HOME Bonus</dt><dd>--</dd></div>
-              <div><dt>Active Timeout</dt><dd>{display.activeTimeoutLabel}</dd></div>
-              <div><dt>AWAY Bonus</dt><dd>--</dd></div>
-              <div><dt>AWAY Timeouts</dt><dd>{display.away.timeouts}</dd></div>
-              <div><dt>AWAY Fouls</dt><dd>{display.away.fouls}</dd></div>
-            </dl>
-
             <div className="recent-event-ticker" aria-label="Recent event ticker">
               <span>Recent</span>
               <strong>{display.recentEventTicker}</strong>
