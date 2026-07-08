@@ -9,6 +9,8 @@ import type {
   CreateTournamentRequest,
   CreateVenueRequest,
   CreatePlayerRequest,
+  MatchDisplayOverrideInput,
+  MatchDisplayOverrideResponse,
   MatchAssignment,
   MatchAuditLogResponse,
   MatchLineupResponse,
@@ -29,8 +31,12 @@ import type {
   LifecycleCommandPayload,
   ShotClockResetPayload,
   ShotClockSetPayload,
+  TeamDisplayProfileInput,
+  TeamDisplayProfileResponse,
   TimeoutEndedPayload,
   TimeoutGrantedPayload,
+  TournamentDisplayThemeInput,
+  TournamentDisplayThemeResponse,
   TournamentLiveDashboardResponse,
   TournamentScheduleResponse,
   TournamentStandingsResponse,
@@ -313,6 +319,54 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         `/tournaments/${encodeURIComponent(tournamentId)}/standings`
       );
       return data;
+    },
+    async getTournamentDisplayTheme(tournamentId: string) {
+      const data = await request<{ theme: TournamentDisplayThemeResponse }>(
+        `/tournaments/${encodeURIComponent(tournamentId)}/display-theme`
+      );
+      return data.theme;
+    },
+    async saveTournamentDisplayTheme(tournamentId: string, input: TournamentDisplayThemeInput) {
+      const data = await request<{ theme: TournamentDisplayThemeResponse }>(
+        `/tournaments/${encodeURIComponent(tournamentId)}/display-theme`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input)
+        }
+      );
+      return data.theme;
+    },
+    async getTeamDisplayProfile(teamId: string) {
+      const data = await request<{ profile: TeamDisplayProfileResponse }>(
+        `/teams/${encodeURIComponent(teamId)}/display-profile`
+      );
+      return data.profile;
+    },
+    async saveTeamDisplayProfile(teamId: string, input: TeamDisplayProfileInput) {
+      const data = await request<{ profile: TeamDisplayProfileResponse }>(
+        `/teams/${encodeURIComponent(teamId)}/display-profile`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input)
+        }
+      );
+      return data.profile;
+    },
+    async getMatchDisplayOverride(matchId: string) {
+      const data = await request<{ override: MatchDisplayOverrideResponse }>(
+        `/matches/${encodeURIComponent(matchId)}/display-override`
+      );
+      return data.override;
+    },
+    async saveMatchDisplayOverride(matchId: string, input: MatchDisplayOverrideInput) {
+      const data = await request<{ override: MatchDisplayOverrideResponse }>(
+        `/matches/${encodeURIComponent(matchId)}/display-override`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input)
+        }
+      );
+      return data.override;
     },
     async getPublicTournaments() {
       const data = await request<{ tournaments: TournamentSummary[] }>("/public/tournaments");
