@@ -1655,6 +1655,7 @@ describe("web API client", () => {
       { icon: "LS", label: "Last sync", value: expect.any(String) }
     ]);
     expect(display.recentEventTicker).toContain("Recent play updates");
+    expect(display.recentEventTicker).not.toMatch(/HOME|AWAY|\d+\s*-\s*\d+|SCORE_ADDED/i);
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });
 
