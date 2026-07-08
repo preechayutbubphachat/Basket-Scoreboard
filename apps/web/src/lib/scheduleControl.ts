@@ -83,6 +83,18 @@ export function buildAdminTournamentLiveDashboardLink(tournamentId: string) {
   return `/admin/tournaments/${encodeURIComponent(tournamentId)}/live-dashboard`;
 }
 
+export function buildAdminTournamentDisplayThemeLink(tournamentId: string) {
+  return `/admin/tournaments/${encodeURIComponent(tournamentId)}/display-theme`;
+}
+
+export function buildAdminTeamDisplayProfileLink(teamId: string) {
+  return `/admin/teams/${encodeURIComponent(teamId)}/display-profile`;
+}
+
+export function buildAdminMatchDisplayThemeLink(matchId: string) {
+  return `/admin/matches/${encodeURIComponent(matchId)}/display-theme`;
+}
+
 export function buildPublicTournamentScheduleLink(tournamentId: string) {
   return `/public/tournaments/${encodeURIComponent(tournamentId)}/schedule`;
 }
@@ -96,6 +108,7 @@ export function buildTournamentQuickLinks(tournamentId: string): TournamentQuick
     { href: buildAdminTournamentScheduleLink(tournamentId), label: "Schedule", private: true },
     { href: buildAdminTournamentLiveDashboardLink(tournamentId), label: "Live Dashboard", private: true },
     { href: buildAdminTournamentStandingsLink(tournamentId), label: "Standings", private: true },
+    { href: buildAdminTournamentDisplayThemeLink(tournamentId), label: "Display Theme", private: true },
     { href: buildPublicTournamentScheduleLink(tournamentId), label: "Public Schedule", private: false },
     { href: buildPublicTournamentStandingsLink(tournamentId), label: "Public Standings", private: false }
   ];

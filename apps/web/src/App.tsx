@@ -153,6 +153,9 @@ import {
 import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
+  buildAdminTournamentDisplayThemeLink,
+  buildAdminTeamDisplayProfileLink,
+  buildAdminMatchDisplayThemeLink,
   buildScheduleChecklistBadge,
   buildReadinessBadges,
   buildPublicTournamentScheduleLink,
@@ -198,6 +201,23 @@ import {
   type LiveDashboardFilter
 } from "./lib/liveDashboardControl";
 import {
+  buildDisplayThemePreviewModel,
+  createMatchDisplayOverrideFormState,
+  createMatchDisplayOverridePayload,
+  createTeamDisplayProfileFormState,
+  createTeamDisplayProfilePayload,
+  createTournamentDisplayThemeFormState,
+  createTournamentDisplayThemePayload,
+  displayBackgroundStyleOptions,
+  validateMatchDisplayOverrideForm,
+  validateTeamDisplayProfileForm,
+  validateTournamentDisplayThemeForm,
+  type DisplayThemePreviewModel,
+  type MatchDisplayOverrideFormState,
+  type TeamDisplayProfileFormState,
+  type TournamentDisplayThemeFormState
+} from "./lib/displayThemeControl";
+import {
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardDisplayModel,
   getPublicDisplayControlsClassName,
@@ -223,6 +243,9 @@ type Route =
   | { name: "admin-tournament-schedule"; tournamentId: string }
   | { name: "admin-tournament-live-dashboard"; tournamentId: string }
   | { name: "admin-tournament-standings"; tournamentId: string }
+  | { name: "admin-tournament-display-theme"; tournamentId: string }
+  | { name: "admin-team-display-profile"; teamId: string }
+  | { name: "admin-match-display-theme"; matchId: string }
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
   | { name: "admin-lineup"; matchId: string }
@@ -267,6 +290,21 @@ function parseRoute(pathname: string): Route {
   const adminStandingsTournamentId = adminTournamentStandingsMatch?.[1];
   if (adminStandingsTournamentId) {
     return { name: "admin-tournament-standings", tournamentId: decodeURIComponent(adminStandingsTournamentId) };
+  }
+  const adminTournamentDisplayThemeMatch = pathname.match(/^\/admin\/tournaments\/([^/]+)\/display-theme$/);
+  const adminDisplayThemeTournamentId = adminTournamentDisplayThemeMatch?.[1];
+  if (adminDisplayThemeTournamentId) {
+    return { name: "admin-tournament-display-theme", tournamentId: decodeURIComponent(adminDisplayThemeTournamentId) };
+  }
+  const adminTeamDisplayProfileMatch = pathname.match(/^\/admin\/teams\/([^/]+)\/display-profile$/);
+  const adminDisplayProfileTeamId = adminTeamDisplayProfileMatch?.[1];
+  if (adminDisplayProfileTeamId) {
+    return { name: "admin-team-display-profile", teamId: decodeURIComponent(adminDisplayProfileTeamId) };
+  }
+  const adminMatchDisplayThemeMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/display-theme$/);
+  const adminDisplayThemeMatchId = adminMatchDisplayThemeMatch?.[1];
+  if (adminDisplayThemeMatchId) {
+    return { name: "admin-match-display-theme", matchId: decodeURIComponent(adminDisplayThemeMatchId) };
   }
   const rosterMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/rosters$/);
   const rosterMatchId = rosterMatch?.[1];
@@ -919,6 +957,9 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           <a className="button-link secondary" href={buildAdminTournamentLiveDashboardLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentLiveDashboardLink(tournamentId)); }}>
             Main Live Dashboard
           </a>
+          <a className="button-link secondary" href={buildAdminTournamentDisplayThemeLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentDisplayThemeLink(tournamentId)); }}>
+            Display Theme
+          </a>
           <a className="button-link secondary public-link" href={buildPublicTournamentScheduleLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildPublicTournamentScheduleLink(tournamentId)); }}>
             Public Schedule
           </a>
@@ -1137,6 +1178,29 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
           </div>
         </section>
       ) : null}
+      {tournamentTeams.length > 0 ? (
+        <section className="panel compact-panel">
+          <h2>Team Display Profiles</h2>
+          <p className="muted">Optional public display branding profiles. These settings do not change match scores or event history.</p>
+          <div className="inline-actions">
+            {tournamentTeams.map((team) => {
+              const href = buildAdminTeamDisplayProfileLink(team.teamId);
+              return (
+                <a
+                  key={team.teamId}
+                  href={href}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigate(href);
+                  }}
+                >
+                  {team.name}
+                </a>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
       <ScheduleFilterBar value={filter} onChange={setFilter} />
       {loading ? <p>Loading schedule...</p> : null}
       {!loading && matches.length === 0 ? (
@@ -1147,6 +1211,373 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
       ) : null}
       {matches.length > 0 ? <ScheduleTable matches={matches} mode="admin" /> : null}
     </section>
+  );
+}
+
+function AdminTournamentDisplayThemePage({ tournamentId }: { tournamentId: string }) {
+  const { api } = useCurrentUser();
+  const [form, setForm] = useState<TournamentDisplayThemeFormState>(() => createTournamentDisplayThemeFormState());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadTheme() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const theme = await api.getTournamentDisplayTheme(tournamentId);
+      setForm(createTournamentDisplayThemeFormState(theme));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationMessage = validateTournamentDisplayThemeForm(form);
+    if (validationMessage) {
+      setMessage({ tone: "error", text: validationMessage, code: "VALIDATION_ERROR" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage({ tone: "success", text: "Saving display theme..." });
+    try {
+      const theme = await api.saveTournamentDisplayTheme(tournamentId, createTournamentDisplayThemePayload(form));
+      setForm(createTournamentDisplayThemeFormState(theme));
+      setMessage({ tone: "success", text: "Tournament display theme saved." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const preview = buildDisplayThemePreviewModel({ tournament: form });
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display branding</p>
+          <h1>Tournament Display Theme</h1>
+          <p className="muted">Tournament ID: {tournamentId}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href={buildAdminTournamentScheduleLink(tournamentId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminTournamentScheduleLink(tournamentId)); }}>
+            Schedule
+          </a>
+          <button type="button" onClick={() => void loadTheme()} disabled={loading || saving}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading display theme...</p> : null}
+      <div className="display-theme-grid">
+        <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
+          <h2>Theme settings</h2>
+          <TextInput label="Display name" value={form.displayName} maxLength={120} onChange={(value) => setForm((current) => ({ ...current, displayName: value }))} />
+          <TextInput label="Logo URL" value={form.logoUrl} maxLength={500} placeholder="https://example.com/logo.png" onChange={(value) => setForm((current) => ({ ...current, logoUrl: value }))} />
+          <ColorInput label="Primary color" value={form.primaryColor} onChange={(value) => setForm((current) => ({ ...current, primaryColor: value }))} />
+          <ColorInput label="Secondary color" value={form.secondaryColor} onChange={(value) => setForm((current) => ({ ...current, secondaryColor: value }))} />
+          <ColorInput label="Accent color" value={form.accentColor} onChange={(value) => setForm((current) => ({ ...current, accentColor: value }))} />
+          <ColorInput label="Text color" value={form.textColor} onChange={(value) => setForm((current) => ({ ...current, textColor: value }))} />
+          <label>
+            Background style
+            <select value={form.backgroundStyle} onChange={(event) => setForm((current) => ({ ...current, backgroundStyle: event.target.value as TournamentDisplayThemeFormState["backgroundStyle"] }))}>
+              {displayBackgroundStyleOptions.map((style) => <option key={style} value={style}>{style}</option>)}
+            </select>
+          </label>
+          <CheckboxInput label="Show tournament logo" checked={form.showTournamentLogo} onChange={(value) => setForm((current) => ({ ...current, showTournamentLogo: value }))} />
+          <CheckboxInput label="Active" checked={form.active} onChange={(value) => setForm((current) => ({ ...current, active: value }))} />
+          <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save Theme"}</button>
+        </form>
+        <DisplayThemePreviewPanel preview={preview} />
+      </div>
+    </section>
+  );
+}
+
+function AdminTeamDisplayProfilePage({ teamId }: { teamId: string }) {
+  const { api } = useCurrentUser();
+  const [form, setForm] = useState<TeamDisplayProfileFormState>(() => createTeamDisplayProfileFormState());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadProfile() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const profile = await api.getTeamDisplayProfile(teamId);
+      setForm(createTeamDisplayProfileFormState(profile));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationMessage = validateTeamDisplayProfileForm(form);
+    if (validationMessage) {
+      setMessage({ tone: "error", text: validationMessage, code: "VALIDATION_ERROR" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage({ tone: "success", text: "Saving display profile..." });
+    try {
+      const profile = await api.saveTeamDisplayProfile(teamId, createTeamDisplayProfilePayload(form));
+      setForm(createTeamDisplayProfileFormState(profile));
+      setMessage({ tone: "success", text: "Team display profile saved." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const preview = buildDisplayThemePreviewModel({ home: form });
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display branding</p>
+          <h1>Team Display Profile</h1>
+          <p className="muted">Team ID: {teamId}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href="/admin/tournaments" onClick={(event) => { event.preventDefault(); navigate("/admin/tournaments"); }}>
+            Tournaments
+          </a>
+          <button type="button" onClick={() => void loadProfile()} disabled={loading || saving}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading display profile...</p> : null}
+      <div className="display-theme-grid">
+        <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
+          <h2>Profile settings</h2>
+          <TextInput label="Display name" value={form.displayName} maxLength={80} onChange={(value) => setForm((current) => ({ ...current, displayName: value }))} />
+          <TextInput label="Logo URL" value={form.logoUrl} maxLength={500} placeholder="https://example.com/team-logo.png" onChange={(value) => setForm((current) => ({ ...current, logoUrl: value }))} />
+          <ColorInput label="Primary color" value={form.primaryColor} onChange={(value) => setForm((current) => ({ ...current, primaryColor: value }))} />
+          <ColorInput label="Secondary color" value={form.secondaryColor} onChange={(value) => setForm((current) => ({ ...current, secondaryColor: value }))} />
+          <ColorInput label="Accent color" value={form.accentColor} onChange={(value) => setForm((current) => ({ ...current, accentColor: value }))} />
+          <ColorInput label="Text color" value={form.textColor} onChange={(value) => setForm((current) => ({ ...current, textColor: value }))} />
+          <CheckboxInput label="Show team logo" checked={form.showTeamLogo} onChange={(value) => setForm((current) => ({ ...current, showTeamLogo: value }))} />
+          <CheckboxInput label="Active" checked={form.active} onChange={(value) => setForm((current) => ({ ...current, active: value }))} />
+          <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save Profile"}</button>
+        </form>
+        <DisplayThemePreviewPanel preview={preview} />
+      </div>
+    </section>
+  );
+}
+
+function AdminMatchDisplayThemePage({ matchId }: { matchId: string }) {
+  const { api } = useCurrentUser();
+  const [form, setForm] = useState<MatchDisplayOverrideFormState>(() => createMatchDisplayOverrideFormState());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadOverride() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const override = await api.getMatchDisplayOverride(matchId);
+      setForm(createMatchDisplayOverrideFormState(override));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationMessage = validateMatchDisplayOverrideForm(form);
+    if (validationMessage) {
+      setMessage({ tone: "error", text: validationMessage, code: "VALIDATION_ERROR" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage({ tone: "success", text: "Saving match display override..." });
+    try {
+      const override = await api.saveMatchDisplayOverride(matchId, createMatchDisplayOverridePayload(form));
+      setForm(createMatchDisplayOverrideFormState(override));
+      setMessage({ tone: "success", text: "Match display override saved." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const preview = buildDisplayThemePreviewModel({ match: form });
+  const publicDisplayHref = buildPublicScoreboardDisplayLink(matchId);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display branding</p>
+          <h1>Match Display Theme</h1>
+          <p className="muted">Match ID: {matchId}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href="/admin/matches" onClick={(event) => { event.preventDefault(); navigate("/admin/matches"); }}>
+            Matches
+          </a>
+          <a className="button-link secondary public-link" href={publicDisplayHref} onClick={(event) => { event.preventDefault(); navigate(publicDisplayHref); }}>
+            Public Display
+          </a>
+          <button type="button" onClick={() => void loadOverride()} disabled={loading || saving}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading match display override...</p> : null}
+      <div className="display-theme-grid">
+        <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
+          <h2>Match overrides</h2>
+          <fieldset className="form-fieldset">
+            <legend>Home colors</legend>
+            <ColorInput label="Home primary" value={form.homePrimaryColor} onChange={(value) => setForm((current) => ({ ...current, homePrimaryColor: value }))} />
+            <ColorInput label="Home secondary" value={form.homeSecondaryColor} onChange={(value) => setForm((current) => ({ ...current, homeSecondaryColor: value }))} />
+            <ColorInput label="Home accent" value={form.homeAccentColor} onChange={(value) => setForm((current) => ({ ...current, homeAccentColor: value }))} />
+            <ColorInput label="Home text" value={form.homeTextColor} onChange={(value) => setForm((current) => ({ ...current, homeTextColor: value }))} />
+          </fieldset>
+          <fieldset className="form-fieldset">
+            <legend>Away colors</legend>
+            <ColorInput label="Away primary" value={form.awayPrimaryColor} onChange={(value) => setForm((current) => ({ ...current, awayPrimaryColor: value }))} />
+            <ColorInput label="Away secondary" value={form.awaySecondaryColor} onChange={(value) => setForm((current) => ({ ...current, awaySecondaryColor: value }))} />
+            <ColorInput label="Away accent" value={form.awayAccentColor} onChange={(value) => setForm((current) => ({ ...current, awayAccentColor: value }))} />
+            <ColorInput label="Away text" value={form.awayTextColor} onChange={(value) => setForm((current) => ({ ...current, awayTextColor: value }))} />
+          </fieldset>
+          <CheckboxInput label="Show team logos" checked={form.showTeamLogos} onChange={(value) => setForm((current) => ({ ...current, showTeamLogos: value }))} />
+          <CheckboxInput label="Text-only fallback" checked={form.textOnlyFallback} onChange={(value) => setForm((current) => ({ ...current, textOnlyFallback: value }))} />
+          <CheckboxInput label="Neutral high contrast" checked={form.neutralHighContrast} onChange={(value) => setForm((current) => ({ ...current, neutralHighContrast: value }))} />
+          <CheckboxInput label="Emergency override enabled" checked={form.emergencyOverrideEnabled} onChange={(value) => setForm((current) => ({ ...current, emergencyOverrideEnabled: value }))} />
+          <TextInput label="Emergency note" value={form.emergencyReason} maxLength={255} onChange={(value) => setForm((current) => ({ ...current, emergencyReason: value }))} />
+          <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save Override"}</button>
+        </form>
+        <DisplayThemePreviewPanel preview={preview} />
+      </div>
+    </section>
+  );
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+  maxLength,
+  placeholder
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  maxLength: number;
+  placeholder?: string;
+}) {
+  return (
+    <label>
+      {label}
+      <input value={value} onChange={(event) => onChange(event.target.value)} maxLength={maxLength} placeholder={placeholder} />
+    </label>
+  );
+}
+
+function ColorInput({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+}) {
+  const textValue = value ?? "";
+  return (
+    <label>
+      {label}
+      <span className="color-input-row">
+        <input
+          aria-label={`${label} value`}
+          value={textValue}
+          onChange={(event) => onChange(event.target.value || null)}
+          placeholder="#111827"
+          maxLength={7}
+        />
+        <span className="color-swatch" style={{ background: /^#[0-9a-fA-F]{6}$/.test(textValue) ? textValue : "#e5e7eb" }} />
+      </span>
+    </label>
+  );
+}
+
+function CheckboxInput({
+  label,
+  checked,
+  onChange
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="checkbox-row">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function DisplayThemePreviewPanel({ preview }: { preview: DisplayThemePreviewModel }) {
+  return (
+    <section className="display-preview-card" aria-label="Display theme preview">
+      <div className="display-preview-header">
+        <div>
+          <p className="eyebrow">Preview only</p>
+          <h2>{preview.title}</h2>
+        </div>
+        {preview.showTournamentLogo && preview.tournamentLogoUrl ? (
+          <img className="display-preview-logo small" src={preview.tournamentLogoUrl} alt="" />
+        ) : null}
+      </div>
+      <div className={`display-preview-arena ${preview.backgroundStyle.toLowerCase().replaceAll("_", "-")}`}>
+        <DisplayPreviewTeam side="HOME" team={preview.home} />
+        <div className="display-preview-center">
+          <span>PREVIEW</span>
+          <strong>10:00</strong>
+          <span>REG P1</span>
+          <b>24</b>
+        </div>
+        <DisplayPreviewTeam side="AWAY" team={preview.away} />
+      </div>
+      <p className="muted">Static admin preview. The live public display keeps using the current default layout until theme application is implemented.</p>
+    </section>
+  );
+}
+
+function DisplayPreviewTeam({ side, team }: { side: "HOME" | "AWAY"; team: DisplayThemePreviewModel["home"] }) {
+  const style = {
+    "--preview-primary": team.colors.primaryColor ?? "#111827",
+    "--preview-secondary": team.colors.secondaryColor ?? "#334155",
+    "--preview-accent": team.colors.accentColor ?? "#f59e0b",
+    "--preview-text": team.colors.textColor ?? "#f8fafc"
+  } as React.CSSProperties;
+  return (
+    <div className="display-preview-team" style={style}>
+      <span>{side}</span>
+      {team.showLogo && team.logoUrl ? <img className="display-preview-logo" src={team.logoUrl} alt="" /> : <div className="display-preview-logo placeholder">{side.slice(0, 1)}</div>}
+      <strong>{team.label}</strong>
+      <b>00</b>
+    </div>
   );
 }
 
@@ -4069,6 +4500,7 @@ function AdminScheduleLinks({ match }: { match: TournamentScheduleMatch }) {
     { href: operations?.officialsUrl ?? buildAdminMatchLink(match.matchId), label: "Assign Officials" },
     { href: operations?.rostersUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/rosters`, label: "Setup Roster" },
     { href: operations?.lineupUrl ?? `/admin/matches/${encodeURIComponent(match.matchId)}/lineup`, label: "Setup Lineup" },
+    { href: buildAdminMatchDisplayThemeLink(match.matchId), label: "Display Theme" },
     { href: match.publicScoreboardPath, label: "Public Scoreboard" },
     { href: operations?.operatorFoulsUrl ?? buildOperatorMatchFoulsLink(match.matchId), label: "Fouls" },
     { href: operations?.operatorClockUrl ?? buildOperatorMatchClockLink(match.matchId), label: "Clock" },
@@ -4906,6 +5338,24 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireAdmin>
             <AdminTournamentStandingsPage tournamentId={route.tournamentId} />
+          </ProtectedRoute>
+        );
+      case "admin-tournament-display-theme":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminTournamentDisplayThemePage tournamentId={route.tournamentId} />
+          </ProtectedRoute>
+        );
+      case "admin-team-display-profile":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminTeamDisplayProfilePage teamId={route.teamId} />
+          </ProtectedRoute>
+        );
+      case "admin-match-display-theme":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminMatchDisplayThemePage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "admin-officials":

@@ -117,6 +117,9 @@ import {
 import {
   buildAdminTournamentScheduleLink,
   buildAdminTournamentStandingsLink,
+  buildAdminTournamentDisplayThemeLink,
+  buildAdminTeamDisplayProfileLink,
+  buildAdminMatchDisplayThemeLink,
   buildScheduleChecklistBadge,
   buildReadinessBadges,
   buildPublicTournamentScheduleLink,
@@ -181,6 +184,19 @@ import {
   isPublicDisplayKioskMode,
   publicScoreboardDisplayHasPrivateExposure
 } from "../../apps/web/src/lib/publicScoreboardDisplay";
+import {
+  buildDisplayThemePreviewModel,
+  createMatchDisplayOverrideFormState,
+  createMatchDisplayOverridePayload,
+  createTeamDisplayProfileFormState,
+  createTeamDisplayProfilePayload,
+  createTournamentDisplayThemeFormState,
+  createTournamentDisplayThemePayload,
+  displayThemePreviewHasPrivateExposure,
+  validateMatchDisplayOverrideForm,
+  validateTeamDisplayProfileForm,
+  validateTournamentDisplayThemeForm
+} from "../../apps/web/src/lib/displayThemeControl";
 import type {
   AuthenticatedUser,
   MatchAuditLogResponse,
@@ -1426,6 +1442,78 @@ describe("web API client", () => {
     expect(fetchMock.mock.calls.some(([, init]) => "x-csrf-token" in ((init?.headers as Record<string, string>) ?? {}))).toBe(false);
   });
 
+  test("reads and writes protected display branding settings with CSRF on writes", async () => {
+    const theme = {
+      tournamentId: "tournament-1",
+      displayName: "Alpha Cup",
+      logoUrl: "https://assets.example.test/tournament.png",
+      primaryColor: "#111827",
+      secondaryColor: "#1f2937",
+      accentColor: "#f59e0b",
+      textColor: "#ffffff",
+      backgroundStyle: "DEFAULT_ARENA" as const,
+      showTournamentLogo: true,
+      active: true
+    };
+    const profile = {
+      teamId: "team-1",
+      displayName: "Bangkok Home",
+      logoUrl: "/assets/home.png",
+      primaryColor: "#0f172a",
+      secondaryColor: "#334155",
+      accentColor: "#facc15",
+      textColor: "#ffffff",
+      showTeamLogo: true,
+      active: true
+    };
+    const override = {
+      matchId: "match-1",
+      home: { primaryColor: "#111827", secondaryColor: null, accentColor: null, textColor: "#ffffff" },
+      away: { primaryColor: "#7f1d1d", secondaryColor: null, accentColor: null, textColor: "#ffffff" },
+      showTeamLogos: true,
+      textOnlyFallback: false,
+      neutralHighContrast: false,
+      emergencyOverrideEnabled: false,
+      emergencyReason: null
+    };
+    const fetchMock = vi.fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { theme } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { profile } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { override } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { theme } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { profile } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { override } }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.getTournamentDisplayTheme("tournament-1")).resolves.toEqual(theme);
+    await expect(client.getTeamDisplayProfile("team-1")).resolves.toEqual(profile);
+    await expect(client.getMatchDisplayOverride("match-1")).resolves.toEqual(override);
+    await expect(client.saveTournamentDisplayTheme("tournament-1", createTournamentDisplayThemePayload(createTournamentDisplayThemeFormState(theme)))).resolves.toEqual(theme);
+    await expect(client.saveTeamDisplayProfile("team-1", createTeamDisplayProfilePayload(createTeamDisplayProfileFormState(profile)))).resolves.toEqual(profile);
+    await expect(client.saveMatchDisplayOverride("match-1", createMatchDisplayOverridePayload(createMatchDisplayOverrideFormState(override)))).resolves.toEqual(override);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/v1/tournaments/tournament-1/display-theme", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/v1/teams/team-1/display-profile", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/v1/matches/match-1/display-override", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/v1/auth/csrf", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/v1/tournaments/tournament-1/display-theme",
+      expect.objectContaining({ method: "PUT", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/v1/teams/team-1/display-profile",
+      expect.objectContaining({ method: "PUT", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      "/api/v1/matches/match-1/display-override",
+      expect.objectContaining({ method: "PUT", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+  });
+
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
     const fetchMock = vi
       .fn<FetchLike>()
@@ -2428,6 +2516,7 @@ describe("tournament schedule UI policy", () => {
       { href: "/admin/tournaments/tournament%201/schedule", label: "Schedule", private: true },
       { href: "/admin/tournaments/tournament%201/live-dashboard", label: "Live Dashboard", private: true },
       { href: "/admin/tournaments/tournament%201/standings", label: "Standings", private: true },
+      { href: "/admin/tournaments/tournament%201/display-theme", label: "Display Theme", private: true },
       { href: "/public/tournaments/tournament%201/schedule", label: "Public Schedule", private: false },
       { href: "/public/tournaments/tournament%201/standings", label: "Public Standings", private: false }
     ]);
@@ -2468,6 +2557,9 @@ describe("tournament schedule UI policy", () => {
   test("builds schedule links, filters, and public-safe row metadata", () => {
     expect(buildAdminTournamentScheduleLink("tournament 1")).toBe("/admin/tournaments/tournament%201/schedule");
     expect(buildAdminTournamentStandingsLink("tournament 1")).toBe("/admin/tournaments/tournament%201/standings");
+    expect(buildAdminTournamentDisplayThemeLink("tournament 1")).toBe("/admin/tournaments/tournament%201/display-theme");
+    expect(buildAdminTeamDisplayProfileLink("team 1")).toBe("/admin/teams/team%201/display-profile");
+    expect(buildAdminMatchDisplayThemeLink("match 1")).toBe("/admin/matches/match%201/display-theme");
     expect(buildPublicTournamentScheduleLink("tournament 1")).toBe("/public/tournaments/tournament%201/schedule");
     expect(buildPublicTournamentStandingsLink("tournament 1")).toBe("/public/tournaments/tournament%201/standings");
     expect(createTournamentFormState()).toEqual({ name: "", status: "ACTIVE", startsAt: "", endsAt: "" });
@@ -2594,6 +2686,102 @@ describe("tournament schedule UI policy", () => {
       title: "No scheduled matches",
       description: "This tournament does not have scheduled matches yet."
     });
+  });
+
+  test("builds display theme form defaults, payloads, and validation errors", () => {
+    const tournamentState = createTournamentDisplayThemeFormState();
+    const teamState = createTeamDisplayProfileFormState();
+    const matchState = createMatchDisplayOverrideFormState();
+
+    expect(tournamentState).toMatchObject({
+      displayName: "",
+      logoUrl: "",
+      backgroundStyle: "DEFAULT_ARENA",
+      showTournamentLogo: true,
+      active: true
+    });
+    expect(teamState).toMatchObject({ displayName: "", logoUrl: "", showTeamLogo: true, active: true });
+    expect(matchState).toMatchObject({
+      showTeamLogos: true,
+      textOnlyFallback: false,
+      neutralHighContrast: false,
+      emergencyOverrideEnabled: false,
+      emergencyReason: ""
+    });
+
+    expect(validateTournamentDisplayThemeForm({ ...tournamentState, primaryColor: "#12GG00" })).toContain("#RRGGBB");
+    expect(validateTeamDisplayProfileForm({ ...teamState, logoUrl: "javascript:alert(1)" })).toContain("Logo URL");
+    expect(validateMatchDisplayOverrideForm({ ...matchState, awayAccentColor: "blue" })).toContain("#RRGGBB");
+
+    expect(createTournamentDisplayThemePayload({
+      ...tournamentState,
+      displayName: "  Alpha Cup  ",
+      logoUrl: "  ",
+      primaryColor: "#111827"
+    })).toMatchObject({
+      displayName: "Alpha Cup",
+      logoUrl: null,
+      primaryColor: "#111827"
+    });
+    expect(createTeamDisplayProfilePayload({ ...teamState, displayName: " Home ", showTeamLogo: false })).toMatchObject({
+      displayName: "Home",
+      showTeamLogo: false
+    });
+    expect(createMatchDisplayOverridePayload({
+      ...matchState,
+      homePrimaryColor: "#111827",
+      emergencyReason: " Match day contrast issue "
+    })).toMatchObject({
+      homePrimaryColor: "#111827",
+      emergencyReason: "Match day contrast issue"
+    });
+  });
+
+  test("builds local display theme preview without private exposure or public display mutation", () => {
+    const tournament = createTournamentDisplayThemeFormState({
+      tournamentId: "tournament-1",
+      displayName: "Alpha Cup",
+      logoUrl: "https://assets.example.test/tournament.png",
+      primaryColor: "#020617",
+      secondaryColor: "#111827",
+      accentColor: "#f59e0b",
+      textColor: "#f8fafc",
+      backgroundStyle: "DARK_GRADIENT",
+      showTournamentLogo: true,
+      active: true
+    });
+    const home = createTeamDisplayProfileFormState({
+      teamId: "home-team",
+      displayName: "Bangkok Home",
+      logoUrl: "/assets/home.png",
+      primaryColor: "#0f172a",
+      secondaryColor: "#1d4ed8",
+      accentColor: "#fde047",
+      textColor: "#ffffff",
+      showTeamLogo: true,
+      active: true
+    });
+    const match = createMatchDisplayOverrideFormState({
+      matchId: "match-1",
+      home: { primaryColor: "#14532d", secondaryColor: null, accentColor: null, textColor: "#ffffff" },
+      away: { primaryColor: "#7f1d1d", secondaryColor: null, accentColor: null, textColor: "#ffffff" },
+      showTeamLogos: false,
+      textOnlyFallback: true,
+      neutralHighContrast: false,
+      emergencyOverrideEnabled: true,
+      emergencyReason: "Use neutral fallback if venue display clips logos"
+    });
+
+    const preview = buildDisplayThemePreviewModel({ tournament, home, match });
+    const serialized = JSON.stringify(preview);
+
+    expect(preview.title).toBe("Alpha Cup");
+    expect(preview.home.label).toBe("Bangkok Home");
+    expect(preview.home.colors.primaryColor).toBe("#14532d");
+    expect(preview.home.showLogo).toBe(false);
+    expect(preview.textOnlyFallback).toBe(true);
+    expect(displayThemePreviewHasPrivateExposure(serialized)).toBe(false);
+    expect(serialized).not.toMatch(/Use neutral fallback|commandId|correlationId|causationId|csrf|audit-log|\/admin|\/operator/i);
   });
 
   test("builds protected live dashboard links, filters, card labels, and warning summaries", () => {
