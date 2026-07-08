@@ -193,6 +193,8 @@ import {
   createTournamentDisplayThemeFormState,
   createTournamentDisplayThemePayload,
   displayThemePreviewHasPrivateExposure,
+  getDisplayThemeSaveState,
+  getLogoPreviewState,
   validateMatchDisplayOverrideForm,
   validateTeamDisplayProfileForm,
   validateTournamentDisplayThemeForm
@@ -2735,6 +2737,56 @@ describe("tournament schedule UI policy", () => {
       homePrimaryColor: "#111827",
       emergencyReason: "Match day contrast issue"
     });
+  });
+
+  test("keeps display theme save state independent from completed initial loading", () => {
+    const validTournamentState = createTournamentDisplayThemeFormState({
+      tournamentId: "tournament-1",
+      displayName: "Alpha Cup",
+      logoUrl: null,
+      primaryColor: "#111827",
+      secondaryColor: null,
+      accentColor: null,
+      textColor: null,
+      backgroundStyle: "DEFAULT_ARENA",
+      showTournamentLogo: true,
+      active: true
+    });
+    const validationMessage = validateTournamentDisplayThemeForm(validTournamentState);
+
+    expect(validationMessage).toBeNull();
+    expect(getDisplayThemeSaveState({
+      saving: false,
+      routeId: "tournament-1",
+      validationMessage
+    })).toEqual({ disabled: false, reason: null });
+    expect(getDisplayThemeSaveState({
+      saving: true,
+      routeId: "tournament-1",
+      validationMessage
+    })).toEqual({ disabled: true, reason: "SAVING" });
+    expect(getDisplayThemeSaveState({
+      saving: false,
+      routeId: "",
+      validationMessage
+    })).toEqual({ disabled: true, reason: "MISSING_ROUTE_ID" });
+    expect(getDisplayThemeSaveState({
+      saving: false,
+      routeId: "tournament-1",
+      validationMessage: "Logo URL must be https:// or a root-relative asset path."
+    })).toEqual({ disabled: true, reason: "VALIDATION_ERROR" });
+  });
+
+  test("falls back after a failed display logo preview without blocking save", () => {
+    const logoUrl = "https://assets.example.test/missing-logo.png";
+
+    expect(getLogoPreviewState(logoUrl, null)).toEqual({ showImage: true, showFallback: false });
+    expect(getLogoPreviewState(logoUrl, logoUrl)).toEqual({ showImage: false, showFallback: true });
+    expect(getDisplayThemeSaveState({
+      saving: false,
+      routeId: "tournament-1",
+      validationMessage: null
+    })).toEqual({ disabled: false, reason: null });
   });
 
   test("builds local display theme preview without private exposure or public display mutation", () => {
