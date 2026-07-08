@@ -64,6 +64,16 @@ export type DisplayThemePreviewModel = {
   neutralHighContrast: boolean;
 };
 
+export type DisplayThemeSaveState = {
+  disabled: boolean;
+  reason: "SAVING" | "MISSING_ROUTE_ID" | "VALIDATION_ERROR" | null;
+};
+
+export type LogoPreviewState = {
+  showImage: boolean;
+  showFallback: boolean;
+};
+
 const defaultColors: DisplayColors = {
   primaryColor: "#111827",
   secondaryColor: "#334155",
@@ -207,7 +217,7 @@ export function validateTournamentDisplayThemeForm(state: TournamentDisplayTheme
     displayName: state.displayName,
     displayNameMax: 120,
     logoUrl: state.logoUrl,
-    colors: state
+    colors: pickDisplayColors(state)
   });
 }
 
@@ -216,7 +226,7 @@ export function validateTeamDisplayProfileForm(state: TeamDisplayProfileFormStat
     displayName: state.displayName,
     displayNameMax: 80,
     logoUrl: state.logoUrl,
-    colors: state
+    colors: pickDisplayColors(state)
   });
 }
 
@@ -294,11 +304,39 @@ export function displayThemePreviewHasPrivateExposure(text: string) {
   return /commandId|correlationId|causationId|csrf|session|token|audit-log|correctionDetails|\/operator|\/admin/i.test(text);
 }
 
+export function getDisplayThemeSaveState(input: {
+  saving: boolean;
+  routeId: string | null | undefined;
+  validationMessage: string | null;
+}): DisplayThemeSaveState {
+  if (input.saving) {
+    return { disabled: true, reason: "SAVING" };
+  }
+
+  if (!input.routeId) {
+    return { disabled: true, reason: "MISSING_ROUTE_ID" };
+  }
+
+  if (input.validationMessage) {
+    return { disabled: true, reason: "VALIDATION_ERROR" };
+  }
+
+  return { disabled: false, reason: null };
+}
+
+export function getLogoPreviewState(src: string, failedSrc: string | null): LogoPreviewState {
+  const failed = failedSrc === src;
+  return {
+    showImage: !failed,
+    showFallback: failed
+  };
+}
+
 function validateSharedDisplayFields(input: {
   displayName: string;
   displayNameMax: number;
   logoUrl: string;
-  colors: DisplayColors;
+  colors: Record<DisplayColorField, string | null>;
 }) {
   if (input.displayName.trim().length > input.displayNameMax) {
     return `Display name must be ${input.displayNameMax} characters or fewer.`;
@@ -315,6 +353,15 @@ function validateSharedDisplayFields(input: {
   }
 
   return null;
+}
+
+function pickDisplayColors(input: DisplayColors): Record<DisplayColorField, string | null> {
+  return {
+    primaryColor: input.primaryColor,
+    secondaryColor: input.secondaryColor,
+    accentColor: input.accentColor,
+    textColor: input.textColor
+  };
 }
 
 function isValidColor(value: string | null | undefined) {

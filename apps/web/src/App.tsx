@@ -209,6 +209,8 @@ import {
   createTournamentDisplayThemeFormState,
   createTournamentDisplayThemePayload,
   displayBackgroundStyleOptions,
+  getDisplayThemeSaveState,
+  getLogoPreviewState,
   validateMatchDisplayOverrideForm,
   validateTeamDisplayProfileForm,
   validateTournamentDisplayThemeForm,
@@ -1234,6 +1236,10 @@ function AdminTournamentDisplayThemePage({ tournamentId }: { tournamentId: strin
     }
   }
 
+  useEffect(() => {
+    void loadTheme();
+  }, [api, tournamentId]);
+
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationMessage = validateTournamentDisplayThemeForm(form);
@@ -1256,6 +1262,8 @@ function AdminTournamentDisplayThemePage({ tournamentId }: { tournamentId: strin
   }
 
   const preview = buildDisplayThemePreviewModel({ tournament: form });
+  const validationMessage = validateTournamentDisplayThemeForm(form);
+  const saveState = getDisplayThemeSaveState({ saving, routeId: tournamentId, validationMessage });
 
   return (
     <section className="panel">
@@ -1274,6 +1282,7 @@ function AdminTournamentDisplayThemePage({ tournamentId }: { tournamentId: strin
       </div>
       {message ? <Notice {...message} /> : null}
       {loading ? <p>Loading display theme...</p> : null}
+      {!loading && validationMessage ? <p className="form-validation">{validationMessage}</p> : null}
       <div className="display-theme-grid">
         <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
           <h2>Theme settings</h2>
@@ -1291,7 +1300,7 @@ function AdminTournamentDisplayThemePage({ tournamentId }: { tournamentId: strin
           </label>
           <CheckboxInput label="Show tournament logo" checked={form.showTournamentLogo} onChange={(value) => setForm((current) => ({ ...current, showTournamentLogo: value }))} />
           <CheckboxInput label="Active" checked={form.active} onChange={(value) => setForm((current) => ({ ...current, active: value }))} />
-          <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save Theme"}</button>
+          <button type="submit" disabled={saveState.disabled}>{saving ? "Saving..." : "Save Theme"}</button>
         </form>
         <DisplayThemePreviewPanel preview={preview} />
       </div>
@@ -1319,6 +1328,10 @@ function AdminTeamDisplayProfilePage({ teamId }: { teamId: string }) {
     }
   }
 
+  useEffect(() => {
+    void loadProfile();
+  }, [api, teamId]);
+
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationMessage = validateTeamDisplayProfileForm(form);
@@ -1341,6 +1354,8 @@ function AdminTeamDisplayProfilePage({ teamId }: { teamId: string }) {
   }
 
   const preview = buildDisplayThemePreviewModel({ home: form });
+  const validationMessage = validateTeamDisplayProfileForm(form);
+  const saveState = getDisplayThemeSaveState({ saving, routeId: teamId, validationMessage });
 
   return (
     <section className="panel">
@@ -1359,6 +1374,7 @@ function AdminTeamDisplayProfilePage({ teamId }: { teamId: string }) {
       </div>
       {message ? <Notice {...message} /> : null}
       {loading ? <p>Loading display profile...</p> : null}
+      {!loading && validationMessage ? <p className="form-validation">{validationMessage}</p> : null}
       <div className="display-theme-grid">
         <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
           <h2>Profile settings</h2>
@@ -1370,7 +1386,7 @@ function AdminTeamDisplayProfilePage({ teamId }: { teamId: string }) {
           <ColorInput label="Text color" value={form.textColor} onChange={(value) => setForm((current) => ({ ...current, textColor: value }))} />
           <CheckboxInput label="Show team logo" checked={form.showTeamLogo} onChange={(value) => setForm((current) => ({ ...current, showTeamLogo: value }))} />
           <CheckboxInput label="Active" checked={form.active} onChange={(value) => setForm((current) => ({ ...current, active: value }))} />
-          <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save Profile"}</button>
+          <button type="submit" disabled={saveState.disabled}>{saving ? "Saving..." : "Save Profile"}</button>
         </form>
         <DisplayThemePreviewPanel preview={preview} />
       </div>
@@ -1398,6 +1414,10 @@ function AdminMatchDisplayThemePage({ matchId }: { matchId: string }) {
     }
   }
 
+  useEffect(() => {
+    void loadOverride();
+  }, [api, matchId]);
+
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationMessage = validateMatchDisplayOverrideForm(form);
@@ -1421,6 +1441,8 @@ function AdminMatchDisplayThemePage({ matchId }: { matchId: string }) {
 
   const preview = buildDisplayThemePreviewModel({ match: form });
   const publicDisplayHref = buildPublicScoreboardDisplayLink(matchId);
+  const validationMessage = validateMatchDisplayOverrideForm(form);
+  const saveState = getDisplayThemeSaveState({ saving, routeId: matchId, validationMessage });
 
   return (
     <section className="panel">
@@ -1442,6 +1464,7 @@ function AdminMatchDisplayThemePage({ matchId }: { matchId: string }) {
       </div>
       {message ? <Notice {...message} /> : null}
       {loading ? <p>Loading match display override...</p> : null}
+      {!loading && validationMessage ? <p className="form-validation">{validationMessage}</p> : null}
       <div className="display-theme-grid">
         <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
           <h2>Match overrides</h2>
@@ -1464,7 +1487,7 @@ function AdminMatchDisplayThemePage({ matchId }: { matchId: string }) {
           <CheckboxInput label="Neutral high contrast" checked={form.neutralHighContrast} onChange={(value) => setForm((current) => ({ ...current, neutralHighContrast: value }))} />
           <CheckboxInput label="Emergency override enabled" checked={form.emergencyOverrideEnabled} onChange={(value) => setForm((current) => ({ ...current, emergencyOverrideEnabled: value }))} />
           <TextInput label="Emergency note" value={form.emergencyReason} maxLength={255} onChange={(value) => setForm((current) => ({ ...current, emergencyReason: value }))} />
-          <button type="submit" disabled={saving || loading}>{saving ? "Saving..." : "Save Override"}</button>
+          <button type="submit" disabled={saveState.disabled}>{saving ? "Saving..." : "Save Override"}</button>
         </form>
         <DisplayThemePreviewPanel preview={preview} />
       </div>
@@ -1546,7 +1569,7 @@ function DisplayThemePreviewPanel({ preview }: { preview: DisplayThemePreviewMod
           <h2>{preview.title}</h2>
         </div>
         {preview.showTournamentLogo && preview.tournamentLogoUrl ? (
-          <img className="display-preview-logo small" src={preview.tournamentLogoUrl} alt="" />
+          <SafePreviewLogo className="display-preview-logo small" src={preview.tournamentLogoUrl} fallbackLabel="T" />
         ) : null}
       </div>
       <div className={`display-preview-arena ${preview.backgroundStyle.toLowerCase().replaceAll("_", "-")}`}>
@@ -1574,10 +1597,45 @@ function DisplayPreviewTeam({ side, team }: { side: "HOME" | "AWAY"; team: Displ
   return (
     <div className="display-preview-team" style={style}>
       <span>{side}</span>
-      {team.showLogo && team.logoUrl ? <img className="display-preview-logo" src={team.logoUrl} alt="" /> : <div className="display-preview-logo placeholder">{side.slice(0, 1)}</div>}
+      {team.showLogo && team.logoUrl ? (
+        <SafePreviewLogo className="display-preview-logo" src={team.logoUrl} fallbackLabel={side.slice(0, 1)} />
+      ) : (
+        <div className="display-preview-logo placeholder">{side.slice(0, 1)}</div>
+      )}
       <strong>{team.label}</strong>
       <b>00</b>
     </div>
+  );
+}
+
+function SafePreviewLogo({
+  src,
+  className,
+  fallbackLabel
+}: {
+  src: string;
+  className: string;
+  fallbackLabel: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFailedSrc(null);
+  }, [src]);
+
+  const previewState = getLogoPreviewState(src, failedSrc);
+
+  if (previewState.showFallback) {
+    return <div className={`${className} placeholder`}>{fallbackLabel}</div>;
+  }
+
+  return (
+    <img
+      className={className}
+      src={src}
+      alt=""
+      onError={() => setFailedSrc(src)}
+    />
   );
 }
 

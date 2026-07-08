@@ -197,6 +197,15 @@ select {
   padding: 0 6px;
 }
 
+.form-validation {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #9a3412;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+
 .color-input-row {
   align-items: center;
   display: grid;
