@@ -72,6 +72,7 @@ import { apiError } from "../errors/apiErrors.js";
 import type { ProjectionRealtime } from "../realtime/projectionRealtime.js";
 import {
   getMatchDisplayOverride,
+  resolvePublicDisplayTheme,
   saveMatchDisplayOverride
 } from "../displayThemes/displayThemeService.js";
 
@@ -310,7 +311,26 @@ export function registerMatchRoutes(
           return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match projection was not found"));
         }
 
-        return projection;
+        try {
+          const displayTheme = await resolvePublicDisplayTheme(pool, request.params.matchId);
+          return {
+            ...projection,
+            displayTheme
+          };
+        } catch (themeError) {
+          request.log.warn(
+            {
+              err: themeError,
+              matchId: request.params.matchId,
+              route: "GET /api/v1/public/matches/:matchId/scoreboard"
+            },
+            "Public display theme could not be resolved; using default arena theme"
+          );
+          return {
+            ...projection,
+            displayTheme: null
+          };
+        }
       } catch (error) {
         request.log.error(
           {
