@@ -4249,20 +4249,25 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
         aria-label="16:9 public scoreboard display"
       >
         <header className="arena-header">
-          {display?.tournament.showLogo && display.tournament.logoUrl ? (
-            <SafePreviewLogo
-              className="arena-tournament-logo"
-              src={display.tournament.logoUrl}
-              fallbackLabel="T"
-            />
-          ) : null}
-          <div className="arena-match-state">
-            <span>{display?.statusLabel ?? "Loading"}</span>
-            <strong>{display?.periodLabel ?? "Period pending"}</strong>
+          <div className="arena-brand-lockup">
+            {display?.tournament.showLogo && display.tournament.logoUrl ? (
+              <SafePreviewLogo
+                className="arena-tournament-logo"
+                src={display.tournament.logoUrl}
+                fallbackLabel="T"
+              />
+            ) : null}
+            <h1 className="arena-tournament-title">
+              {display?.tournament.displayName ?? "Public Scoreboard"}
+            </h1>
           </div>
-          {display?.tournament.displayName ? (
-            <h1 className="arena-tournament-title">{display.tournament.displayName}</h1>
-          ) : null}
+          <div className="arena-header-meta" aria-label="Match display metadata">
+            <span>Match <strong>{display?.matchCodeLabel ?? "Pending"}</strong></span>
+            <span>Period <strong>{display?.periodLabel ?? "Pending"}</strong></span>
+          </div>
+          <div className={display?.statusClassName ?? "arena-live-badge"}>
+            {display?.statusLabel ?? "Loading"}
+          </div>
         </header>
         <nav className="arena-display-actions" aria-label="Public display actions">
           <a
@@ -4352,6 +4357,8 @@ function PublicDisplayTeamPanel({
     label: string;
     teamName: string;
     score: number;
+    fouls: number;
+    timeouts: number;
     panelClassName: string;
     scoreClassName: string;
     style: Record<string, string>;
@@ -4361,12 +4368,17 @@ function PublicDisplayTeamPanel({
 }) {
   return (
     <article className={`${team.panelClassName} ${side}`} style={team.style as CSSProperties}>
-      <span>{team.label}</span>
+      <div className="public-display-team-badge"><span>{team.label}</span></div>
       {team.showLogo && team.logoUrl ? (
         <SafePreviewLogo className="public-display-team-logo" src={team.logoUrl} fallbackLabel={side.slice(0, 1)} />
       ) : null}
       <h1>{team.teamName}</h1>
       <strong key={`${side}-${team.score}`} className={team.scoreClassName}>{team.score}</strong>
+      <dl className="public-display-team-metrics" aria-label={`${team.label} public game metrics`}>
+        <div><dt>Timeouts</dt><dd>{team.timeouts}</dd></div>
+        <div><dt>Team Fouls</dt><dd>{team.fouls}</dd></div>
+        <div><dt>Bonus</dt><dd>--</dd></div>
+      </dl>
     </article>
   );
 }
