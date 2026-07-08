@@ -1732,6 +1732,8 @@ describe("web API client", () => {
       },
       periodLabel: "REG P1",
       statusLabel: "LIVE",
+      statusClassName: "arena-live-badge is-live",
+      matchCodeLabel: "11111111",
       seqLabel: "Seq 3",
       syncLabel: "Polling fallback active"
     });
@@ -1841,6 +1843,8 @@ describe("web API client", () => {
       logoUrl: "https://cdn.example.com/tournament.png",
       showLogo: true
     });
+    expect(display.matchCodeLabel).toBe("11111111");
+    expect(display.statusClassName).toBe("arena-live-badge is-live");
     expect(display.home).toMatchObject({
       teamName: "Bangkok Tigers",
       logoUrl: "https://cdn.example.com/tigers.png",
@@ -1859,6 +1863,73 @@ describe("web API client", () => {
         "--team-primary": "#0033cc",
         "--team-accent": "#00ccff"
       }
+    });
+    expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
+  });
+
+  test("public display model keeps long tournament and team names public safe for broadcast layout", () => {
+    const display = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      homeTeamName: "Bangkok International Youth Basketball Academy Tigers",
+      awayTeamName: "Phuket Provincial Demonstration School Ocean Sharks",
+      displayTheme: {
+        tournament: {
+          displayName: "Bangkok Youth Championship Invitational Public Display Showcase",
+          logoUrl: null,
+          showLogo: false,
+          backgroundStyle: "DARK_GRADIENT",
+          colors: {
+            primaryColor: "#07111f",
+            secondaryColor: "#111827",
+            accentColor: "#facc15",
+            textColor: "#f8fafc"
+          }
+        },
+        home: {
+          displayName: "Bangkok International Youth Basketball Academy Tigers",
+          logoUrl: null,
+          showLogo: false,
+          colors: {
+            primaryColor: "#7f1d1d",
+            secondaryColor: "#120607",
+            accentColor: "#ef4444",
+            textColor: "#f8fafc"
+          }
+        },
+        away: {
+          displayName: "Phuket Provincial Demonstration School Ocean Sharks",
+          logoUrl: null,
+          showLogo: false,
+          colors: {
+            primaryColor: "#1d4ed8",
+            secondaryColor: "#020617",
+            accentColor: "#38bdf8",
+            textColor: "#f8fafc"
+          }
+        },
+        flags: {
+          textOnlyFallback: false,
+          neutralHighContrast: false
+        }
+      }
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "CONNECTED"
+    });
+
+    expect(display.tournament.displayName).toBe("Bangkok Youth Championship Invitational Public Display Showcase");
+    expect(display.home.teamName).toContain("Bangkok International");
+    expect(display.away.teamName).toContain("Phuket Provincial");
+    expect(display.home.style).toMatchObject({
+      "--team-primary": "#7f1d1d",
+      "--team-accent": "#ef4444",
+      "--score-color": "#f8fafc"
+    });
+    expect(display.away.style).toMatchObject({
+      "--team-primary": "#1d4ed8",
+      "--team-accent": "#38bdf8",
+      "--score-color": "#f8fafc"
     });
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });

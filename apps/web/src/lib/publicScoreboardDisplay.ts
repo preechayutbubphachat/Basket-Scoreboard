@@ -67,6 +67,7 @@ export function buildPublicScoreboardDisplayModel(
 
   return {
     matchId: projection.matchId,
+    matchCodeLabel: projection.matchId.slice(0, 8).toUpperCase(),
     arenaFrameClassName: [
       "public-display-frame",
       "arena-layout",
@@ -114,6 +115,7 @@ export function buildPublicScoreboardDisplayModel(
     },
     periodLabel: `${periodType} P${projection.periodNumber}`,
     statusLabel: projection.status,
+    statusClassName: projection.status === "LIVE" ? "arena-live-badge is-live" : "arena-live-badge",
     activeTimeoutLabel: getActiveTimeoutLabel(projection),
     seqLabel: `Seq ${seq}`,
     syncLabel: getRealtimeConnectionLabel(options.realtimeState),
