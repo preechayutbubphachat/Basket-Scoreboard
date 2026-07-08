@@ -675,6 +675,74 @@ export type PublicDisplayTheme = {
   };
 };
 
+export type DisplaySceneType = "LIVE_SCOREBOARD" | "SCHEDULE" | "FINAL_SUMMARY" | "BLANK";
+
+export type LiveScoreboardSceneConfig = {
+  matchId: string;
+};
+
+export type ScheduleSceneConfig = {
+  tournamentId: string;
+  courtId?: string | null | undefined;
+  limit?: number | undefined;
+};
+
+export type FinalSummarySceneConfig = {
+  matchId: string;
+};
+
+export type BlankSceneConfig = {
+  message?: string | null | undefined;
+};
+
+export type DisplaySceneConfig =
+  | LiveScoreboardSceneConfig
+  | ScheduleSceneConfig
+  | FinalSummarySceneConfig
+  | BlankSceneConfig;
+
+export type DisplayScreenResponse = {
+  screenId: string;
+  screenSlug: string;
+  displayName: string;
+  tournamentId: string | null;
+  description: string | null;
+  publicEnabled: boolean;
+  active: boolean;
+};
+
+export type DisplaySceneResponse = {
+  sceneId: string;
+  screenId: string;
+  sceneType: DisplaySceneType;
+  sceneName: string;
+  sceneConfig: DisplaySceneConfig;
+  sortOrder: number;
+  active: boolean;
+};
+
+export type ActiveDisplaySceneResponse = {
+  screenId: string;
+  scene: DisplaySceneResponse;
+  assignedAt: string;
+};
+
+export type PublicDisplayScreenResponse = {
+  ok: true;
+  data: {
+    screen: {
+      screenSlug: string;
+      displayName: string;
+    };
+    activeScene: {
+      sceneType: DisplaySceneType;
+      publicData: unknown;
+      refreshAfterMs: number;
+    };
+    serverTime: string;
+  };
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;
@@ -852,6 +920,125 @@ export const matchDisplayOverrideSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? null : value),
     z.string().trim().max(255).nullable().optional()
   )
+});
+
+const displayScreenSlugSchema = z.string()
+  .trim()
+  .min(3)
+  .max(80)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+
+const nullableDisplayDescriptionSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.string().trim().max(255).nullable().optional()
+);
+
+export const displaySceneTypeSchema = z.enum(["LIVE_SCOREBOARD", "SCHEDULE", "FINAL_SUMMARY", "BLANK"]);
+
+export const liveScoreboardSceneConfigSchema = z.object({
+  matchId: z.string().uuid()
+});
+
+export const scheduleSceneConfigSchema = z.object({
+  tournamentId: z.string().uuid(),
+  courtId: z.string().uuid().nullable().optional(),
+  limit: z.number().int().min(1).max(20).default(8)
+});
+
+export const finalSummarySceneConfigSchema = z.object({
+  matchId: z.string().uuid()
+});
+
+export const blankSceneConfigSchema = z.object({
+  message: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().trim().max(120).nullable().optional()
+  )
+});
+
+const displaySceneConfigSchemaByType = {
+  LIVE_SCOREBOARD: liveScoreboardSceneConfigSchema,
+  SCHEDULE: scheduleSceneConfigSchema,
+  FINAL_SUMMARY: finalSummarySceneConfigSchema,
+  BLANK: blankSceneConfigSchema
+} as const;
+
+export function parseDisplaySceneConfig(sceneType: DisplaySceneType, sceneConfig: unknown) {
+  return displaySceneConfigSchemaByType[sceneType].parse(sceneConfig);
+}
+
+export const createDisplayScreenSchema = z.object({
+  screenId: z.string().uuid().optional(),
+  screenSlug: displayScreenSlugSchema,
+  displayName: z.string().trim().min(1).max(120),
+  tournamentId: z.string().uuid().nullable().optional(),
+  description: nullableDisplayDescriptionSchema,
+  publicEnabled: z.boolean().default(true),
+  active: z.boolean().default(true)
+});
+
+export const updateDisplayScreenSchema = createDisplayScreenSchema
+  .omit({ screenId: true })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "At least one screen field is required");
+
+const displaySceneInputBaseSchema = z.object({
+  sceneId: z.string().uuid().optional(),
+  sceneType: displaySceneTypeSchema,
+  sceneName: z.string().trim().min(1).max(120),
+  sceneConfig: z.unknown(),
+  sortOrder: z.number().int().min(0).max(1000).default(0),
+  active: z.boolean().default(true)
+});
+
+export const createDisplaySceneSchema = displaySceneInputBaseSchema.superRefine((value, context) => {
+  const result = displaySceneConfigSchemaByType[value.sceneType].safeParse(value.sceneConfig);
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      context.addIssue({
+        ...issue,
+        path: ["sceneConfig", ...issue.path]
+      });
+    }
+  }
+});
+
+export const updateDisplaySceneSchema = displaySceneInputBaseSchema
+  .omit({ sceneId: true })
+  .partial()
+  .superRefine((value, context) => {
+    if (Object.keys(value).length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one scene field is required"
+      });
+      return;
+    }
+
+    if (value.sceneConfig !== undefined) {
+      if (!value.sceneType) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sceneType"],
+          message: "sceneType is required when sceneConfig is provided"
+        });
+        return;
+      }
+
+      const result = displaySceneConfigSchemaByType[value.sceneType].safeParse(value.sceneConfig);
+      if (!result.success) {
+        for (const issue of result.error.issues) {
+          context.addIssue({
+            ...issue,
+            path: ["sceneConfig", ...issue.path]
+          });
+        }
+      }
+    }
+  });
+
+export const activeDisplaySceneSchema = z.object({
+  sceneId: z.string().uuid()
 });
 
 export const scoreAddedPayloadSchema = z.object({
@@ -1069,6 +1256,11 @@ export type CreateTournamentMatchRequest = z.infer<typeof createTournamentMatchS
 export type TournamentDisplayThemeInput = z.infer<typeof tournamentDisplayThemeSchema>;
 export type TeamDisplayProfileInput = z.infer<typeof teamDisplayProfileSchema>;
 export type MatchDisplayOverrideInput = z.infer<typeof matchDisplayOverrideSchema>;
+export type CreateDisplayScreenInput = z.infer<typeof createDisplayScreenSchema>;
+export type UpdateDisplayScreenInput = z.infer<typeof updateDisplayScreenSchema>;
+export type CreateDisplaySceneInput = z.infer<typeof createDisplaySceneSchema>;
+export type UpdateDisplaySceneInput = z.infer<typeof updateDisplaySceneSchema>;
+export type ActiveDisplaySceneInput = z.infer<typeof activeDisplaySceneSchema>;
 export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
 export type FoulType = z.infer<typeof foulTypeSchema>;
 export type TeamFoulAddedPayload = z.infer<typeof teamFoulAddedPayloadSchema>;

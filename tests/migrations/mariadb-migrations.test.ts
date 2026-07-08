@@ -26,7 +26,8 @@ describe("MariaDB migration foundation", () => {
       "009_create_match_roster_tables.sql",
       "010_create_match_roster_confirmations_table.sql",
       "011_create_venues_courts_tables.sql",
-      "012_create_display_theme_tables.sql"
+      "012_create_display_theme_tables.sql",
+      "013_create_display_screen_tables.sql"
     ]);
   });
 
@@ -52,6 +53,9 @@ describe("MariaDB migration foundation", () => {
       "tournament_display_themes",
       "team_display_profiles",
       "match_display_overrides",
+      "display_screens",
+      "display_scenes",
+      "display_screen_active_scenes",
       "tournaments",
       "teams",
       "players",
@@ -191,6 +195,40 @@ describe("MariaDB migration foundation", () => {
     expect(displayThemeSql).not.toContain(["update", "match_events"].join(" "));
     expect(displayThemeSql).not.toContain(["delete", "from", "match_events"].join(" "));
     expect(displayThemeSql).not.toContain(["truncate", "match_events"].join(" "));
+  });
+
+  it("adds display screen scene tables without event-store mutation", () => {
+    const displayScreenSql = compact(readMigration("013_create_display_screen_tables.sql"));
+
+    expect(displayScreenSql).toContain("create table if not exists display_screens");
+    expect(displayScreenSql).toContain("screen_id char(36) not null");
+    expect(displayScreenSql).toContain("screen_slug varchar(80) not null");
+    expect(displayScreenSql).toContain("display_name varchar(120) not null");
+    expect(displayScreenSql).toContain("tournament_id char(36) null");
+    expect(displayScreenSql).toContain("public_enabled tinyint(1) not null default 1");
+    expect(displayScreenSql).toContain("unique key uq_display_screens_slug");
+    expect(displayScreenSql).toContain("foreign key (tournament_id) references tournaments");
+
+    expect(displayScreenSql).toContain("create table if not exists display_scenes");
+    expect(displayScreenSql).toContain("scene_id char(36) not null");
+    expect(displayScreenSql).toContain("scene_type varchar(32) not null");
+    expect(displayScreenSql).toContain("scene_config json not null");
+    expect(displayScreenSql).toContain("unique key uq_display_scenes_screen_scene (screen_id, scene_id)");
+    expect(displayScreenSql).toContain("foreign key (screen_id) references display_screens");
+
+    expect(displayScreenSql).toContain("create table if not exists display_screen_active_scenes");
+    expect(displayScreenSql).toContain("primary key (screen_id)");
+    expect(displayScreenSql).toContain("foreign key (screen_id, scene_id) references display_scenes (screen_id, scene_id)");
+    expect(displayScreenSql).toContain("assigned_by_user_id char(36) null");
+    expect(displayScreenSql).toContain("foreign key (assigned_by_user_id) references users");
+    expect(displayScreenSql).toContain("engine=innodb");
+    expect(displayScreenSql).toContain("default charset=utf8mb4");
+    expect(displayScreenSql).not.toContain(["scoreboard", "state"].join("_"));
+    expect(displayScreenSql).not.toContain(["public", "display", "state"].join("_"));
+    expect(displayScreenSql).not.toContain(["update", "match_events"].join(" "));
+    expect(displayScreenSql).not.toContain(["delete", "from", "match_events"].join(" "));
+    expect(displayScreenSql).not.toContain(["drop table", "match_events"].join(" "));
+    expect(displayScreenSql).not.toContain(["truncate", "match_events"].join(" "));
   });
 
   it("defines the critical append-only event store columns and constraints", () => {
