@@ -615,6 +615,66 @@ export type TournamentStandingsResponse = {
   };
 };
 
+export type DisplayBackgroundStyle = "DEFAULT_ARENA" | "SOLID" | "DARK_GRADIENT" | "HIGH_CONTRAST";
+
+export type DisplayColors = {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  accentColor: string | null;
+  textColor: string | null;
+};
+
+export type TournamentDisplayThemeResponse = DisplayColors & {
+  tournamentId: string;
+  displayName: string | null;
+  logoUrl: string | null;
+  backgroundStyle: DisplayBackgroundStyle;
+  showTournamentLogo: boolean;
+  active: boolean;
+};
+
+export type TeamDisplayProfileResponse = DisplayColors & {
+  teamId: string;
+  displayName: string | null;
+  logoUrl: string | null;
+  showTeamLogo: boolean;
+  active: boolean;
+};
+
+export type MatchDisplayOverrideResponse = {
+  matchId: string;
+  home: DisplayColors;
+  away: DisplayColors;
+  showTeamLogos: boolean;
+  textOnlyFallback: boolean;
+  neutralHighContrast: boolean;
+  emergencyOverrideEnabled: boolean;
+  emergencyReason: string | null;
+};
+
+export type PublicDisplayResolvedTeam = {
+  displayName: string;
+  logoUrl: string | null;
+  showLogo: boolean;
+  colors: DisplayColors;
+};
+
+export type PublicDisplayTheme = {
+  tournament: {
+    displayName: string | null;
+    logoUrl: string | null;
+    showLogo: boolean;
+    backgroundStyle: DisplayBackgroundStyle;
+    colors: DisplayColors;
+  };
+  home: PublicDisplayResolvedTeam;
+  away: PublicDisplayResolvedTeam;
+  flags: {
+    textOnlyFallback: boolean;
+    neutralHighContrast: boolean;
+  };
+};
+
 export type SmokeMatchResponse = {
   matchId: string;
   created: boolean;
@@ -703,6 +763,95 @@ export const createTournamentMatchSchema = z.object({
 }).refine((value) => value.homeTeamId !== value.awayTeamId, {
   message: "Home and away teams must be different",
   path: ["awayTeamId"]
+});
+
+export const displayBackgroundStyleSchema = z.enum([
+  "DEFAULT_ARENA",
+  "SOLID",
+  "DARK_GRADIENT",
+  "HIGH_CONTRAST"
+]);
+
+const displayColorSchema = z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/);
+
+const nullableDisplayColorSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  displayColorSchema.nullable().optional()
+);
+
+const safeLogoUrlSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+  z.string()
+    .trim()
+    .max(1024)
+    .refine((value) => !/[\u0000-\u001F\u007F<>]/.test(value), "Logo URL contains unsafe characters")
+    .refine((value) => {
+      const lower = value.toLowerCase();
+      return !lower.startsWith("javascript:") && !lower.startsWith("data:");
+    }, "Logo URL scheme is not allowed")
+    .refine((value) => {
+      if (value.startsWith("/assets/")) {
+        return true;
+      }
+
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === "https:" && parsed.username === "" && parsed.password === "";
+      } catch {
+        return false;
+      }
+    }, "Logo URL must be https or a safe public asset path")
+    .nullable()
+    .optional()
+);
+
+const nullableDisplayName = (maxLength: number) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().trim().min(1).max(maxLength).nullable().optional()
+  );
+
+const displayColorsInputShape = {
+  primaryColor: nullableDisplayColorSchema,
+  secondaryColor: nullableDisplayColorSchema,
+  accentColor: nullableDisplayColorSchema,
+  textColor: nullableDisplayColorSchema
+};
+
+export const tournamentDisplayThemeSchema = z.object({
+  displayName: nullableDisplayName(120),
+  logoUrl: safeLogoUrlSchema,
+  ...displayColorsInputShape,
+  backgroundStyle: displayBackgroundStyleSchema.default("DEFAULT_ARENA"),
+  showTournamentLogo: z.boolean().default(true),
+  active: z.boolean().default(true)
+});
+
+export const teamDisplayProfileSchema = z.object({
+  displayName: nullableDisplayName(80),
+  logoUrl: safeLogoUrlSchema,
+  ...displayColorsInputShape,
+  showTeamLogo: z.boolean().default(true),
+  active: z.boolean().default(true)
+});
+
+export const matchDisplayOverrideSchema = z.object({
+  homePrimaryColor: nullableDisplayColorSchema,
+  homeSecondaryColor: nullableDisplayColorSchema,
+  homeAccentColor: nullableDisplayColorSchema,
+  homeTextColor: nullableDisplayColorSchema,
+  awayPrimaryColor: nullableDisplayColorSchema,
+  awaySecondaryColor: nullableDisplayColorSchema,
+  awayAccentColor: nullableDisplayColorSchema,
+  awayTextColor: nullableDisplayColorSchema,
+  showTeamLogos: z.boolean().default(true),
+  textOnlyFallback: z.boolean().default(false),
+  neutralHighContrast: z.boolean().default(false),
+  emergencyOverrideEnabled: z.boolean().default(false),
+  emergencyReason: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
+    z.string().trim().max(255).nullable().optional()
+  )
 });
 
 export const scoreAddedPayloadSchema = z.object({
@@ -917,6 +1066,9 @@ export type CreateTeamRequest = z.infer<typeof createTeamSchema>;
 export type CreateVenueRequest = z.infer<typeof createVenueSchema>;
 export type CreateCourtRequest = z.infer<typeof createCourtSchema>;
 export type CreateTournamentMatchRequest = z.infer<typeof createTournamentMatchSchema>;
+export type TournamentDisplayThemeInput = z.infer<typeof tournamentDisplayThemeSchema>;
+export type TeamDisplayProfileInput = z.infer<typeof teamDisplayProfileSchema>;
+export type MatchDisplayOverrideInput = z.infer<typeof matchDisplayOverrideSchema>;
 export type ScoreAddedPayload = z.infer<typeof scoreAddedPayloadSchema>;
 export type FoulType = z.infer<typeof foulTypeSchema>;
 export type TeamFoulAddedPayload = z.infer<typeof teamFoulAddedPayloadSchema>;

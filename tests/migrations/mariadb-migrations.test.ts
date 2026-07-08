@@ -25,7 +25,8 @@ describe("MariaDB migration foundation", () => {
       "008_create_match_officials_table.sql",
       "009_create_match_roster_tables.sql",
       "010_create_match_roster_confirmations_table.sql",
-      "011_create_venues_courts_tables.sql"
+      "011_create_venues_courts_tables.sql",
+      "012_create_display_theme_tables.sql"
     ]);
   });
 
@@ -48,6 +49,9 @@ describe("MariaDB migration foundation", () => {
       "match_roster_confirmations",
       "venues",
       "courts",
+      "tournament_display_themes",
+      "team_display_profiles",
+      "match_display_overrides",
       "tournaments",
       "teams",
       "players",
@@ -154,6 +158,39 @@ describe("MariaDB migration foundation", () => {
     expect(venueSql).toContain("engine=innodb");
     expect(venueSql).not.toContain(["update", "match_events"].join(" "));
     expect(venueSql).not.toContain(["delete", "from", "match_events"].join(" "));
+  });
+
+  it("adds display theme configuration tables without mutating match events", () => {
+    const displayThemeSql = compact(readMigration("012_create_display_theme_tables.sql"));
+
+    expect(displayThemeSql).toContain("create table if not exists tournament_display_themes");
+    expect(displayThemeSql).toContain("tournament_id char(36) not null");
+    expect(displayThemeSql).toContain("display_name varchar(120) null");
+    expect(displayThemeSql).toContain("logo_url varchar(1024) null");
+    expect(displayThemeSql).toContain("background_style enum('default_arena', 'solid', 'dark_gradient', 'high_contrast')");
+    expect(displayThemeSql).toContain("show_tournament_logo tinyint(1) not null default 1");
+    expect(displayThemeSql).toContain("foreign key (tournament_id) references tournaments");
+    expect(displayThemeSql).toContain("create table if not exists team_display_profiles");
+    expect(displayThemeSql).toContain("team_id char(36) not null");
+    expect(displayThemeSql).toContain("display_name varchar(80) null");
+    expect(displayThemeSql).toContain("show_team_logo tinyint(1) not null default 1");
+    expect(displayThemeSql).toContain("foreign key (team_id) references teams");
+    expect(displayThemeSql).toContain("create table if not exists match_display_overrides");
+    expect(displayThemeSql).toContain("match_id char(36) not null");
+    expect(displayThemeSql).toContain("neutral_high_contrast tinyint(1) not null default 0");
+    expect(displayThemeSql).toContain("emergency_override_enabled tinyint(1) not null default 0");
+    expect(displayThemeSql).toContain("emergency_reason varchar(255) null");
+    expect(displayThemeSql).toContain("foreign key (match_id) references matches");
+    expect(displayThemeSql).toContain("created_by_user_id char(36) null");
+    expect(displayThemeSql).toContain("updated_by_user_id char(36) null");
+    expect(displayThemeSql).toContain("foreign key (created_by_user_id) references users");
+    expect(displayThemeSql).toContain("foreign key (updated_by_user_id) references users");
+    expect(displayThemeSql).toContain("engine=innodb");
+    expect(displayThemeSql).not.toContain(["scoreboard", "state"].join("_"));
+    expect(displayThemeSql).not.toContain(["public", "display", "state"].join("_"));
+    expect(displayThemeSql).not.toContain(["update", "match_events"].join(" "));
+    expect(displayThemeSql).not.toContain(["delete", "from", "match_events"].join(" "));
+    expect(displayThemeSql).not.toContain(["truncate", "match_events"].join(" "));
   });
 
   it("defines the critical append-only event store columns and constraints", () => {

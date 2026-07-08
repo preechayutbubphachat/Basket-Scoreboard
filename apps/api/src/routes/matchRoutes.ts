@@ -15,6 +15,7 @@ import {
   gameClockStartCommandSchema,
   gameClockStopCommandSchema,
   lifecycleCommandSchema,
+  matchDisplayOverrideSchema,
   reasonCodes,
   replayQuerySchema,
   rejectCorrectionCommandSchema,
@@ -69,6 +70,10 @@ import { createOrReuseSmokeMatch } from "../smoke/smokeMatch.js";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { apiError } from "../errors/apiErrors.js";
 import type { ProjectionRealtime } from "../realtime/projectionRealtime.js";
+import {
+  getMatchDisplayOverride,
+  saveMatchDisplayOverride
+} from "../displayThemes/displayThemeService.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -92,6 +97,15 @@ export function registerMatchRoutes(
   },
   realtime: ProjectionRealtime
 ) {
+  function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.user as AuthenticatedUser;
+    if (user.role !== "ADMIN") {
+      void reply.status(403).send(apiError(reasonCodes.FORBIDDEN, "Admin role is required"));
+      return false;
+    }
+    return true;
+  }
+
   app.post(
     "/api/v1/matches",
     {
@@ -310,6 +324,51 @@ export function registerMatchRoutes(
       } finally {
         connection.release();
       }
+    }
+  );
+
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/display-override",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const result = await getMatchDisplayOverride(pool, request.params.matchId);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return {
+        ok: true,
+        data: { override: result.value }
+      };
+    }
+  );
+
+  app.put<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/display-override",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = matchDisplayOverrideSchema.parse(request.body);
+      const result = await saveMatchDisplayOverride(pool, request.params.matchId, input, request.user!.userId);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return {
+        ok: true,
+        data: { override: result.value }
+      };
     }
   );
 

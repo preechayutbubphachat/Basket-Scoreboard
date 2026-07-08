@@ -2,9 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Pool } from "mysql2/promise";
 import {
   createCourtSchema,
+  teamDisplayProfileSchema,
   createTeamSchema,
   createTournamentMatchSchema,
   createTournamentSchema,
+  tournamentDisplayThemeSchema,
   createVenueSchema,
   reasonCodes,
   type ReasonCode
@@ -29,6 +31,12 @@ import {
   createVenueSetup,
   listVenuesWithCourts
 } from "../tournaments/venueCourtService.js";
+import {
+  getTeamDisplayProfile,
+  getTournamentDisplayTheme,
+  saveTeamDisplayProfile,
+  saveTournamentDisplayTheme
+} from "../displayThemes/displayThemeService.js";
 
 export function registerTournamentRoutes(
   app: FastifyInstance,
@@ -210,6 +218,96 @@ export function registerTournamentRoutes(
         ok: true,
         data: result.value
       });
+    }
+  );
+
+  app.get<{ Params: { tournamentId: string } }>(
+    "/api/v1/tournaments/:tournamentId/display-theme",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const result = await getTournamentDisplayTheme(pool, request.params.tournamentId);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return {
+        ok: true,
+        data: { theme: result.value }
+      };
+    }
+  );
+
+  app.put<{ Params: { tournamentId: string } }>(
+    "/api/v1/tournaments/:tournamentId/display-theme",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = tournamentDisplayThemeSchema.parse(request.body);
+      const result = await saveTournamentDisplayTheme(pool, request.params.tournamentId, input, request.user!.userId);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return {
+        ok: true,
+        data: { theme: result.value }
+      };
+    }
+  );
+
+  app.get<{ Params: { teamId: string } }>(
+    "/api/v1/teams/:teamId/display-profile",
+    {
+      preHandler: [auth.requireAuth]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const result = await getTeamDisplayProfile(pool, request.params.teamId);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return {
+        ok: true,
+        data: { profile: result.value }
+      };
+    }
+  );
+
+  app.put<{ Params: { teamId: string } }>(
+    "/api/v1/teams/:teamId/display-profile",
+    {
+      preHandler: [auth.requireAuth, auth.requireCsrf]
+    },
+    async (request, reply) => {
+      if (!requireAdmin(request, reply)) {
+        return;
+      }
+
+      const input = teamDisplayProfileSchema.parse(request.body);
+      const result = await saveTeamDisplayProfile(pool, request.params.teamId, input, request.user!.userId);
+      if (!result.ok) {
+        return reply.status(result.statusCode).send(apiError(result.reasonCode, result.message));
+      }
+
+      return {
+        ok: true,
+        data: { profile: result.value }
+      };
     }
   );
 
