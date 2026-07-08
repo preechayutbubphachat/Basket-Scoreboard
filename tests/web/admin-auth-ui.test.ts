@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test, vi } from "vitest";
 import {
   buildApiUrl,
@@ -1750,6 +1751,24 @@ describe("web API client", () => {
     expect(display.recentEventTicker).toContain("Recent play updates");
     expect(display.recentEventTicker).not.toMatch(/HOME|AWAY|\d+\s*-\s*\d+|SCORE_ADDED/i);
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
+  });
+
+  test("public display renders team stats in panels without duplicated bottom stat strip", () => {
+    const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
+    const styleSource = readFileSync("apps/web/src/styles.css", "utf8");
+    const display = buildPublicScoreboardDisplayModel(scoreboardProjection, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "CONNECTED"
+    });
+
+    expect(appSource).toContain("public-display-team-metrics");
+    expect(appSource).not.toContain("arena-stat-strip");
+    expect(styleSource).toContain(".public-display-team-metrics");
+    expect(styleSource).not.toContain(".arena-stat-strip");
+    expect(display.home).toMatchObject({ timeouts: 5, fouls: 2 });
+    expect(display.away).toMatchObject({ timeouts: 5, fouls: 1 });
+    expect(display.recentEventTicker).toContain("Recent play updates");
   });
 
   test("public display model derives running clocks and final label safely", () => {
