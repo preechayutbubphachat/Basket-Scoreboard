@@ -1240,6 +1240,7 @@ export type ScoreboardProjection = {
   lastEventSeq?: number;
   updatedAt?: string | null;
   projectionVersion: "scoreboard-v1";
+  displayTheme?: PublicDisplayTheme | null;
 };
 
 export type MatchSyncResponse = {

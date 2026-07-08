@@ -1,9 +1,16 @@
-import type { ScoreboardProjection } from "@basket-scoreboard/api-contracts";
+import type { DisplayBackgroundStyle, DisplayColors, PublicDisplayTheme, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
 import { buildClockControlState, deriveDisplayClockMs } from "./clockControl";
 import { buildPublicScoreboardLink } from "./operatorMatches";
 import { getRealtimeConnectionLabel, type RealtimeConnectionState } from "./realtimeProjectionSync";
 import { buildScoreControlPanels } from "./scoreControl";
 import { buildTimeoutControlPanels, getActiveTimeoutLabel } from "./timeoutControl";
+
+type ResolvedDisplayColors = {
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  textColor: string;
+};
 
 export function buildPublicScoreboardDisplayLink(matchId: string) {
   return `${buildPublicScoreboardLink(matchId)}/display`;
@@ -29,6 +36,7 @@ export function buildPublicScoreboardDisplayModel(
     realtimeState: RealtimeConnectionState;
   }
 ) {
+  const theme = buildPublicDisplayThemeView(projection.displayTheme);
   const scorePanels = buildScoreControlPanels(projection);
   const [homeScorePanel, awayScorePanel] = scorePanels;
   const clock = buildClockControlState(projection, {
@@ -59,23 +67,38 @@ export function buildPublicScoreboardDisplayModel(
 
   return {
     matchId: projection.matchId,
+    arenaFrameClassName: [
+      "public-display-frame",
+      "arena-layout",
+      `arena-background-${theme.backgroundStyle.toLowerCase().replace(/_/g, "-")}`,
+      theme.flags.textOnlyFallback ? "theme-text-only" : "",
+      theme.flags.neutralHighContrast ? "theme-neutral-contrast" : ""
+    ].filter(Boolean).join(" "),
+    arenaFrameStyle: theme.frameStyle,
+    tournament: theme.tournament,
     home: {
       label: homeScorePanel?.label ?? "HOME",
-      teamName: homeScorePanel?.teamName ?? projection.homeTeamName ?? projection.homeTeamId ?? "HOME",
+      teamName: theme.home.displayName ?? homeScorePanel?.teamName ?? projection.homeTeamName ?? projection.homeTeamId ?? "HOME",
       score: homeScorePanel?.score ?? projection.homeScore,
       fouls: projection.teamFouls.home,
       timeouts: homeTimeoutPanel?.remaining ?? projection.timeouts?.home.remaining ?? 0,
       panelClassName: "public-display-team home-panel",
-      scoreClassName: "public-display-score-value score-pulse"
+      scoreClassName: "public-display-score-value score-pulse",
+      style: theme.home.style,
+      logoUrl: theme.home.logoUrl,
+      showLogo: theme.home.showLogo
     },
     away: {
       label: awayScorePanel?.label ?? "AWAY",
-      teamName: awayScorePanel?.teamName ?? projection.awayTeamName ?? projection.awayTeamId ?? "AWAY",
+      teamName: theme.away.displayName ?? awayScorePanel?.teamName ?? projection.awayTeamName ?? projection.awayTeamId ?? "AWAY",
       score: awayScorePanel?.score ?? projection.awayScore,
       fouls: projection.teamFouls.away,
       timeouts: awayTimeoutPanel?.remaining ?? projection.timeouts?.away.remaining ?? 0,
       panelClassName: "public-display-team away-panel",
-      scoreClassName: "public-display-score-value score-pulse"
+      scoreClassName: "public-display-score-value score-pulse",
+      style: theme.away.style,
+      logoUrl: theme.away.logoUrl,
+      showLogo: theme.away.showLogo
     },
     gameClock: {
       label: clock.gameClockLabel,
@@ -111,6 +134,97 @@ export function buildPublicScoreboardDisplayModel(
 export function publicScoreboardDisplayHasPrivateExposure(serializedDisplay: string) {
   return /reason|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i.test(serializedDisplay);
 }
+
+export function buildPublicDisplayThemeView(theme: PublicDisplayTheme | null | undefined) {
+  const flags = {
+    textOnlyFallback: Boolean(theme?.flags.textOnlyFallback),
+    neutralHighContrast: Boolean(theme?.flags.neutralHighContrast)
+  };
+  const tournamentColors = flags.neutralHighContrast ? defaultTournamentColors : theme?.tournament.colors;
+  const backgroundStyle = theme?.tournament.backgroundStyle ?? "DEFAULT_ARENA";
+
+  return {
+    backgroundStyle,
+    frameStyle: {
+      "--arena-bg": getSafeColor(tournamentColors?.primaryColor, "#080d17"),
+      "--arena-bg-secondary": getSafeColor(tournamentColors?.secondaryColor, "#101827"),
+      "--arena-accent": getSafeColor(tournamentColors?.accentColor, "#facc15"),
+      "--arena-text": getSafeColor(tournamentColors?.textColor, "#f8fafc")
+    },
+    tournament: {
+      displayName: cleanDisplayName(theme?.tournament.displayName),
+      logoUrl: flags.textOnlyFallback ? null : cleanLogoUrl(theme?.tournament.logoUrl),
+      showLogo: Boolean(!flags.textOnlyFallback && theme?.tournament.showLogo && theme.tournament.logoUrl)
+    },
+    home: buildTeamTheme(theme?.home, defaultHomeColors, flags),
+    away: buildTeamTheme(theme?.away, defaultAwayColors, flags),
+    flags
+  };
+}
+
+function buildTeamTheme(
+  team: PublicDisplayTheme["home"] | PublicDisplayTheme["away"] | null | undefined,
+  defaultColors: ResolvedDisplayColors,
+  flags: { textOnlyFallback: boolean; neutralHighContrast: boolean }
+) {
+  const colors = flags.neutralHighContrast ? defaultColors : mergeDisplayColors(defaultColors, team?.colors);
+
+  return {
+    displayName: cleanDisplayName(team?.displayName),
+    logoUrl: flags.textOnlyFallback ? null : cleanLogoUrl(team?.logoUrl),
+    showLogo: Boolean(!flags.textOnlyFallback && team?.showLogo && team.logoUrl),
+    style: {
+      "--team-primary": colors.primaryColor,
+      "--team-secondary": colors.secondaryColor,
+      "--team-accent": colors.accentColor,
+      "--team-text": colors.textColor
+    }
+  };
+}
+
+function mergeDisplayColors(defaults: ResolvedDisplayColors, colors: DisplayColors | null | undefined): ResolvedDisplayColors {
+  return {
+    primaryColor: getSafeColor(colors?.primaryColor, defaults.primaryColor),
+    secondaryColor: getSafeColor(colors?.secondaryColor, defaults.secondaryColor),
+    accentColor: getSafeColor(colors?.accentColor, defaults.accentColor),
+    textColor: getSafeColor(colors?.textColor, defaults.textColor)
+  };
+}
+
+function getSafeColor(value: string | null | undefined, fallback: string) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function cleanDisplayName(value: string | null | undefined) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || null;
+}
+
+function cleanLogoUrl(value: string | null | undefined) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || null;
+}
+
+const defaultTournamentColors: ResolvedDisplayColors = {
+  primaryColor: "#080d17",
+  secondaryColor: "#101827",
+  accentColor: "#facc15",
+  textColor: "#f8fafc"
+};
+
+const defaultHomeColors: ResolvedDisplayColors = {
+  primaryColor: "#38bdf8",
+  secondaryColor: "#101827",
+  accentColor: "#38bdf8",
+  textColor: "#f8fafc"
+};
+
+const defaultAwayColors: ResolvedDisplayColors = {
+  primaryColor: "#f97316",
+  secondaryColor: "#101827",
+  accentColor: "#f97316",
+  textColor: "#f8fafc"
+};
 
 function getCompactSyncLabel(state: RealtimeConnectionState) {
   switch (state) {

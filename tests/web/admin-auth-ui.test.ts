@@ -180,6 +180,7 @@ import {
 import {
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardDisplayModel,
+  buildPublicDisplayThemeView,
   getPublicDisplayControlsClassName,
   isPublicDisplayKioskMode,
   publicScoreboardDisplayHasPrivateExposure
@@ -1777,6 +1778,168 @@ describe("web API client", () => {
     expect(display.finalLabel).toBe("Final 88 - 84");
     expect(display.seqLabel).toBe("Seq 12");
     expect(display.syncLabel).toBe("Realtime connected");
+  });
+
+  test("public display applies sanitized tournament and team display theme", () => {
+    const display = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      displayTheme: {
+        tournament: {
+          displayName: "Youth Cup Display",
+          logoUrl: "https://cdn.example.com/tournament.png",
+          showLogo: true,
+          backgroundStyle: "DARK_GRADIENT",
+          colors: {
+            primaryColor: "#111111",
+            secondaryColor: "#222222",
+            accentColor: "#ffaa00",
+            textColor: "#ffffff"
+          }
+        },
+        home: {
+          displayName: "Bangkok Tigers",
+          logoUrl: "https://cdn.example.com/tigers.png",
+          showLogo: true,
+          colors: {
+            primaryColor: "#cc0000",
+            secondaryColor: "#220000",
+            accentColor: "#ffcc00",
+            textColor: "#ffffff"
+          }
+        },
+        away: {
+          displayName: "Phuket Sharks",
+          logoUrl: "https://cdn.example.com/sharks.png",
+          showLogo: true,
+          colors: {
+            primaryColor: "#0033cc",
+            secondaryColor: "#000022",
+            accentColor: "#00ccff",
+            textColor: "#ffffff"
+          }
+        },
+        flags: {
+          textOnlyFallback: false,
+          neutralHighContrast: false
+        }
+      }
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "CONNECTED"
+    });
+
+    expect(display.arenaFrameClassName).toContain("arena-background-dark-gradient");
+    expect(display.arenaFrameStyle).toMatchObject({
+      "--arena-bg": "#111111",
+      "--arena-bg-secondary": "#222222",
+      "--arena-accent": "#ffaa00",
+      "--arena-text": "#ffffff"
+    });
+    expect(display.tournament).toMatchObject({
+      displayName: "Youth Cup Display",
+      logoUrl: "https://cdn.example.com/tournament.png",
+      showLogo: true
+    });
+    expect(display.home).toMatchObject({
+      teamName: "Bangkok Tigers",
+      logoUrl: "https://cdn.example.com/tigers.png",
+      showLogo: true,
+      style: {
+        "--team-primary": "#cc0000",
+        "--team-secondary": "#220000",
+        "--team-accent": "#ffcc00",
+        "--team-text": "#ffffff"
+      }
+    });
+    expect(display.away).toMatchObject({
+      teamName: "Phuket Sharks",
+      style: {
+        "--team-primary": "#0033cc",
+        "--team-accent": "#00ccff"
+      }
+    });
+    expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
+  });
+
+  test("public display model keeps default fallback when no display theme exists", () => {
+    const display = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      displayTheme: null
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "POLLING_FALLBACK"
+    });
+
+    expect(display.arenaFrameClassName).toContain("arena-background-default-arena");
+    expect(display.tournament).toEqual({ displayName: null, logoUrl: null, showLogo: false });
+    expect(display.home.teamName).toBe("Bangkok HOME");
+    expect(display.away.teamName).toBe("Chiang Mai AWAY");
+    expect(display.home.style).toMatchObject({ "--team-accent": "#38bdf8" });
+    expect(display.away.style).toMatchObject({ "--team-accent": "#f97316" });
+  });
+
+  test("public display theme view applies match override, high contrast, and text-only fallback safely", () => {
+    const themed = buildPublicDisplayThemeView({
+      tournament: {
+        displayName: "Youth Cup",
+        logoUrl: "https://cdn.example.com/youth.png",
+        showLogo: true,
+        backgroundStyle: "SOLID",
+        colors: { primaryColor: "#111111", secondaryColor: "#222222", accentColor: "#333333", textColor: "#ffffff" }
+      },
+      home: {
+        displayName: "Tigers",
+        logoUrl: "https://cdn.example.com/tigers.png",
+        showLogo: true,
+        colors: { primaryColor: "#ff0000", secondaryColor: null, accentColor: "#ffcc00", textColor: "#ffffff" }
+      },
+      away: {
+        displayName: "Sharks",
+        logoUrl: "https://cdn.example.com/sharks.png",
+        showLogo: true,
+        colors: { primaryColor: "#0000ff", secondaryColor: null, accentColor: "#00ccff", textColor: "#ffffff" }
+      },
+      flags: { textOnlyFallback: false, neutralHighContrast: false }
+    });
+    const textOnly = buildPublicDisplayThemeView({
+      tournament: {
+        displayName: "Youth Cup",
+        logoUrl: "https://cdn.example.com/youth.png",
+        showLogo: true,
+        backgroundStyle: "HIGH_CONTRAST",
+        colors: { primaryColor: "#111111", secondaryColor: "#222222", accentColor: "#333333", textColor: "#ffffff" }
+      },
+      home: {
+        displayName: "Tigers",
+        logoUrl: "https://cdn.example.com/tigers.png",
+        showLogo: true,
+        colors: { primaryColor: "#bad", secondaryColor: null, accentColor: "#ffcc00", textColor: "#ffffff" }
+      },
+      away: {
+        displayName: "Sharks",
+        logoUrl: "https://cdn.example.com/sharks.png",
+        showLogo: true,
+        colors: { primaryColor: "#0000ff", secondaryColor: null, accentColor: "#00ccff", textColor: "#ffffff" }
+      },
+      flags: { textOnlyFallback: true, neutralHighContrast: true }
+    });
+
+    expect(themed.home.style).toMatchObject({ "--team-primary": "#ff0000", "--team-accent": "#ffcc00" });
+    expect(themed.away.style).toMatchObject({ "--team-primary": "#0000ff", "--team-accent": "#00ccff" });
+    expect(textOnly.flags).toEqual({ textOnlyFallback: true, neutralHighContrast: true });
+    expect(textOnly.tournament.showLogo).toBe(false);
+    expect(textOnly.home).toMatchObject({
+      logoUrl: null,
+      showLogo: false,
+      style: { "--team-primary": "#38bdf8", "--team-accent": "#38bdf8" }
+    });
+    expect(textOnly.away).toMatchObject({
+      logoUrl: null,
+      showLogo: false,
+      style: { "--team-primary": "#f97316", "--team-accent": "#f97316" }
+    });
   });
 
   test("public display marks low and critical shot clock states without exposing commands", () => {

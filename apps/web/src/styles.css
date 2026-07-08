@@ -706,11 +706,18 @@ label {
 }
 
 .public-display-frame {
+  --arena-bg: #080d17;
+  --arena-bg-secondary: #101827;
+  --arena-accent: #facc15;
+  --arena-text: #f8fafc;
   aspect-ratio: 16 / 9;
-  background: #080d17;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--arena-bg) 86%, #020617), #020617),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--arena-accent) 18%, transparent), transparent 42%);
   border: 1px solid #273449;
   border-radius: 8px;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.55);
+  color: var(--arena-text);
   margin: 0 auto;
   max-height: calc(100vh - 28px);
   max-width: calc(100vw - 28px);
@@ -741,11 +748,59 @@ label {
   padding-right: 210px;
 }
 
+.arena-background-dark-gradient {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--arena-bg) 92%, #020617), #020617 58%, color-mix(in srgb, var(--arena-bg-secondary) 78%, #020617)),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--arena-accent) 20%, transparent), transparent 44%);
+}
+
+.arena-background-solid {
+  background:
+    linear-gradient(180deg, var(--arena-bg), var(--arena-bg-secondary)),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--arena-accent) 14%, transparent), transparent 38%);
+}
+
+.arena-background-high-contrast {
+  background: #020617;
+  border-color: #f8fafc;
+  color: #f8fafc;
+}
+
 .arena-match-state {
   align-items: baseline;
   display: flex;
   gap: 12px;
   min-width: 0;
+}
+
+.arena-tournament-logo {
+  aspect-ratio: 1;
+  background: rgba(15, 23, 42, 0.54);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  color: var(--arena-accent);
+  display: grid;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  font-weight: 900;
+  height: 46px;
+  object-fit: contain;
+  place-items: center;
+  width: 46px;
+}
+
+.arena-tournament-title {
+  color: var(--arena-text);
+  flex: 1;
+  font-size: clamp(1.2rem, 2.4vw, 2.45rem);
+  line-height: 1;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .arena-match-state span,
@@ -848,9 +903,16 @@ label {
 }
 
 .public-display-team {
+  --team-primary: #38bdf8;
+  --team-secondary: #101827;
+  --team-accent: #38bdf8;
+  --team-text: #f8fafc;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--team-secondary) 84%, #020617), #050a14),
+    radial-gradient(circle at 82% 16%, color-mix(in srgb, var(--team-primary) 22%, transparent), transparent 36%);
   display: grid;
   gap: 6px;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   align-content: center;
   min-width: 0;
   padding: 14px 16px;
@@ -859,15 +921,15 @@ label {
 }
 
 .home-panel {
-  box-shadow: inset 8px 0 0 #38bdf8;
+  box-shadow: inset 8px 0 0 var(--team-accent), 0 0 30px color-mix(in srgb, var(--team-primary) 12%, transparent);
 }
 
 .away-panel {
-  box-shadow: inset -8px 0 0 #f97316;
+  box-shadow: inset -8px 0 0 var(--team-accent), 0 0 30px color-mix(in srgb, var(--team-primary) 12%, transparent);
 }
 
 .public-display-team h1 {
-  color: #f8fafc;
+  color: var(--team-text);
   display: -webkit-box;
   font-size: 2.65rem;
   -webkit-line-clamp: 2;
@@ -878,9 +940,32 @@ label {
   overflow-wrap: anywhere;
 }
 
+.public-display-team-logo {
+  aspect-ratio: 1;
+  align-self: center;
+  background: rgba(15, 23, 42, 0.48);
+  border: 1px solid color-mix(in srgb, var(--team-accent) 45%, rgba(148, 163, 184, 0.18));
+  border-radius: 8px;
+  color: var(--team-accent);
+  display: grid;
+  font-size: 1.4rem;
+  font-weight: 900;
+  height: clamp(46px, 7vh, 88px);
+  justify-self: center;
+  object-fit: contain;
+  padding: 4px;
+  place-items: center;
+  width: clamp(46px, 7vh, 88px);
+}
+
+.theme-text-only .public-display-team-logo,
+.theme-text-only .arena-tournament-logo {
+  display: none;
+}
+
 .public-display-score-value {
   align-self: center;
-  color: #facc15;
+  color: var(--team-accent);
   font-size: 10.85rem;
   line-height: 0.84;
 }

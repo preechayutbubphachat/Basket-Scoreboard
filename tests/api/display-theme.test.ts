@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApiApp } from "../../apps/api/src/app";
 import { resolvePublicDisplayTheme } from "../../apps/api/src/displayThemes/displayThemeService";
 
@@ -104,6 +104,41 @@ function createDisplayThemePool(options: { ownerExists?: boolean } = {}) {
         return [matchOverride && params[0] === matchId ? [matchOverride] : [], []];
       }
 
+      if (sql.includes("FROM matches m") && sql.includes("LEFT JOIN match_projections")) {
+        return [
+          ownerExists && params[0] === matchId
+            ? [
+                {
+                  match_id: matchId,
+                  match_status: "LIVE",
+                  projection_data: JSON.stringify({
+                    matchId,
+                    homeScore: 21,
+                    awayScore: 19,
+                    teamFouls: { home: 2, away: 3 },
+                    playerFouls: [],
+                    periodNumber: 2,
+                    gameClockRemainingMs: 430000,
+                    shotClockRemainingMs: 18000,
+                    gameClock: { remainingMs: 430000, running: false, lastStartedAt: null },
+                    shotClock: { remainingMs: 18000, running: false, lastStartedAt: null },
+                    status: "LIVE",
+                    currentSeq: 9,
+                    projectionVersion: "scoreboard-v1"
+                  }),
+                  last_event_seq: 9,
+                  updated_at: new Date("2026-07-01T10:00:00.000Z"),
+                  home_team_id: homeTeamId,
+                  home_team_name: "Bangkok Tigers",
+                  away_team_id: awayTeamId,
+                  away_team_name: "Phuket Sharks"
+                }
+              ]
+            : [],
+          []
+        ];
+      }
+
       if (sql.includes("FROM matches m")) {
         return [
           ownerExists && params[0] === matchId
@@ -124,7 +159,11 @@ function createDisplayThemePool(options: { ownerExists?: boolean } = {}) {
       }
 
       return [[], []];
-    }
+    },
+    getConnection: vi.fn().mockImplementation(async () => ({
+      query: (sql: string, params: unknown[] = []) => pool.query(sql, params),
+      release: vi.fn()
+    }))
   };
 
   return pool;
@@ -430,5 +469,94 @@ describe("display branding theme foundation", () => {
       away: { displayName: "Phuket Sharks", logoUrl: null, showLogo: false },
       flags: { textOnlyFallback: true, neutralHighContrast: true }
     });
+  });
+
+  it("enriches the public scoreboard payload with sanitized display theme only", async () => {
+    const pool = createDisplayThemePool();
+    await pool.query("INSERT INTO tournament_display_themes", [
+      tournamentId,
+      "Youth Cup Display",
+      "https://cdn.example.com/tournament.png",
+      "#111111",
+      "#222222",
+      "#333333",
+      "#ffffff",
+      "DARK_GRADIENT",
+      1,
+      1,
+      adminUserId,
+      adminUserId
+    ]);
+    await pool.query("INSERT INTO team_display_profiles", [
+      homeTeamId,
+      "Tigers",
+      "https://cdn.example.com/tigers.png",
+      "#cc0000",
+      null,
+      "#ffcc00",
+      "#ffffff",
+      1,
+      1,
+      adminUserId,
+      adminUserId
+    ]);
+    await pool.query("INSERT INTO match_display_overrides", [
+      matchId,
+      "#ff0000",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      1,
+      0,
+      0,
+      1,
+      "Private match-day note",
+      adminUserId,
+      adminUserId
+    ]);
+    const app = buildApiApp({ pool: pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/public/matches/${matchId}/scoreboard`
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        matchId,
+        homeScore: 21,
+        awayScore: 19,
+        displayTheme: {
+          tournament: {
+            displayName: "Youth Cup Display",
+            logoUrl: "https://cdn.example.com/tournament.png",
+            showLogo: true,
+            backgroundStyle: "DARK_GRADIENT"
+          },
+          home: {
+            displayName: "Tigers",
+            colors: { primaryColor: "#ff0000", accentColor: "#ffcc00" }
+          },
+          away: {
+            displayName: "Phuket Sharks"
+          },
+          flags: {
+            textOnlyFallback: false,
+            neutralHighContrast: false
+          }
+        }
+      });
+
+      const serialized = response.body;
+      expect(serialized).not.toMatch(/Private match-day note|emergencyReason|emergency_reason|created_by_user_id|updated_by_user_id|createdBy|updatedBy|actor|device|commandId|correlationId|causationId|csrf|token|audit|correctionDetails/i);
+      expect(JSON.stringify(pool.calls)).not.toContain("INSERT INTO match_events");
+    } finally {
+      await app.close();
+    }
   });
 });

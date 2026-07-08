@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type {
   AlphaCorrectionResponse,
   CommandResult,
@@ -4243,12 +4243,26 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
       onMouseMove={() => setControlsVisible(true)}
       onPointerDown={() => setControlsVisible(true)}
     >
-      <section className="public-display-frame arena-layout" aria-label="16:9 public scoreboard display">
+      <section
+        className={display?.arenaFrameClassName ?? "public-display-frame arena-layout"}
+        style={display?.arenaFrameStyle as CSSProperties | undefined}
+        aria-label="16:9 public scoreboard display"
+      >
         <header className="arena-header">
+          {display?.tournament.showLogo && display.tournament.logoUrl ? (
+            <SafePreviewLogo
+              className="arena-tournament-logo"
+              src={display.tournament.logoUrl}
+              fallbackLabel="T"
+            />
+          ) : null}
           <div className="arena-match-state">
             <span>{display?.statusLabel ?? "Loading"}</span>
             <strong>{display?.periodLabel ?? "Period pending"}</strong>
           </div>
+          {display?.tournament.displayName ? (
+            <h1 className="arena-tournament-title">{display.tournament.displayName}</h1>
+          ) : null}
         </header>
         <nav className="arena-display-actions" aria-label="Public display actions">
           <a
@@ -4340,11 +4354,17 @@ function PublicDisplayTeamPanel({
     score: number;
     panelClassName: string;
     scoreClassName: string;
+    style: Record<string, string>;
+    logoUrl: string | null;
+    showLogo: boolean;
   };
 }) {
   return (
-    <article className={`${team.panelClassName} ${side}`}>
+    <article className={`${team.panelClassName} ${side}`} style={team.style as CSSProperties}>
       <span>{team.label}</span>
+      {team.showLogo && team.logoUrl ? (
+        <SafePreviewLogo className="public-display-team-logo" src={team.logoUrl} fallbackLabel={side.slice(0, 1)} />
+      ) : null}
       <h1>{team.teamName}</h1>
       <strong key={`${side}-${team.score}`} className={team.scoreClassName}>{team.score}</strong>
     </article>
