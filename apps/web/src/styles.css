@@ -907,6 +907,7 @@ label {
   --team-secondary: #101827;
   --team-accent: #38bdf8;
   --team-text: #f8fafc;
+  --score-color: #f8fafc;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--team-secondary) 84%, #020617), #050a14),
     radial-gradient(circle at 82% 16%, color-mix(in srgb, var(--team-primary) 22%, transparent), transparent 36%);
@@ -965,7 +966,7 @@ label {
 
 .public-display-score-value {
   align-self: center;
-  color: var(--team-accent);
+  color: var(--score-color);
   font-size: 10.85rem;
   line-height: 0.84;
 }

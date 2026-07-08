@@ -1849,7 +1849,8 @@ describe("web API client", () => {
         "--team-primary": "#cc0000",
         "--team-secondary": "#220000",
         "--team-accent": "#ffcc00",
-        "--team-text": "#ffffff"
+        "--team-text": "#ffffff",
+        "--score-color": "#f8fafc"
       }
     });
     expect(display.away).toMatchObject({
@@ -1928,18 +1929,86 @@ describe("web API client", () => {
 
     expect(themed.home.style).toMatchObject({ "--team-primary": "#ff0000", "--team-accent": "#ffcc00" });
     expect(themed.away.style).toMatchObject({ "--team-primary": "#0000ff", "--team-accent": "#00ccff" });
+    expect(themed.home.style["--score-color"]).toBe("#f8fafc");
+    expect(themed.away.style["--score-color"]).toBe("#f8fafc");
+    expect(themed.home.style["--score-color"]).not.toBe(themed.home.style["--team-primary"]);
+    expect(themed.home.style["--score-color"]).not.toBe(themed.home.style["--team-accent"]);
     expect(textOnly.flags).toEqual({ textOnlyFallback: true, neutralHighContrast: true });
     expect(textOnly.tournament.showLogo).toBe(false);
     expect(textOnly.home).toMatchObject({
       logoUrl: null,
       showLogo: false,
-      style: { "--team-primary": "#38bdf8", "--team-accent": "#38bdf8" }
+      style: { "--team-primary": "#38bdf8", "--team-accent": "#38bdf8", "--score-color": "#f8fafc" }
     });
     expect(textOnly.away).toMatchObject({
       logoUrl: null,
       showLogo: false,
-      style: { "--team-primary": "#f97316", "--team-accent": "#f97316" }
+      style: { "--team-primary": "#f97316", "--team-accent": "#f97316", "--score-color": "#f8fafc" }
     });
+  });
+
+  test("public display score color stays readable with dark team and match override colors", () => {
+    const display = buildPublicScoreboardDisplayModel({
+      ...scoreboardProjection,
+      displayTheme: {
+        tournament: {
+          displayName: "Night Cup",
+          logoUrl: null,
+          showLogo: false,
+          backgroundStyle: "DEFAULT_ARENA",
+          colors: {
+            primaryColor: "#000000",
+            secondaryColor: "#050505",
+            accentColor: "#111111",
+            textColor: "#f8fafc"
+          }
+        },
+        home: {
+          displayName: "Dark Home",
+          logoUrl: null,
+          showLogo: false,
+          colors: {
+            primaryColor: "#000000",
+            secondaryColor: "#050505",
+            accentColor: "#111111",
+            textColor: "#f8fafc"
+          }
+        },
+        away: {
+          displayName: "Dark Away",
+          logoUrl: null,
+          showLogo: false,
+          colors: {
+            primaryColor: "#010101",
+            secondaryColor: "#060606",
+            accentColor: "#121212",
+            textColor: "#f8fafc"
+          }
+        },
+        flags: {
+          textOnlyFallback: false,
+          neutralHighContrast: false
+        }
+      }
+    }, {
+      nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
+      realtimeState: "CONNECTED"
+    });
+
+    expect(display.home.style).toMatchObject({
+      "--team-primary": "#000000",
+      "--team-accent": "#111111",
+      "--score-color": "#f8fafc"
+    });
+    expect(display.away.style).toMatchObject({
+      "--team-primary": "#010101",
+      "--team-accent": "#121212",
+      "--score-color": "#f8fafc"
+    });
+    expect(display.home.style["--score-color"]).not.toBe(display.home.style["--team-accent"]);
+    expect(display.away.style["--score-color"]).not.toBe(display.away.style["--team-primary"]);
+    expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });
 
   test("public display marks low and critical shot clock states without exposing commands", () => {

@@ -177,7 +177,8 @@ function buildTeamTheme(
       "--team-primary": colors.primaryColor,
       "--team-secondary": colors.secondaryColor,
       "--team-accent": colors.accentColor,
-      "--team-text": colors.textColor
+      "--team-text": colors.textColor,
+      "--score-color": fixedScoreColor
     }
   };
 }
@@ -225,6 +226,8 @@ const defaultAwayColors: ResolvedDisplayColors = {
   accentColor: "#f97316",
   textColor: "#f8fafc"
 };
+
+const fixedScoreColor = "#f8fafc";
 
 function getCompactSyncLabel(state: RealtimeConnectionState) {
   switch (state) {
