@@ -8,6 +8,7 @@ import { fastifyErrorHandler } from "./errors/apiErrors.js";
 import { registerSpaFallback } from "./frontend/spaFallback.js";
 import { registerAuthRoutes } from "./routes/authRoutes.js";
 import { registerDeployDiagnosticsRoutes } from "./routes/deployDiagnosticsRoutes.js";
+import { registerDisplayScreenRoutes } from "./routes/displayScreenRoutes.js";
 import { registerMatchOfficialRoutes } from "./routes/matchOfficialRoutes.js";
 import { registerMatchRoutes } from "./routes/matchRoutes.js";
 import { registerOperatorRoutes } from "./routes/operatorRoutes.js";
@@ -52,6 +53,7 @@ export function buildApiApp(options: {
   registerRosterRoutes(app, pool, auth);
   registerTournamentRoutes(app, pool, auth);
   registerOperatorRoutes(app, pool, auth);
+  registerDisplayScreenRoutes(app, pool, auth);
   registerSpaFallback(
     app,
     options.frontendDistDir ? { frontendDistDir: options.frontendDistDir } : {}
