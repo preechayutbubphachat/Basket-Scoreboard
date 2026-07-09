@@ -1858,7 +1858,7 @@ describe("web API client", () => {
       { icon: "SQ", label: "Seq", value: "3" },
       { icon: "LS", label: "Last sync", value: expect.any(String) }
     ]);
-    expect(display.recentEventTicker).toContain("Recent play updates");
+    expect(display.recentEventTicker).toBe("No public play updates available.");
     expect(display.recentEventTicker).not.toMatch(/HOME|AWAY|\d+\s*-\s*\d+|SCORE_ADDED/i);
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });
@@ -1878,7 +1878,8 @@ describe("web API client", () => {
     expect(styleSource).not.toContain(".arena-stat-strip");
     expect(display.home).toMatchObject({ timeouts: 5, fouls: 2 });
     expect(display.away).toMatchObject({ timeouts: 5, fouls: 1 });
-    expect(display.recentEventTicker).toContain("Recent play updates");
+    expect(display.recentEventTicker).toBe("No public play updates available.");
+    expect(display.recentEventTicker).not.toMatch(/HOME|AWAY|SCORE_ADDED|FOUL_ADDED|MATCH_STARTED|\d+\s*-\s*\d+/i);
   });
 
   test("public display model derives running clocks and final label safely", () => {
@@ -3435,12 +3436,15 @@ describe("tournament schedule UI policy", () => {
       courtId: null,
       limit: 6
     });
+    expect(JSON.stringify(schedule)).not.toMatch(/homeTeam|awayTeam|scheduledAt|venueName|score|winner/i);
     expect(finalSummary).toMatchObject({
       status: "READY",
       sceneType: "FINAL_SUMMARY",
       title: "Final Summary",
-      matchId: scoreboardProjection.matchId
+      matchId: scoreboardProjection.matchId,
+      message: "Public final summary rendering is not available yet."
     });
+    expect(JSON.stringify(finalSummary)).not.toMatch(/homeScore|awayScore|winner|boxScore|playerStats/i);
     expect(JSON.stringify([blank, live, schedule, finalSummary])).not.toMatch(/\/admin|\/operator|audit-log|replay|corrections|commandId|correlationId|actor|csrf|token/i);
     expect(publicDisplaySceneHasPrivateExposure({ commandId: "private", csrf: "token" })).toBe(true);
     expect(publicDisplaySceneHasPrivateExposure(blank)).toBe(false);
@@ -3482,6 +3486,7 @@ describe("tournament schedule UI policy", () => {
   test("public display scene route is public-only and leaves existing scoreboard display route intact", () => {
     const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
     const styleSource = readFileSync("apps/web/src/styles.css", "utf8");
+    const displaySource = readFileSync("apps/web/src/lib/publicScoreboardDisplay.ts", "utf8");
 
     expect(appSource).toContain('name: "public-display-scene"');
     expect(appSource).toContain("PublicDisplayScenePage");
@@ -3490,6 +3495,14 @@ describe("tournament schedule UI policy", () => {
     expect(appSource).not.toMatch(/case "public-display-scene":[\s\S]{0,200}ProtectedRoute/);
     expect(styleSource).toContain(".public-display-scene-card");
     expect(styleSource).toContain(".public-display-standby");
+    expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*aspect-ratio:\s*16\s*\/\s*9/);
+    expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*overflow:\s*hidden/);
+    expect(styleSource).toMatch(/\.public-display-score-value\s*{[\s\S]*color:\s*var\(--score-color\)/);
+    expect(displaySource).toContain('const fixedScoreColor = "#f8fafc"');
+    expect(styleSource).toMatch(/\.public-display-game-clock strong\s*{[\s\S]*color:\s*#67e8f9/);
+    expect(styleSource).toMatch(/\.public-display-shot-clock strong\s*{[\s\S]*color:\s*#ef4444/);
+    expect(styleSource).toContain(".kiosk-mode .recent-event-ticker");
+    expect(appSource).not.toMatch(/fake|demo schedule|sample final|sample ticker/i);
   });
 
   test("builds protected live dashboard links, filters, card labels, and warning summaries", () => {

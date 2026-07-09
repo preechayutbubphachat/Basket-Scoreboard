@@ -126,7 +126,7 @@ export function buildPublicScoreboardDisplayModel(
       { icon: "SQ", label: "Seq", value: String(seq) },
       { icon: "LS", label: "Last sync", value: receivedAt }
     ],
-    recentEventTicker: "Recent play updates appear here after the public projection changes.",
+    recentEventTicker: "No public play updates available.",
     finalLabel: projection.status === "FINISHED" || projection.status === "FINAL"
       ? `Final ${projection.finalScore?.home ?? projection.homeScore} - ${projection.finalScore?.away ?? projection.awayScore}`
       : null

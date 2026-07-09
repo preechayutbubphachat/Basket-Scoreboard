@@ -8,6 +8,8 @@ const secondScreenId = "33333333-3333-4333-8333-333333333333";
 const blankSceneId = "44444444-4444-4444-8444-444444444444";
 const liveSceneId = "55555555-5555-4555-8555-555555555555";
 const matchId = "66666666-6666-4666-8666-666666666666";
+const scheduleSceneId = "77777777-7777-4777-8777-777777777777";
+const finalSummarySceneId = "88888888-8888-4888-8888-888888888888";
 
 type ScreenRow = {
   screen_id: string;
@@ -372,7 +374,7 @@ describe("display screen scene foundation", () => {
     }
   });
 
-  it("returns public BLANK and LIVE_SCOREBOARD scenes without private metadata", async () => {
+  it("returns public scenes for all scene types without private metadata or fake data", async () => {
     process.env.AUTH_TEST_DISABLE_CSRF = "true";
     const pool = createDisplayScreenPool();
     const app = buildApiApp({ pool: pool as never });
@@ -444,6 +446,70 @@ describe("display screen scene foundation", () => {
         }
       });
       expect(live.body).not.toMatch(publicPrivateMetadataPattern());
+
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/display-screens/${screenId}/scenes`,
+        headers: adminHeaders(),
+        payload: {
+          sceneId: scheduleSceneId,
+          sceneType: "SCHEDULE",
+          sceneName: "Safe Schedule",
+          sceneConfig: { tournamentId, courtId: null, limit: 6 }
+        }
+      });
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/display-screens/${screenId}/active-scene`,
+        headers: adminHeaders(),
+        payload: { sceneId: scheduleSceneId }
+      });
+
+      const schedule = await app.inject({ method: "GET", url: "/api/v1/public/display/court-1-main" });
+      expect(schedule.statusCode).toBe(200);
+      expect(schedule.json()).toMatchObject({
+        data: {
+          activeScene: {
+            sceneType: "SCHEDULE",
+            publicData: { tournamentId, courtId: null, limit: 6 },
+            refreshAfterMs: 15000
+          }
+        }
+      });
+      expect(schedule.body).not.toMatch(/homeTeam|awayTeam|scheduledAt|venueName|score|winner/i);
+      expect(schedule.body).not.toMatch(publicPrivateMetadataPattern());
+
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/display-screens/${screenId}/scenes`,
+        headers: adminHeaders(),
+        payload: {
+          sceneId: finalSummarySceneId,
+          sceneType: "FINAL_SUMMARY",
+          sceneName: "Safe Final Summary",
+          sceneConfig: { matchId }
+        }
+      });
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/display-screens/${screenId}/active-scene`,
+        headers: adminHeaders(),
+        payload: { sceneId: finalSummarySceneId }
+      });
+
+      const finalSummary = await app.inject({ method: "GET", url: "/api/v1/public/display/court-1-main" });
+      expect(finalSummary.statusCode).toBe(200);
+      expect(finalSummary.json()).toMatchObject({
+        data: {
+          activeScene: {
+            sceneType: "FINAL_SUMMARY",
+            publicData: { matchId, status: "UNAVAILABLE" },
+            refreshAfterMs: 30000
+          }
+        }
+      });
+      expect(finalSummary.body).not.toMatch(/homeScore|awayScore|winner|boxScore|playerStats/i);
+      expect(finalSummary.body).not.toMatch(publicPrivateMetadataPattern());
     } finally {
       await app.close();
     }
