@@ -3497,11 +3497,21 @@ describe("tournament schedule UI policy", () => {
     expect(styleSource).toContain(".public-display-standby");
     expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*aspect-ratio:\s*16\s*\/\s*9/);
     expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*overflow:\s*hidden/);
+    expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*repeating-linear-gradient/);
+    expect(styleSource).toMatch(/\.arena-scoreboard-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.16fr\)\s*minmax\(300px,\s*0\.58fr\)\s*minmax\(0,\s*1\.16fr\)/);
     expect(styleSource).toMatch(/\.public-display-score-value\s*{[\s\S]*color:\s*var\(--score-color\)/);
+    expect(styleSource).toMatch(/\.public-display-score-value\s*{[\s\S]*font-size:\s*clamp\(9rem,\s*12\.5vw,\s*14\.8rem\)/);
     expect(displaySource).toContain('const fixedScoreColor = "#f8fafc"');
+    expect(styleSource).toMatch(/\.public-display-team::before\s*{[\s\S]*color-mix\(in srgb,\s*var\(--team-accent\)/);
+    expect(styleSource).toMatch(/\.home-panel\s*{[\s\S]*inset 10px 0 0 var\(--team-accent\)/);
+    expect(styleSource).toMatch(/\.away-panel\s*{[\s\S]*inset -10px 0 0 var\(--team-accent\)/);
     expect(styleSource).toMatch(/\.public-display-game-clock strong\s*{[\s\S]*color:\s*#67e8f9/);
     expect(styleSource).toMatch(/\.public-display-shot-clock strong\s*{[\s\S]*color:\s*#ef4444/);
+    expect(styleSource).toMatch(/\.public-display-shot-clock\s*{[\s\S]*border-color:\s*rgba\(239,\s*68,\s*68,\s*0\.84\)/);
     expect(styleSource).toContain(".kiosk-mode .recent-event-ticker");
+    expect(styleSource).toMatch(/\.recent-event-ticker\s*{[\s\S]*opacity:\s*0\.72/);
+    expect(styleSource).toMatch(/\.compact-system-strip\s*{[\s\S]*opacity:\s*0\.34/);
+    expect(displaySource).toContain('recentEventTicker: "No public play updates available."');
     expect(appSource).not.toMatch(/fake|demo schedule|sample final|sample ticker/i);
   });
 
