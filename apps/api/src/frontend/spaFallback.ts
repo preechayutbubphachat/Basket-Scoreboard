@@ -20,7 +20,7 @@ const assetContentTypes: Record<string, string> = {
   ".webp": "image/webp"
 };
 
-const browserRoutePrefixes = ["/admin", "/login", "/operator", "/public/scoreboard"];
+const browserRoutePrefixes = ["/admin", "/login", "/operator", "/public/display", "/public/scoreboard"];
 
 export function registerSpaFallback(
   app: FastifyInstance,

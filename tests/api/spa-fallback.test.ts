@@ -26,7 +26,10 @@ describe("Plesk SPA fallback", () => {
     "/login",
     "/admin/matches",
     "/operator/matches/test-match/score",
-    "/public/scoreboard/test-match"
+    "/public/display/court-1-main",
+    "/public/scoreboard/test-match",
+    "/public/scoreboard/test-match/display",
+    "/public/scoreboard/test-match/display?kiosk=1"
   ])("serves the Vite index shell for browser route %s", async (url) => {
     const app = buildApiApp({ pool: {} as never, frontendDistDir });
 
@@ -40,6 +43,28 @@ describe("Plesk SPA fallback", () => {
       expect(response.statusCode).toBe(200);
       expect(response.headers["content-type"]).toContain("text/html");
       expect(response.body).toContain('<div id="root"></div>');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("leaves unsupported legacy /display as a JSON 404", async () => {
+    const app = buildApiApp({ pool: {} as never, frontendDistDir });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/display",
+        headers: { accept: "text/html" }
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.headers["content-type"]).toContain("application/json");
+      expect(response.json()).toMatchObject({
+        error: "Not Found",
+        statusCode: 404
+      });
+      expect(response.body).not.toContain('<div id="root"></div>');
     } finally {
       await app.close();
     }
@@ -83,6 +108,32 @@ describe("Plesk SPA fallback", () => {
         statusCode: 404
       });
       expect(response.body).not.toContain('<div id="root"></div>');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps public API error responses sanitized", async () => {
+    const app = buildApiApp({
+      pool: {
+        query: async () => [[]]
+      } as never,
+      frontendDistDir
+    });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/public/display/court-1-main",
+        headers: { accept: "application/json" }
+      });
+      const forbiddenPublicMetadata =
+        /actor|device|session|token|csrf|commandId|correlationId|audit|correction/i;
+
+      expect(response.statusCode).toBe(404);
+      expect(response.headers["content-type"]).toContain("application/json");
+      expect(response.body).toContain("MATCH_NOT_FOUND");
+      expect(response.body).not.toMatch(forbiddenPublicMetadata);
     } finally {
       await app.close();
     }
