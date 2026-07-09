@@ -1,14 +1,19 @@
 import type {
   AuthenticatedUser,
   AlphaCorrectionResponse,
+  ActiveDisplaySceneResponse,
   CommandResult,
   CorrectionEligibleEventsResponse,
   CreateCourtRequest,
+  CreateDisplaySceneInput,
+  CreateDisplayScreenInput,
   CreateTeamRequest,
   CreateTournamentMatchRequest,
   CreateTournamentRequest,
   CreateVenueRequest,
   CreatePlayerRequest,
+  DisplaySceneResponse,
+  DisplayScreenResponse,
   MatchDisplayOverrideInput,
   MatchDisplayOverrideResponse,
   MatchAssignment,
@@ -42,6 +47,9 @@ import type {
   TournamentStandingsResponse,
   TournamentSetupTeam,
   TournamentSummary,
+  PublicDisplayScreenResponse,
+  UpdateDisplaySceneInput,
+  UpdateDisplayScreenInput,
   VenueCourt,
   VenueListResponse,
   VenueSummary,
@@ -367,6 +375,71 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         }
       );
       return data.override;
+    },
+    async listDisplayScreens() {
+      const data = await request<{ screens: DisplayScreenResponse[] }>("/display-screens");
+      return data.screens;
+    },
+    async createDisplayScreen(input: CreateDisplayScreenInput) {
+      const data = await request<{ screen: DisplayScreenResponse }>("/display-screens", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+      return data.screen;
+    },
+    async getDisplayScreen(screenId: string) {
+      const data = await request<{ screen: DisplayScreenResponse }>(`/display-screens/${encodeURIComponent(screenId)}`);
+      return data.screen;
+    },
+    async updateDisplayScreen(screenId: string, input: UpdateDisplayScreenInput) {
+      const data = await request<{ screen: DisplayScreenResponse }>(
+        `/display-screens/${encodeURIComponent(screenId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(input)
+        }
+      );
+      return data.screen;
+    },
+    async listDisplayScenes(screenId: string) {
+      const data = await request<{ scenes: DisplaySceneResponse[] }>(
+        `/display-screens/${encodeURIComponent(screenId)}/scenes`
+      );
+      return data.scenes;
+    },
+    async createDisplayScene(screenId: string, input: CreateDisplaySceneInput) {
+      const data = await request<{ scene: DisplaySceneResponse }>(
+        `/display-screens/${encodeURIComponent(screenId)}/scenes`,
+        {
+          method: "POST",
+          body: JSON.stringify(input)
+        }
+      );
+      return data.scene;
+    },
+    async updateDisplayScene(screenId: string, sceneId: string, input: UpdateDisplaySceneInput) {
+      const data = await request<{ scene: DisplaySceneResponse }>(
+        `/display-screens/${encodeURIComponent(screenId)}/scenes/${encodeURIComponent(sceneId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(input)
+        }
+      );
+      return data.scene;
+    },
+    async setActiveDisplayScene(screenId: string, sceneId: string) {
+      const data = await request<{ activeScene: ActiveDisplaySceneResponse }>(
+        `/display-screens/${encodeURIComponent(screenId)}/active-scene`,
+        {
+          method: "POST",
+          body: JSON.stringify({ sceneId })
+        }
+      );
+      return data.activeScene;
+    },
+    async getPublicDisplayScreen(screenSlug: string) {
+      const data = await request<PublicDisplayScreenResponse["data"]>(`/public/display/${encodeURIComponent(screenSlug)}`);
+      return data;
     },
     async getPublicTournaments() {
       const data = await request<{ tournaments: TournamentSummary[] }>("/public/tournaments");

@@ -183,6 +183,33 @@ select {
   margin: 0;
 }
 
+.display-screen-form,
+.display-scene-form {
+  max-width: 760px;
+}
+
+.display-preview-admin-grid {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr);
+}
+
+.json-preview {
+  background: #0f172a;
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 13px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
 .form-fieldset {
   border: 1px solid #d9e0ea;
   border-radius: 8px;

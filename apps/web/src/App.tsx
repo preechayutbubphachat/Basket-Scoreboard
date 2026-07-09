@@ -3,6 +3,9 @@ import type {
   AlphaCorrectionResponse,
   CommandResult,
   CorrectionEligibleEvent,
+  ActiveDisplaySceneResponse,
+  DisplaySceneResponse,
+  DisplayScreenResponse,
   FoulType,
   AuditLogGroupFilter,
   AuditLogRow,
@@ -220,6 +223,30 @@ import {
   type TournamentDisplayThemeFormState
 } from "./lib/displayThemeControl";
 import {
+  buildAdminDisplayScreenDetailLink,
+  buildAdminDisplayScreenNewLink,
+  buildAdminDisplayScreenPreviewLink,
+  buildAdminDisplayScreensLink,
+  buildAdminDisplayScreenScenesLink,
+  buildPublicDisplayScreenLink,
+  createDisplaySceneFormState,
+  createDisplayScenePayload,
+  createDisplaySceneUpdatePayload,
+  createDisplayScreenFormState,
+  createDisplayScreenPayload,
+  createDisplayScreenUpdatePayload,
+  displaySceneTypeOptions,
+  getDisplaySceneConfigSummary,
+  getDisplaySceneSaveState,
+  getDisplayScreenSaveState,
+  getPublicDisplayPreviewSummary,
+  publicDisplayPreviewHasPrivateExposure,
+  validateDisplaySceneForm,
+  validateDisplayScreenForm,
+  type DisplaySceneFormState,
+  type DisplayScreenFormState
+} from "./lib/displayScreenControl";
+import {
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardDisplayModel,
   getPublicDisplayControlsClassName,
@@ -248,6 +275,11 @@ type Route =
   | { name: "admin-tournament-display-theme"; tournamentId: string }
   | { name: "admin-team-display-profile"; teamId: string }
   | { name: "admin-match-display-theme"; matchId: string }
+  | { name: "admin-display-screens" }
+  | { name: "admin-display-screen-new" }
+  | { name: "admin-display-screen-detail"; screenId: string }
+  | { name: "admin-display-screen-scenes"; screenId: string }
+  | { name: "admin-display-screen-preview"; screenId: string }
   | { name: "admin-officials"; matchId: string }
   | { name: "admin-rosters"; matchId: string }
   | { name: "admin-lineup"; matchId: string }
@@ -307,6 +339,21 @@ function parseRoute(pathname: string): Route {
   const adminDisplayThemeMatchId = adminMatchDisplayThemeMatch?.[1];
   if (adminDisplayThemeMatchId) {
     return { name: "admin-match-display-theme", matchId: decodeURIComponent(adminDisplayThemeMatchId) };
+  }
+  const adminDisplayScreenScenesMatch = pathname.match(/^\/admin\/display-screens\/([^/]+)\/scenes$/);
+  const adminDisplayScreenScenesId = adminDisplayScreenScenesMatch?.[1];
+  if (adminDisplayScreenScenesId) {
+    return { name: "admin-display-screen-scenes", screenId: decodeURIComponent(adminDisplayScreenScenesId) };
+  }
+  const adminDisplayScreenPreviewMatch = pathname.match(/^\/admin\/display-screens\/([^/]+)\/preview$/);
+  const adminDisplayScreenPreviewId = adminDisplayScreenPreviewMatch?.[1];
+  if (adminDisplayScreenPreviewId) {
+    return { name: "admin-display-screen-preview", screenId: decodeURIComponent(adminDisplayScreenPreviewId) };
+  }
+  const adminDisplayScreenDetailMatch = pathname.match(/^\/admin\/display-screens\/([^/]+)$/);
+  const adminDisplayScreenDetailId = adminDisplayScreenDetailMatch?.[1];
+  if (adminDisplayScreenDetailId && adminDisplayScreenDetailId !== "new") {
+    return { name: "admin-display-screen-detail", screenId: decodeURIComponent(adminDisplayScreenDetailId) };
   }
   const rosterMatch = pathname.match(/^\/admin\/matches\/([^/]+)\/rosters$/);
   const rosterMatchId = rosterMatch?.[1];
@@ -407,6 +454,8 @@ function parseRoute(pathname: string): Route {
   if (pathname === "/admin") return { name: "admin" };
   if (pathname === "/admin/matches") return { name: "admin-matches" };
   if (pathname === "/admin/tournaments") return { name: "admin-tournaments" };
+  if (pathname === "/admin/display-screens") return { name: "admin-display-screens" };
+  if (pathname === "/admin/display-screens/new") return { name: "admin-display-screen-new" };
   if (pathname === "/operator/matches") return { name: "operator-matches" };
   if (pathname === "/public/tournaments" || pathname === "/public/schedule") return { name: "public-tournaments" };
   if (pathname === "/unauthorized") return { name: "unauthorized" };
@@ -605,6 +654,11 @@ function AdminHome() {
       <p>
         <a href="/admin/tournaments" onClick={(event) => { event.preventDefault(); navigate("/admin/tournaments"); }}>
           Browse tournaments
+        </a>
+      </p>
+      <p>
+        <a href={buildAdminDisplayScreensLink()} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreensLink()); }}>
+          Manage display screens
         </a>
       </p>
       <form className="inline-form" onSubmit={openMatch}>
@@ -1491,6 +1545,466 @@ function AdminMatchDisplayThemePage({ matchId }: { matchId: string }) {
         </form>
         <DisplayThemePreviewPanel preview={preview} />
       </div>
+    </section>
+  );
+}
+
+function AdminDisplayScreensPage() {
+  const { api } = useCurrentUser();
+  const [screens, setScreens] = useState<DisplayScreenResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadScreens() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setScreens(await api.listDisplayScreens());
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadScreens();
+  }, [api]);
+
+  async function copyPublicLink(screenSlug: string) {
+    const publicPath = buildPublicDisplayScreenLink(screenSlug);
+    const publicUrl = `${window.location.origin}${publicPath}`;
+    try {
+      await navigator.clipboard?.writeText(publicUrl);
+      setCopyMessage(`Copied ${publicPath}`);
+    } catch {
+      setCopyMessage(publicPath);
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display screens</p>
+          <h1>Display Screens</h1>
+          <p className="muted">Create public display channels and assign safe active scenes.</p>
+        </div>
+        <div className="button-row">
+          <a
+            className="button-link"
+            href={buildAdminDisplayScreenNewLink()}
+            onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreenNewLink()); }}
+          >
+            Create display screen
+          </a>
+          <button type="button" disabled={loading} onClick={() => void loadScreens()}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {copyMessage ? <Notice tone="success" text={copyMessage} /> : null}
+      {loading ? <p>Loading display screens...</p> : null}
+      {!loading && screens.length === 0 ? (
+        <section className="empty-state">
+          <h2>No display screens yet.</h2>
+          <p>Create a display screen, add scenes, then publish its public display URL.</p>
+        </section>
+      ) : null}
+      {screens.length > 0 ? (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Screen</th>
+                <th>Slug</th>
+                <th>Status</th>
+                <th>Active scene</th>
+                <th>Public URL</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {screens.map((screen) => {
+                const detailLink = buildAdminDisplayScreenDetailLink(screen.screenId);
+                const scenesLink = buildAdminDisplayScreenScenesLink(screen.screenId);
+                const previewLink = buildAdminDisplayScreenPreviewLink(screen.screenId);
+                const publicLink = buildPublicDisplayScreenLink(screen.screenSlug);
+                return (
+                  <tr key={screen.screenId}>
+                    <td>
+                      <strong>{screen.displayName}</strong>
+                      {screen.description ? <p className="muted">{screen.description}</p> : null}
+                    </td>
+                    <td><code>{screen.screenSlug}</code></td>
+                    <td>{screen.publicEnabled && screen.active ? "Public enabled" : "Private or inactive"}</td>
+                    <td className="muted">Use Preview to inspect active scene.</td>
+                    <td>
+                      <button type="button" onClick={() => void copyPublicLink(screen.screenSlug)}>
+                        Copy public URL
+                      </button>
+                      <p className="muted">{publicLink}</p>
+                    </td>
+                    <td>
+                      <div className="button-row">
+                        <a className="button-link secondary" href={detailLink} onClick={(event) => { event.preventDefault(); navigate(detailLink); }}>Edit</a>
+                        <a className="button-link secondary" href={scenesLink} onClick={(event) => { event.preventDefault(); navigate(scenesLink); }}>Scenes</a>
+                        <a className="button-link secondary" href={previewLink} onClick={(event) => { event.preventDefault(); navigate(previewLink); }}>Preview</a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function AdminDisplayScreenFormPage({ screenId }: { screenId?: string }) {
+  const { api } = useCurrentUser();
+  const [form, setForm] = useState<DisplayScreenFormState>(() => createDisplayScreenFormState());
+  const [loading, setLoading] = useState(Boolean(screenId));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const isEdit = Boolean(screenId);
+
+  async function loadScreen() {
+    if (!screenId) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      setForm(createDisplayScreenFormState(await api.getDisplayScreen(screenId)));
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadScreen();
+  }, [api, screenId]);
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationMessage = validateDisplayScreenForm(form);
+    if (validationMessage) {
+      setMessage({ tone: "error", text: validationMessage, code: "VALIDATION_ERROR" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage({ tone: "success", text: isEdit ? "Saving display screen..." : "Creating display screen..." });
+    try {
+      const saved = screenId
+        ? await api.updateDisplayScreen(screenId, createDisplayScreenUpdatePayload(form))
+        : await api.createDisplayScreen(createDisplayScreenPayload(form));
+      setForm(createDisplayScreenFormState(saved));
+      setMessage({ tone: "success", text: isEdit ? "Display screen saved." : "Display screen created." });
+      if (!screenId) {
+        navigate(buildAdminDisplayScreenDetailLink(saved.screenId));
+      }
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const validationMessage = validateDisplayScreenForm(form);
+  const saveState = getDisplayScreenSaveState({ saving, routeId: screenId ?? null, validationMessage });
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display screens</p>
+          <h1>{isEdit ? "Edit Display Screen" : "Create Display Screen"}</h1>
+          {screenId ? <p className="muted">Screen ID: {screenId}</p> : null}
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href={buildAdminDisplayScreensLink()} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreensLink()); }}>
+            Display Screens
+          </a>
+          {screenId ? (
+            <>
+              <a className="button-link secondary" href={buildAdminDisplayScreenScenesLink(screenId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreenScenesLink(screenId)); }}>Scenes</a>
+              <a className="button-link secondary" href={buildAdminDisplayScreenPreviewLink(screenId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreenPreviewLink(screenId)); }}>Preview</a>
+              <button type="button" onClick={() => void loadScreen()} disabled={loading || saving}>Refresh</button>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading display screen...</p> : null}
+      {!loading && validationMessage ? <p className="form-validation">{validationMessage}</p> : null}
+      <form className="stacked-form display-screen-form" onSubmit={(event) => void handleSave(event)}>
+        <TextInput label="Screen slug" value={form.screenSlug} maxLength={120} placeholder="court-1-main" onChange={(value) => setForm((current) => ({ ...current, screenSlug: value }))} />
+        <TextInput label="Display name" value={form.displayName} maxLength={120} placeholder="Court 1 Main Display" onChange={(value) => setForm((current) => ({ ...current, displayName: value }))} />
+        <TextInput label="Tournament ID" value={form.tournamentId} maxLength={36} placeholder="Optional tournament UUID" onChange={(value) => setForm((current) => ({ ...current, tournamentId: value }))} />
+        <TextInput label="Description" value={form.description} maxLength={255} placeholder="Optional operations note" onChange={(value) => setForm((current) => ({ ...current, description: value }))} />
+        <CheckboxInput label="Public enabled" checked={form.publicEnabled} onChange={(value) => setForm((current) => ({ ...current, publicEnabled: value }))} />
+        <CheckboxInput label="Active" checked={form.active} onChange={(value) => setForm((current) => ({ ...current, active: value }))} />
+        <button type="submit" disabled={saveState.disabled}>{saving ? "Saving..." : "Save Display Screen"}</button>
+      </form>
+    </section>
+  );
+}
+
+function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
+  const { api } = useCurrentUser();
+  const [screen, setScreen] = useState<DisplayScreenResponse | null>(null);
+  const [scenes, setScenes] = useState<DisplaySceneResponse[]>([]);
+  const [activeScene, setActiveScene] = useState<ActiveDisplaySceneResponse | null>(null);
+  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [form, setForm] = useState<DisplaySceneFormState>(() => createDisplaySceneFormState());
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadScenes() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const [loadedScreen, loadedScenes] = await Promise.all([
+        api.getDisplayScreen(screenId),
+        api.listDisplayScenes(screenId)
+      ]);
+      setScreen(loadedScreen);
+      setScenes(loadedScenes);
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadScenes();
+  }, [api, screenId]);
+
+  function startEdit(scene: DisplaySceneResponse) {
+    setEditingSceneId(scene.sceneId);
+    setForm(createDisplaySceneFormState(scene));
+    setMessage(null);
+  }
+
+  function resetForm() {
+    setEditingSceneId(null);
+    setForm(createDisplaySceneFormState());
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationMessage = validateDisplaySceneForm(form);
+    if (validationMessage) {
+      setMessage({ tone: "error", text: validationMessage, code: "VALIDATION_ERROR" });
+      return;
+    }
+
+    setSaving(true);
+    setMessage({ tone: "success", text: editingSceneId ? "Saving display scene..." : "Creating display scene..." });
+    try {
+      const saved = editingSceneId
+        ? await api.updateDisplayScene(screenId, editingSceneId, createDisplaySceneUpdatePayload(form))
+        : await api.createDisplayScene(screenId, createDisplayScenePayload(form));
+      setScenes((current) => {
+        const withoutSaved = current.filter((scene) => scene.sceneId !== saved.sceneId);
+        return [...withoutSaved, saved].sort((left, right) => left.sortOrder - right.sortOrder || left.sceneName.localeCompare(right.sceneName));
+      });
+      setMessage({ tone: "success", text: editingSceneId ? "Display scene saved." : "Display scene created." });
+      resetForm();
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setActive(scene: DisplaySceneResponse) {
+    setSaving(true);
+    setMessage({ tone: "success", text: `Assigning ${scene.sceneName} as active scene...` });
+    try {
+      const active = await api.setActiveDisplayScene(screenId, scene.sceneId);
+      setActiveScene(active);
+      setMessage({ tone: "success", text: `${scene.sceneName} is now the active scene.` });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const validationMessage = validateDisplaySceneForm(form);
+  const saveState = getDisplaySceneSaveState({ saving, screenId, validationMessage });
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display scenes</p>
+          <h1>{screen?.displayName ?? "Display Screen Scenes"}</h1>
+          <p className="muted">Screen ID: {screenId}</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href={buildAdminDisplayScreensLink()} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreensLink()); }}>Display Screens</a>
+          <a className="button-link secondary" href={buildAdminDisplayScreenDetailLink(screenId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreenDetailLink(screenId)); }}>Edit Screen</a>
+          <a className="button-link secondary" href={buildAdminDisplayScreenPreviewLink(screenId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreenPreviewLink(screenId)); }}>Preview</a>
+          <button type="button" onClick={() => void loadScenes()} disabled={loading || saving}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {activeScene ? <Notice tone="success" text={`Active scene: ${activeScene.scene.sceneName} (${activeScene.scene.sceneType})`} /> : null}
+      {loading ? <p>Loading display scenes...</p> : null}
+      {!loading && scenes.length === 0 ? <p className="muted">No scenes yet. Add a scene before enabling the public display.</p> : null}
+      {scenes.length > 0 ? (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Scene</th>
+                <th>Type</th>
+                <th>Config</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scenes.map((scene) => (
+                <tr key={scene.sceneId}>
+                  <td>
+                    <strong>{scene.sceneName}</strong>
+                    <p className="muted">Sort {scene.sortOrder}</p>
+                  </td>
+                  <td>{scene.sceneType}</td>
+                  <td>{getDisplaySceneConfigSummary(scene)}</td>
+                  <td>{scene.active ? "Enabled" : "Disabled"}{activeScene?.scene.sceneId === scene.sceneId ? " / Active" : ""}</td>
+                  <td>
+                    <div className="button-row">
+                      <button type="button" onClick={() => startEdit(scene)} disabled={saving}>Edit</button>
+                      <button type="button" onClick={() => void setActive(scene)} disabled={saving || !scene.active}>Set Active</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {!loading && validationMessage ? <p className="form-validation">{validationMessage}</p> : null}
+      <form className="stacked-form display-scene-form" onSubmit={(event) => void handleSave(event)}>
+        <h2>{editingSceneId ? "Edit Scene" : "Add Scene"}</h2>
+        <label>
+          Scene type
+          <select
+            value={form.sceneType}
+            onChange={(event) => setForm((current) => ({ ...current, sceneType: event.target.value as DisplaySceneFormState["sceneType"] }))}
+          >
+            {displaySceneTypeOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <TextInput label="Scene name" value={form.sceneName} maxLength={120} onChange={(value) => setForm((current) => ({ ...current, sceneName: value }))} />
+        {form.sceneType === "LIVE_SCOREBOARD" || form.sceneType === "FINAL_SUMMARY" ? (
+          <TextInput label="Match ID" value={form.matchId} maxLength={36} placeholder="Match UUID" onChange={(value) => setForm((current) => ({ ...current, matchId: value }))} />
+        ) : null}
+        {form.sceneType === "SCHEDULE" ? (
+          <>
+            <TextInput label="Tournament ID" value={form.tournamentId} maxLength={36} placeholder="Tournament UUID" onChange={(value) => setForm((current) => ({ ...current, tournamentId: value }))} />
+            <TextInput label="Court ID" value={form.courtId} maxLength={36} placeholder="Optional court UUID" onChange={(value) => setForm((current) => ({ ...current, courtId: value }))} />
+            <TextInput label="Limit" value={form.limit} maxLength={2} onChange={(value) => setForm((current) => ({ ...current, limit: value }))} />
+          </>
+        ) : null}
+        {form.sceneType === "BLANK" ? (
+          <TextInput label="Standby message" value={form.message} maxLength={120} placeholder="Standby" onChange={(value) => setForm((current) => ({ ...current, message: value }))} />
+        ) : null}
+        <TextInput label="Sort order" value={form.sortOrder} maxLength={4} onChange={(value) => setForm((current) => ({ ...current, sortOrder: value }))} />
+        <CheckboxInput label="Scene enabled" checked={form.active} onChange={(value) => setForm((current) => ({ ...current, active: value }))} />
+        <div className="button-row">
+          <button type="submit" disabled={saveState.disabled}>{saving ? "Saving..." : editingSceneId ? "Save Scene" : "Add Scene"}</button>
+          {editingSceneId ? <button type="button" onClick={resetForm} disabled={saving}>Cancel edit</button> : null}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function AdminDisplayScreenPreviewPage({ screenId }: { screenId: string }) {
+  const { api } = useCurrentUser();
+  const [screen, setScreen] = useState<DisplayScreenResponse | null>(null);
+  const [publicPreview, setPublicPreview] = useState<Awaited<ReturnType<typeof api.getPublicDisplayScreen>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  async function loadPreview() {
+    setLoading(true);
+    setMessage(null);
+    setPublicPreview(null);
+    try {
+      const loadedScreen = await api.getDisplayScreen(screenId);
+      setScreen(loadedScreen);
+      try {
+        setPublicPreview(await api.getPublicDisplayScreen(loadedScreen.screenSlug));
+      } catch (error) {
+        setMessage(toUiMessage(error));
+      }
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadPreview();
+  }, [api, screenId]);
+
+  const publicPath = screen ? buildPublicDisplayScreenLink(screen.screenSlug) : null;
+  const hasExposure = publicDisplayPreviewHasPrivateExposure(publicPreview);
+
+  return (
+    <section className="panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Admin display preview</p>
+          <h1>{screen?.displayName ?? "Display Screen Preview"}</h1>
+          <p className="muted">Protected admin preview for the public scene assignment.</p>
+        </div>
+        <div className="button-row">
+          <a className="button-link secondary" href={buildAdminDisplayScreensLink()} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreensLink()); }}>Display Screens</a>
+          <a className="button-link secondary" href={buildAdminDisplayScreenScenesLink(screenId)} onClick={(event) => { event.preventDefault(); navigate(buildAdminDisplayScreenScenesLink(screenId)); }}>Scenes</a>
+          <button type="button" onClick={() => void loadPreview()} disabled={loading}>Refresh</button>
+        </div>
+      </div>
+      {message ? <Notice {...message} /> : null}
+      {loading ? <p>Loading display preview...</p> : null}
+      {screen ? (
+        <div className="display-preview-admin-grid">
+          <section className="display-preview-card">
+            <h2>Screen metadata</h2>
+            <dl className="detail-list">
+              <dt>Slug</dt>
+              <dd>{screen.screenSlug}</dd>
+              <dt>Public route</dt>
+              <dd>{publicPath}</dd>
+              <dt>Status</dt>
+              <dd>{screen.publicEnabled && screen.active ? "Public enabled" : "Public endpoint should return 404"}</dd>
+              <dt>Tournament</dt>
+              <dd>{screen.tournamentId ?? "Not scoped"}</dd>
+            </dl>
+          </section>
+          <section className="display-preview-card">
+            <h2>Public endpoint preview</h2>
+            <p className="muted">{getPublicDisplayPreviewSummary(publicPreview)}</p>
+            {hasExposure ? <Notice tone="error" code="PUBLIC_EXPOSURE" text="Public preview contains private metadata." /> : null}
+            <pre className="json-preview">{publicPreview ? JSON.stringify(publicPreview, null, 2) : "No public preview available."}</pre>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -5436,6 +5950,36 @@ function RoutedApp() {
         return (
           <ProtectedRoute requireAdmin>
             <AdminMatchDisplayThemePage matchId={route.matchId} />
+          </ProtectedRoute>
+        );
+      case "admin-display-screens":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminDisplayScreensPage />
+          </ProtectedRoute>
+        );
+      case "admin-display-screen-new":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminDisplayScreenFormPage />
+          </ProtectedRoute>
+        );
+      case "admin-display-screen-detail":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminDisplayScreenFormPage screenId={route.screenId} />
+          </ProtectedRoute>
+        );
+      case "admin-display-screen-scenes":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminDisplayScreenScenesPage screenId={route.screenId} />
+          </ProtectedRoute>
+        );
+      case "admin-display-screen-preview":
+        return (
+          <ProtectedRoute requireAdmin>
+            <AdminDisplayScreenPreviewPage screenId={route.screenId} />
           </ProtectedRoute>
         );
       case "admin-officials":
