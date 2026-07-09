@@ -187,6 +187,11 @@ import {
   publicScoreboardDisplayHasPrivateExposure
 } from "../../apps/web/src/lib/publicScoreboardDisplay";
 import {
+  buildPublicDisplaySceneModel,
+  getPublicDisplaySceneRefreshMs,
+  publicDisplaySceneHasPrivateExposure
+} from "../../apps/web/src/lib/publicDisplayScene";
+import {
   buildDisplayThemePreviewModel,
   createMatchDisplayOverrideFormState,
   createMatchDisplayOverridePayload,
@@ -3369,6 +3374,122 @@ describe("tournament schedule UI policy", () => {
     expect(getPublicDisplayPreviewSummary(publicPreview)).toBe("Court 1 Main: LIVE_SCOREBOARD");
     expect(publicDisplayPreviewHasPrivateExposure(publicPreview)).toBe(false);
     expect(publicDisplayPreviewHasPrivateExposure({ commandId: "secret-command", csrf: "token" })).toBe(true);
+  });
+
+  test("builds public display scene models safely for all active scene types", () => {
+    const base = {
+      screen: { screenSlug: "court-1-main", displayName: "Court 1 Main" },
+      serverTime: "2026-07-09T00:00:00.000Z"
+    };
+    const blank = buildPublicDisplaySceneModel({
+      ...base,
+      activeScene: {
+        sceneType: "BLANK",
+        publicData: { message: " Warmups in progress " },
+        refreshAfterMs: 30000
+      }
+    });
+    const live = buildPublicDisplaySceneModel({
+      ...base,
+      activeScene: {
+        sceneType: "LIVE_SCOREBOARD",
+        publicData: { matchId: scoreboardProjection.matchId },
+        refreshAfterMs: 1000
+      }
+    });
+    const schedule = buildPublicDisplaySceneModel({
+      ...base,
+      activeScene: {
+        sceneType: "SCHEDULE",
+        publicData: { tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", courtId: null, limit: 6 },
+        refreshAfterMs: 15000
+      }
+    });
+    const finalSummary = buildPublicDisplaySceneModel({
+      ...base,
+      activeScene: {
+        sceneType: "FINAL_SUMMARY",
+        publicData: { matchId: scoreboardProjection.matchId, status: "UNAVAILABLE" },
+        refreshAfterMs: 30000
+      }
+    });
+
+    expect(blank).toMatchObject({
+      status: "READY",
+      screenSlug: "court-1-main",
+      displayName: "Court 1 Main",
+      sceneType: "BLANK",
+      title: "Standby",
+      message: "Warmups in progress"
+    });
+    expect(live).toMatchObject({
+      status: "READY",
+      sceneType: "LIVE_SCOREBOARD",
+      matchId: scoreboardProjection.matchId
+    });
+    expect(schedule).toMatchObject({
+      status: "READY",
+      sceneType: "SCHEDULE",
+      title: "Schedule",
+      tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      courtId: null,
+      limit: 6
+    });
+    expect(finalSummary).toMatchObject({
+      status: "READY",
+      sceneType: "FINAL_SUMMARY",
+      title: "Final Summary",
+      matchId: scoreboardProjection.matchId
+    });
+    expect(JSON.stringify([blank, live, schedule, finalSummary])).not.toMatch(/\/admin|\/operator|audit-log|replay|corrections|commandId|correlationId|actor|csrf|token/i);
+    expect(publicDisplaySceneHasPrivateExposure({ commandId: "private", csrf: "token" })).toBe(true);
+    expect(publicDisplaySceneHasPrivateExposure(blank)).toBe(false);
+  });
+
+  test("builds safe unavailable public display scene states and bounded refresh intervals", () => {
+    expect(getPublicDisplaySceneRefreshMs(undefined)).toBe(30000);
+    expect(getPublicDisplaySceneRefreshMs(200)).toBe(1000);
+    expect(getPublicDisplaySceneRefreshMs(999999)).toBe(120000);
+
+    expect(buildPublicDisplaySceneModel(null, { unavailableState: "NOT_FOUND" })).toMatchObject({
+      status: "NOT_FOUND",
+      sceneType: "BLANK",
+      title: "Display Unavailable",
+      message: "This public display is not available."
+    });
+    expect(buildPublicDisplaySceneModel(null, { unavailableState: "ERROR" })).toMatchObject({
+      status: "ERROR",
+      sceneType: "BLANK",
+      title: "Display Unavailable",
+      message: "The display scene could not be loaded."
+    });
+    expect(buildPublicDisplaySceneModel({
+      screen: { screenSlug: "court-1-main", displayName: "Court 1 Main" },
+      activeScene: {
+        sceneType: "LIVE_SCOREBOARD",
+        publicData: {},
+        refreshAfterMs: 1000
+      },
+      serverTime: "2026-07-09T00:00:00.000Z"
+    })).toMatchObject({
+      status: "ERROR",
+      sceneType: "LIVE_SCOREBOARD",
+      title: "Display Unavailable",
+      message: "Live scoreboard scene is missing a match."
+    });
+  });
+
+  test("public display scene route is public-only and leaves existing scoreboard display route intact", () => {
+    const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
+    const styleSource = readFileSync("apps/web/src/styles.css", "utf8");
+
+    expect(appSource).toContain('name: "public-display-scene"');
+    expect(appSource).toContain("PublicDisplayScenePage");
+    expect(appSource).toContain("PublicScoreboardDisplayPage");
+    expect(appSource).toContain("/^\\/public\\/display\\/([^/]+)$/");
+    expect(appSource).not.toMatch(/case "public-display-scene":[\s\S]{0,200}ProtectedRoute/);
+    expect(styleSource).toContain(".public-display-scene-card");
+    expect(styleSource).toContain(".public-display-standby");
   });
 
   test("builds protected live dashboard links, filters, card labels, and warning summaries", () => {

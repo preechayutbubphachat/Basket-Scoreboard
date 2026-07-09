@@ -247,6 +247,11 @@ import {
   type DisplayScreenFormState
 } from "./lib/displayScreenControl";
 import {
+  buildPublicDisplaySceneModel,
+  getPublicDisplaySceneRefreshMs,
+  type PublicDisplaySceneModel
+} from "./lib/publicDisplayScene";
+import {
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardDisplayModel,
   getPublicDisplayControlsClassName,
@@ -297,6 +302,7 @@ type Route =
   | { name: "operator-summary"; matchId: string }
   | { name: "operator-replay"; matchId: string }
   | { name: "operator-audit-log"; matchId: string }
+  | { name: "public-display-scene"; screenSlug: string }
   | { name: "public-scoreboard"; matchId: string }
   | { name: "public-scoreboard-display"; matchId: string }
   | { name: "public-tournaments" }
@@ -429,6 +435,11 @@ function parseRoute(pathname: string): Route {
   const operatorLiveDashboardTournamentId = operatorTournamentLiveDashboardMatch?.[1];
   if (operatorLiveDashboardTournamentId) {
     return { name: "operator-tournament-live-dashboard", tournamentId: decodeURIComponent(operatorLiveDashboardTournamentId) };
+  }
+  const publicDisplaySceneMatch = pathname.match(/^\/public\/display\/([^/]+)$/);
+  const publicDisplayScreenSlug = publicDisplaySceneMatch?.[1];
+  if (publicDisplayScreenSlug) {
+    return { name: "public-display-scene", screenSlug: decodeURIComponent(publicDisplayScreenSlug) };
   }
   const publicScoreboardDisplayMatch = pathname.match(/^\/public\/scoreboard\/([^/]+)\/display$/);
   const publicDisplayMatchId = publicScoreboardDisplayMatch?.[1];
@@ -4852,6 +4863,109 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
   );
 }
 
+function PublicDisplayScenePage({ screenSlug }: { screenSlug: string }) {
+  const { api } = useCurrentUser();
+  const [sceneModel, setSceneModel] = useState<PublicDisplaySceneModel | null>(null);
+  const [refreshAfterMs, setRefreshAfterMs] = useState(30000);
+
+  async function refreshDisplayScene(cancelled?: () => boolean) {
+    try {
+      const data = await api.getPublicDisplayScreen(screenSlug);
+      if (!cancelled?.()) {
+        const nextModel = buildPublicDisplaySceneModel(data);
+        setSceneModel(nextModel);
+        setRefreshAfterMs(nextModel.refreshAfterMs);
+      }
+    } catch (error) {
+      if (!cancelled?.()) {
+        const status = error instanceof ApiClientError ? error.status : 500;
+        const nextModel = buildPublicDisplaySceneModel(null, { unavailableState: status === 404 ? "NOT_FOUND" : "ERROR" });
+        setSceneModel(nextModel);
+        setRefreshAfterMs(nextModel.refreshAfterMs);
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void refreshDisplayScene(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, screenSlug]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setInterval(
+      () => void refreshDisplayScene(() => cancelled),
+      getPublicDisplaySceneRefreshMs(refreshAfterMs)
+    );
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [api, screenSlug, refreshAfterMs]);
+
+  if (sceneModel?.status === "READY" && sceneModel.sceneType === "LIVE_SCOREBOARD") {
+    return <PublicScoreboardDisplayPage matchId={sceneModel.matchId} />;
+  }
+
+  return (
+    <main className="public-display-shell kiosk-mode controls-hidden">
+      <section className="public-display-frame arena-layout public-display-scene-frame" aria-label="Public display scene">
+        <PublicDisplaySceneCard model={sceneModel} fallbackSlug={screenSlug} />
+      </section>
+    </main>
+  );
+}
+
+function PublicDisplaySceneCard({
+  model,
+  fallbackSlug
+}: {
+  model: PublicDisplaySceneModel | null;
+  fallbackSlug: string;
+}) {
+  const displayName = model?.displayName ?? fallbackSlug;
+  const sceneType = model?.sceneType ?? "BLANK";
+  const status = model?.status ?? "ERROR";
+  const title = getPublicDisplaySceneCardTitle(model);
+  const message = getPublicDisplaySceneCardMessage(model);
+
+  return (
+    <div className={`public-display-scene-card public-display-standby scene-${String(sceneType).toLowerCase().replace(/_/g, "-")}`}>
+      <p className="eyebrow">Public Display</p>
+      <h1>{displayName}</h1>
+      <div className="public-display-scene-status">
+        <span>{status === "READY" ? sceneType : status}</span>
+      </div>
+      <h2>{title}</h2>
+      <p>{message}</p>
+      {model?.status === "READY" && model.sceneType === "SCHEDULE" ? (
+        <dl className="public-display-scene-details" aria-label="Schedule scene details">
+          <div><dt>Tournament</dt><dd>{model.tournamentId}</dd></div>
+          <div><dt>Court</dt><dd>{model.courtId ?? "All courts"}</dd></div>
+          <div><dt>Limit</dt><dd>{model.limit}</dd></div>
+        </dl>
+      ) : null}
+      {model?.status === "READY" && model.sceneType === "FINAL_SUMMARY" ? (
+        <dl className="public-display-scene-details" aria-label="Final summary scene details">
+          <div><dt>Match</dt><dd>{model.matchId}</dd></div>
+        </dl>
+      ) : null}
+      <small>Read-only public scene</small>
+    </div>
+  );
+}
+
+function getPublicDisplaySceneCardTitle(model: PublicDisplaySceneModel | null) {
+  return model && "title" in model ? model.title : "Loading Display";
+}
+
+function getPublicDisplaySceneCardMessage(model: PublicDisplaySceneModel | null) {
+  return model && "message" in model ? model.message : "Loading active display scene.";
+}
+
 function PublicDisplayTeamPanel({
   side,
   team
@@ -6084,6 +6198,8 @@ function RoutedApp() {
             <MatchAuditLogPage matchId={route.matchId} backHref="/operator/matches" />
           </ProtectedRoute>
         );
+      case "public-display-scene":
+        return <PublicDisplayScenePage screenSlug={route.screenSlug} />;
       case "public-scoreboard":
         return <PublicScoreboardPage matchId={route.matchId} />;
       case "public-scoreboard-display":
@@ -6101,7 +6217,7 @@ function RoutedApp() {
     }
   }, [route]);
 
-  if (route.name === "public-scoreboard-display") {
+  if (route.name === "public-scoreboard-display" || route.name === "public-display-scene") {
     return content;
   }
 
