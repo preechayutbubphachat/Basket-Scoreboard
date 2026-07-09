@@ -201,8 +201,30 @@ import {
   validateTeamDisplayProfileForm,
   validateTournamentDisplayThemeForm
 } from "../../apps/web/src/lib/displayThemeControl";
+import {
+  buildAdminDisplayScreenDetailLink,
+  buildAdminDisplayScreenNewLink,
+  buildAdminDisplayScreenPreviewLink,
+  buildAdminDisplayScreensLink,
+  buildAdminDisplayScreenScenesLink,
+  buildPublicDisplayScreenLink,
+  createDisplaySceneFormState,
+  createDisplayScenePayload,
+  createDisplayScreenFormState,
+  createDisplayScreenPayload,
+  displaySceneTypeOptions,
+  getDisplaySceneConfigSummary,
+  getDisplaySceneSaveState,
+  getDisplayScreenSaveState,
+  getPublicDisplayPreviewSummary,
+  publicDisplayPreviewHasPrivateExposure,
+  validateDisplaySceneForm,
+  validateDisplayScreenForm
+} from "../../apps/web/src/lib/displayScreenControl";
 import type {
   AuthenticatedUser,
+  DisplaySceneResponse,
+  DisplayScreenResponse,
   MatchAuditLogResponse,
   MatchLineupResponse,
   MatchReadiness,
@@ -1516,6 +1538,89 @@ describe("web API client", () => {
       "/api/v1/matches/match-1/display-override",
       expect.objectContaining({ method: "PUT", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
     );
+  });
+
+  test("manages display screens and scenes with CSRF on writes", async () => {
+    const screen: DisplayScreenResponse = {
+      screenId: "11111111-1111-4111-8111-111111111111",
+      screenSlug: "court-1-main",
+      displayName: "Court 1 Main",
+      tournamentId: "22222222-2222-4222-8222-222222222222",
+      description: "Main arena display",
+      publicEnabled: true,
+      active: true
+    };
+    const scene: DisplaySceneResponse = {
+      sceneId: "33333333-3333-4333-8333-333333333333",
+      screenId: screen.screenId,
+      sceneType: "LIVE_SCOREBOARD",
+      sceneName: "Live court",
+      sceneConfig: { matchId: scoreboardProjection.matchId },
+      sortOrder: 0,
+      active: true
+    };
+    const publicDisplay = {
+      screen: { screenSlug: screen.screenSlug, displayName: screen.displayName },
+      activeScene: { sceneType: "LIVE_SCOREBOARD", publicData: { matchId: scoreboardProjection.matchId }, refreshAfterMs: 1000 },
+      serverTime: "2026-07-09T00:00:00.000Z"
+    };
+    const fetchMock = vi.fn<FetchLike>()
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { screens: [screen] } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { screen } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { csrfToken: "csrf-token" } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { screen } }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { screen } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { scenes: [scene] } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { scene } }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { scene } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: { activeScene: { screenId: screen.screenId, scene, assignedAt: "2026-07-09T00:00:00.000Z" } } }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, data: publicDisplay }));
+    const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
+
+    await expect(client.listDisplayScreens()).resolves.toEqual([screen]);
+    await expect(client.getDisplayScreen(screen.screenId)).resolves.toEqual(screen);
+    await expect(client.createDisplayScreen(createDisplayScreenPayload(createDisplayScreenFormState(screen)))).resolves.toEqual(screen);
+    await expect(client.updateDisplayScreen(screen.screenId, createDisplayScreenPayload(createDisplayScreenFormState(screen)))).resolves.toEqual(screen);
+    await expect(client.listDisplayScenes(screen.screenId)).resolves.toEqual([scene]);
+    await expect(client.createDisplayScene(screen.screenId, createDisplayScenePayload(createDisplaySceneFormState(scene)))).resolves.toEqual(scene);
+    await expect(client.updateDisplayScene(screen.screenId, scene.sceneId, createDisplayScenePayload(createDisplaySceneFormState(scene)))).resolves.toEqual(scene);
+    await expect(client.setActiveDisplayScene(screen.screenId, scene.sceneId)).resolves.toEqual({
+      screenId: screen.screenId,
+      scene,
+      assignedAt: "2026-07-09T00:00:00.000Z"
+    });
+    await expect(client.getPublicDisplayScreen(screen.screenSlug)).resolves.toEqual(publicDisplay);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/v1/display-screens", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/v1/display-screens/${screen.screenId}`, expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/v1/auth/csrf", expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/v1/display-screens",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      `/api/v1/display-screens/${screen.screenId}`,
+      expect.objectContaining({ method: "PATCH", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(6, `/api/v1/display-screens/${screen.screenId}/scenes`, expect.objectContaining({ credentials: "include" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      `/api/v1/display-screens/${screen.screenId}/scenes`,
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      8,
+      `/api/v1/display-screens/${screen.screenId}/scenes/${scene.sceneId}`,
+      expect.objectContaining({ method: "PATCH", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      9,
+      `/api/v1/display-screens/${screen.screenId}/active-scene`,
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(10, "/api/v1/public/display/court-1-main", expect.objectContaining({ credentials: "include" }));
   });
 
   test("posts timeout commands with CSRF, expectedSeq, and command identifiers", async () => {
@@ -3156,6 +3261,114 @@ describe("tournament schedule UI policy", () => {
     expect(preview.textOnlyFallback).toBe(true);
     expect(displayThemePreviewHasPrivateExposure(serialized)).toBe(false);
     expect(serialized).not.toMatch(/Use neutral fallback|commandId|correlationId|causationId|csrf|audit-log|\/admin|\/operator/i);
+  });
+
+  test("builds admin display screen links, forms, payloads, and save state", () => {
+    const screen: DisplayScreenResponse = {
+      screenId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      screenSlug: "court-1-main",
+      displayName: "Court 1 Main",
+      tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      description: "Main arena display",
+      publicEnabled: true,
+      active: true
+    };
+    const form = createDisplayScreenFormState(screen);
+
+    expect(buildAdminDisplayScreensLink()).toBe("/admin/display-screens");
+    expect(buildAdminDisplayScreenNewLink()).toBe("/admin/display-screens/new");
+    expect(buildAdminDisplayScreenDetailLink("screen 1")).toBe("/admin/display-screens/screen%201");
+    expect(buildAdminDisplayScreenScenesLink("screen 1")).toBe("/admin/display-screens/screen%201/scenes");
+    expect(buildAdminDisplayScreenPreviewLink("screen 1")).toBe("/admin/display-screens/screen%201/preview");
+    expect(buildPublicDisplayScreenLink("court 1")).toBe("/public/display/court%201");
+    expect(validateDisplayScreenForm(form)).toBeNull();
+    expect(createDisplayScreenPayload({ ...form, displayName: " Court 1 ", description: "  " })).toMatchObject({
+      screenSlug: "court-1-main",
+      displayName: "Court 1",
+      tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      description: null,
+      publicEnabled: true,
+      active: true
+    });
+    expect(validateDisplayScreenForm({ ...form, screenSlug: "Court One" })).toContain("lowercase");
+    expect(validateDisplayScreenForm({ ...form, tournamentId: "bad-id" })).toContain("valid UUID");
+    expect(getDisplayScreenSaveState({ saving: false, routeId: screen.screenId, validationMessage: null })).toEqual({
+      disabled: false,
+      reason: null
+    });
+    expect(getDisplayScreenSaveState({ saving: true, routeId: screen.screenId, validationMessage: null }).disabled).toBe(true);
+  });
+
+  test("builds display scene forms, summaries, and public-safe preview state", () => {
+    const liveScene: DisplaySceneResponse = {
+      sceneId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      screenId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      sceneType: "LIVE_SCOREBOARD",
+      sceneName: "Live scoreboard",
+      sceneConfig: { matchId: scoreboardProjection.matchId },
+      sortOrder: 1,
+      active: true
+    };
+    const scheduleForm = {
+      ...createDisplaySceneFormState(),
+      sceneType: "SCHEDULE" as const,
+      sceneName: "Today Schedule",
+      tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      courtId: "",
+      limit: "8"
+    };
+    const blankForm = {
+      ...createDisplaySceneFormState(),
+      sceneType: "BLANK" as const,
+      sceneName: "Standby",
+      message: " Ready "
+    };
+    const publicPreview = {
+      screen: { screenSlug: "court-1-main", displayName: "Court 1 Main" },
+      activeScene: {
+        sceneType: "LIVE_SCOREBOARD" as const,
+        publicData: { matchId: scoreboardProjection.matchId },
+        refreshAfterMs: 1000
+      },
+      serverTime: "2026-07-09T00:00:00.000Z"
+    };
+
+    expect(displaySceneTypeOptions.map((option) => option.value)).toEqual([
+      "LIVE_SCOREBOARD",
+      "SCHEDULE",
+      "FINAL_SUMMARY",
+      "BLANK"
+    ]);
+    expect(createDisplaySceneFormState(liveScene)).toMatchObject({
+      sceneType: "LIVE_SCOREBOARD",
+      sceneName: "Live scoreboard",
+      matchId: scoreboardProjection.matchId,
+      sortOrder: "1",
+      active: true
+    });
+    expect(validateDisplaySceneForm(scheduleForm)).toBeNull();
+    expect(createDisplayScenePayload(scheduleForm)).toEqual({
+      sceneType: "SCHEDULE",
+      sceneName: "Today Schedule",
+      sceneConfig: {
+        tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        courtId: null,
+        limit: 8
+      },
+      sortOrder: 0,
+      active: true
+    });
+    expect(createDisplayScenePayload(blankForm).sceneConfig).toEqual({ message: "Ready" });
+    expect(validateDisplaySceneForm({ ...scheduleForm, limit: "30" })).toContain("1 to 20");
+    expect(validateDisplaySceneForm({ ...createDisplaySceneFormState(liveScene), matchId: "not-a-uuid" })).toContain("valid match UUID");
+    expect(getDisplaySceneConfigSummary(liveScene)).toContain(scoreboardProjection.matchId);
+    expect(getDisplaySceneSaveState({ saving: false, screenId: "screen-1", validationMessage: null })).toEqual({
+      disabled: false,
+      reason: null
+    });
+    expect(getPublicDisplayPreviewSummary(publicPreview)).toBe("Court 1 Main: LIVE_SCOREBOARD");
+    expect(publicDisplayPreviewHasPrivateExposure(publicPreview)).toBe(false);
+    expect(publicDisplayPreviewHasPrivateExposure({ commandId: "secret-command", csrf: "token" })).toBe(true);
   });
 
   test("builds protected live dashboard links, filters, card labels, and warning summaries", () => {
