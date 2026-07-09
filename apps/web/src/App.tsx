@@ -228,6 +228,7 @@ import {
   buildAdminDisplayScreenPreviewLink,
   buildAdminDisplayScreensLink,
   buildAdminDisplayScreenScenesLink,
+  buildDisplaySceneActivationConfirmation,
   buildPublicDisplayScreenLink,
   createDisplaySceneFormState,
   createDisplayScenePayload,
@@ -237,12 +238,16 @@ import {
   createDisplayScreenUpdatePayload,
   displaySceneTypeOptions,
   getDisplaySceneConfigSummary,
+  getDisplaySceneMatchId,
   getDisplaySceneSaveState,
   getDisplayScreenSaveState,
   getPublicDisplayPreviewSummary,
+  getPublicActiveSceneSummary,
+  isPublicActiveDisplayScreen,
   publicDisplayPreviewHasPrivateExposure,
   validateDisplaySceneForm,
   validateDisplayScreenForm,
+  type DisplaySceneActivationConfirmation,
   type DisplaySceneFormState,
   type DisplayScreenFormState
 } from "./lib/displayScreenControl";
@@ -1770,6 +1775,11 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   const [screen, setScreen] = useState<DisplayScreenResponse | null>(null);
   const [scenes, setScenes] = useState<DisplaySceneResponse[]>([]);
   const [activeScene, setActiveScene] = useState<ActiveDisplaySceneResponse | null>(null);
+  const [publicPreview, setPublicPreview] = useState<Awaited<ReturnType<typeof api.getPublicDisplayScreen>> | null>(null);
+  const [activationConfirmation, setActivationConfirmation] = useState<{
+    scene: DisplaySceneResponse;
+    details: DisplaySceneActivationConfirmation;
+  } | null>(null);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [form, setForm] = useState<DisplaySceneFormState>(() => createDisplaySceneFormState());
   const [loading, setLoading] = useState(true);
@@ -1779,6 +1789,7 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   async function loadScenes() {
     setLoading(true);
     setMessage(null);
+    setActivationConfirmation(null);
     try {
       const [loadedScreen, loadedScenes] = await Promise.all([
         api.getDisplayScreen(screenId),
@@ -1786,6 +1797,15 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
       ]);
       setScreen(loadedScreen);
       setScenes(loadedScenes);
+      if (isPublicActiveDisplayScreen(loadedScreen)) {
+        try {
+          setPublicPreview(await api.getPublicDisplayScreen(loadedScreen.screenSlug));
+        } catch {
+          setPublicPreview(null);
+        }
+      } else {
+        setPublicPreview(null);
+      }
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -1800,6 +1820,7 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   function startEdit(scene: DisplaySceneResponse) {
     setEditingSceneId(scene.sceneId);
     setForm(createDisplaySceneFormState(scene));
+    setActivationConfirmation(null);
     setMessage(null);
   }
 
@@ -1835,12 +1856,35 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
     }
   }
 
-  async function setActive(scene: DisplaySceneResponse) {
+  function requestSetActive(scene: DisplaySceneResponse) {
+    if (!screen) return;
+    setActivationConfirmation({
+      scene,
+      details: buildDisplaySceneActivationConfirmation({
+        screen,
+        targetScene: scene,
+        currentScene: getPublicActiveSceneSummary(publicPreview)
+      })
+    });
+    setMessage(null);
+  }
+
+  async function confirmSetActive() {
+    if (!activationConfirmation || !screen) return;
+    const scene = activationConfirmation.scene;
     setSaving(true);
+    setActivationConfirmation(null);
     setMessage({ tone: "success", text: `Assigning ${scene.sceneName} as active scene...` });
     try {
       const active = await api.setActiveDisplayScene(screenId, scene.sceneId);
       setActiveScene(active);
+      if (isPublicActiveDisplayScreen(screen)) {
+        try {
+          setPublicPreview(await api.getPublicDisplayScreen(screen.screenSlug));
+        } catch {
+          setPublicPreview(null);
+        }
+      }
       setMessage({ tone: "success", text: `${scene.sceneName} is now the active scene.` });
     } catch (error) {
       setMessage(toUiMessage(error));
@@ -1851,6 +1895,8 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
 
   const validationMessage = validateDisplaySceneForm(form);
   const saveState = getDisplaySceneSaveState({ saving, screenId, validationMessage });
+  const currentPublicScene = getPublicActiveSceneSummary(publicPreview);
+  const publicPath = screen ? buildPublicDisplayScreenLink(screen.screenSlug) : null;
 
   return (
     <section className="panel">
@@ -1868,7 +1914,54 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
         </div>
       </div>
       {message ? <Notice {...message} /> : null}
+      {isPublicActiveDisplayScreen(screen) ? (
+        <Notice tone="error" text="This screen is live on the public display. Changes may be visible immediately." />
+      ) : null}
+      <section className="display-preview-card">
+        <h2>Operator handoff</h2>
+        <dl className="detail-list">
+          <dt>Screen slug</dt>
+          <dd>{screen?.screenSlug ?? "Loading"}</dd>
+          <dt>Display name</dt>
+          <dd>{screen?.displayName ?? "Loading"}</dd>
+          <dt>Public enabled</dt>
+          <dd>{screen?.publicEnabled ? "ON" : "OFF"}</dd>
+          <dt>Active</dt>
+          <dd>{screen?.active ? "ON" : "OFF"}</dd>
+          <dt>Current active scene type</dt>
+          <dd>{currentPublicScene?.sceneType ?? activeScene?.scene.sceneType ?? "Unavailable"}</dd>
+          <dt>Current active match ID</dt>
+          <dd>{currentPublicScene?.matchId ?? getDisplaySceneMatchId(activeScene?.scene) ?? "None"}</dd>
+          <dt>Public URL</dt>
+          <dd>{publicPath ?? "Unavailable"}</dd>
+        </dl>
+      </section>
       {activeScene ? <Notice tone="success" text={`Active scene: ${activeScene.scene.sceneName} (${activeScene.scene.sceneType})`} /> : null}
+      {activationConfirmation ? (
+        <section className="display-preview-card">
+          <h2>{activationConfirmation.details.title}</h2>
+          {activationConfirmation.details.publicWarning ? <Notice tone="error" text={activationConfirmation.details.publicWarning} /> : null}
+          <dl className="detail-list">
+            {activationConfirmation.details.summaryRows.map((row) => (
+              <React.Fragment key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+          {activationConfirmation.details.messages.map((text) => (
+            <p className="muted" key={text}>{text}</p>
+          ))}
+          <div className="button-row">
+            <button type="button" onClick={() => void confirmSetActive()} disabled={saving}>
+              {activationConfirmation.details.confirmLabel}
+            </button>
+            <button type="button" onClick={() => setActivationConfirmation(null)} disabled={saving}>
+              {activationConfirmation.details.cancelLabel}
+            </button>
+          </div>
+        </section>
+      ) : null}
       {loading ? <p>Loading display scenes...</p> : null}
       {!loading && scenes.length === 0 ? <p className="muted">No scenes yet. Add a scene before enabling the public display.</p> : null}
       {scenes.length > 0 ? (
@@ -1896,7 +1989,7 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
                   <td>
                     <div className="button-row">
                       <button type="button" onClick={() => startEdit(scene)} disabled={saving}>Edit</button>
-                      <button type="button" onClick={() => void setActive(scene)} disabled={saving || !scene.active}>Set Active</button>
+                      <button type="button" onClick={() => requestSetActive(scene)} disabled={saving || !scene.active}>Set Active</button>
                     </div>
                   </td>
                 </tr>

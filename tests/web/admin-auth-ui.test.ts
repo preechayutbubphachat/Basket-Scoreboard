@@ -212,6 +212,7 @@ import {
   buildAdminDisplayScreenPreviewLink,
   buildAdminDisplayScreensLink,
   buildAdminDisplayScreenScenesLink,
+  buildDisplaySceneActivationConfirmation,
   buildPublicDisplayScreenLink,
   createDisplaySceneFormState,
   createDisplayScenePayload,
@@ -219,9 +220,12 @@ import {
   createDisplayScreenPayload,
   displaySceneTypeOptions,
   getDisplaySceneConfigSummary,
+  getDisplaySceneMatchId,
   getDisplaySceneSaveState,
   getDisplayScreenSaveState,
   getPublicDisplayPreviewSummary,
+  getPublicActiveSceneSummary,
+  isPublicActiveDisplayScreen,
   publicDisplayPreviewHasPrivateExposure,
   validateDisplaySceneForm,
   validateDisplayScreenForm
@@ -3377,6 +3381,89 @@ describe("tournament schedule UI policy", () => {
     expect(publicDisplayPreviewHasPrivateExposure({ commandId: "secret-command", csrf: "token" })).toBe(true);
   });
 
+  test("builds public display scene activation safety copy for operator handoff", () => {
+    const screen: DisplayScreenResponse = {
+      screenId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      screenSlug: "court-1-main",
+      displayName: "Court 1 Main",
+      tournamentId: null,
+      description: "Arena display",
+      publicEnabled: true,
+      active: true
+    };
+    const liveScene: DisplaySceneResponse = {
+      sceneId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      screenId: screen.screenId,
+      sceneType: "LIVE_SCOREBOARD",
+      sceneName: "Live scoreboard",
+      sceneConfig: { matchId: scoreboardProjection.matchId },
+      sortOrder: 0,
+      active: true
+    };
+    const blankScene: DisplaySceneResponse = {
+      sceneId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      screenId: screen.screenId,
+      sceneType: "BLANK",
+      sceneName: "Standby",
+      sceneConfig: { message: "Standby" },
+      sortOrder: 1,
+      active: true
+    };
+    const publicPreview = {
+      screen: { screenSlug: screen.screenSlug, displayName: screen.displayName },
+      activeScene: {
+        sceneType: "BLANK" as const,
+        publicData: { message: "Standby" },
+        refreshAfterMs: 30000
+      },
+      serverTime: "2026-07-09T00:00:00.000Z"
+    };
+
+    const currentScene = getPublicActiveSceneSummary(publicPreview);
+    const liveConfirmation = buildDisplaySceneActivationConfirmation({
+      screen,
+      targetScene: liveScene,
+      currentScene
+    });
+    const blankConfirmation = buildDisplaySceneActivationConfirmation({
+      screen,
+      targetScene: blankScene,
+      currentScene: { sceneType: "LIVE_SCOREBOARD", matchId: scoreboardProjection.matchId }
+    });
+    const privateConfirmation = buildDisplaySceneActivationConfirmation({
+      screen: { ...screen, publicEnabled: false },
+      targetScene: liveScene,
+      currentScene
+    });
+
+    expect(isPublicActiveDisplayScreen(screen)).toBe(true);
+    expect(isPublicActiveDisplayScreen({ ...screen, active: false })).toBe(false);
+    expect(currentScene).toEqual({ sceneType: "BLANK", matchId: null });
+    expect(getDisplaySceneMatchId(liveScene)).toBe(scoreboardProjection.matchId);
+    expect(liveConfirmation.title).toBe("Set this scene active?");
+    expect(liveConfirmation.publicWarning).toBe("This screen is live on the public display. Changes may be visible immediately.");
+    expect(liveConfirmation.confirmLabel).toBe("Confirm active scene");
+    expect(liveConfirmation.cancelLabel).toBe("Cancel");
+    expect(liveConfirmation.summaryRows).toEqual(
+      expect.arrayContaining([
+        { label: "Screen slug", value: "court-1-main" },
+        { label: "Display name", value: "Court 1 Main" },
+        { label: "Public enabled", value: "ON" },
+        { label: "Active", value: "ON" },
+        { label: "Current active scene type", value: "BLANK" },
+        { label: "Target scene type", value: "LIVE_SCOREBOARD" },
+        { label: "Target match ID", value: scoreboardProjection.matchId },
+        { label: "Public URL", value: "/public/display/court-1-main" }
+      ])
+    );
+    expect(liveConfirmation.messages).toContain(
+      `This will show the live scoreboard for match ${scoreboardProjection.matchId} on the public display.`
+    );
+    expect(liveConfirmation.messages).toContain("You are switching from BLANK to LIVE_SCOREBOARD.");
+    expect(blankConfirmation.messages).toContain("This will switch the public display to the standby screen.");
+    expect(privateConfirmation.publicWarning).toBeNull();
+  });
+
   test("builds public display scene models safely for all active scene types", () => {
     const base = {
       screen: { screenSlug: "court-1-main", displayName: "Court 1 Main" },
@@ -3481,6 +3568,20 @@ describe("tournament schedule UI policy", () => {
       title: "Display Unavailable",
       message: "Live scoreboard scene is missing a match."
     });
+  });
+
+  test("admin display scene activation keeps live public handoff confirmation in the UI", () => {
+    const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
+    const controlSource = readFileSync("apps/web/src/lib/displayScreenControl.ts", "utf8");
+
+    expect(appSource).toContain("Operator handoff");
+    expect(appSource).toContain("This screen is live on the public display. Changes may be visible immediately.");
+    expect(appSource).toContain("buildDisplaySceneActivationConfirmation");
+    expect(controlSource).toContain("Confirm active scene");
+    expect(controlSource).toContain("Cancel");
+    expect(appSource).toContain("requestSetActive(scene)");
+    expect(appSource).toContain("confirmSetActive");
+    expect(appSource).not.toContain("onClick={() => void setActive(scene)}");
   });
 
   test("public display scene route is public-only and leaves existing scoreboard display route intact", () => {

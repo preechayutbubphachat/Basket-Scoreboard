@@ -57,6 +57,20 @@ export type DisplaySceneFormState = {
   active: boolean;
 };
 
+export type PublicDisplayActiveSceneSummary = {
+  sceneType: DisplaySceneType;
+  matchId: string | null;
+};
+
+export type DisplaySceneActivationConfirmation = {
+  title: string;
+  publicWarning: string | null;
+  summaryRows: Array<{ label: string; value: string }>;
+  messages: string[];
+  confirmLabel: string;
+  cancelLabel: string;
+};
+
 export function buildAdminDisplayScreensLink() {
   return "/admin/display-screens";
 }
@@ -219,6 +233,85 @@ export function getDisplaySceneConfigSummary(scene: DisplaySceneResponse | Activ
     return config.message;
   }
   return "Standby";
+}
+
+export function getDisplaySceneMatchId(scene: DisplaySceneResponse | ActiveDisplaySceneResponse["scene"] | null | undefined) {
+  const config = scene?.sceneConfig;
+  if (config && "matchId" in config && typeof config.matchId === "string") {
+    return config.matchId;
+  }
+  return null;
+}
+
+export function isPublicActiveDisplayScreen(screen: DisplayScreenResponse | null | undefined) {
+  return Boolean(screen?.publicEnabled && screen.active);
+}
+
+export function getPublicActiveSceneSummary(publicPreview: PublicDisplayScreenResponse["data"] | null | undefined) {
+  const activeScene = publicPreview?.activeScene;
+  if (!activeScene) return null;
+  const publicData = activeScene.publicData;
+  const publicDataRecord = publicData && typeof publicData === "object" ? publicData : null;
+  return {
+    sceneType: activeScene.sceneType,
+    matchId: publicDataRecord && "matchId" in publicDataRecord && typeof publicDataRecord.matchId === "string"
+      ? publicDataRecord.matchId
+      : null
+  } satisfies PublicDisplayActiveSceneSummary;
+}
+
+export function buildDisplaySceneActivationConfirmation(input: {
+  screen: DisplayScreenResponse;
+  targetScene: DisplaySceneResponse;
+  currentScene: PublicDisplayActiveSceneSummary | null;
+}): DisplaySceneActivationConfirmation {
+  const publicPath = buildPublicDisplayScreenLink(input.screen.screenSlug);
+  const targetMatchId = getDisplaySceneMatchId(input.targetScene);
+  const currentMatchId = input.currentScene?.matchId ?? null;
+  const messages: string[] = [];
+
+  if (input.targetScene.sceneType === "LIVE_SCOREBOARD" && targetMatchId) {
+    messages.push(`This will show the live scoreboard for match ${targetMatchId} on the public display.`);
+  }
+  if (input.targetScene.sceneType === "BLANK") {
+    messages.push("This will switch the public display to the standby screen.");
+  }
+  if (input.currentScene?.sceneType === "BLANK" && input.targetScene.sceneType === "LIVE_SCOREBOARD") {
+    messages.push("You are switching from BLANK to LIVE_SCOREBOARD.");
+  }
+  if (
+    input.currentScene?.sceneType === "LIVE_SCOREBOARD" &&
+    input.targetScene.sceneType === "LIVE_SCOREBOARD" &&
+    currentMatchId &&
+    targetMatchId &&
+    currentMatchId !== targetMatchId
+  ) {
+    messages.push(`You are switching the live scoreboard from match ${currentMatchId} to match ${targetMatchId}.`);
+  }
+  if (isPublicActiveDisplayScreen(input.screen)) {
+    messages.push("This scene change may be visible immediately.");
+  }
+
+  return {
+    title: "Set this scene active?",
+    publicWarning: isPublicActiveDisplayScreen(input.screen)
+      ? "This screen is live on the public display. Changes may be visible immediately."
+      : null,
+    summaryRows: [
+      { label: "Screen slug", value: input.screen.screenSlug },
+      { label: "Display name", value: input.screen.displayName },
+      { label: "Public enabled", value: input.screen.publicEnabled ? "ON" : "OFF" },
+      { label: "Active", value: input.screen.active ? "ON" : "OFF" },
+      { label: "Current active scene type", value: input.currentScene?.sceneType ?? "Unavailable" },
+      { label: "Current active match ID", value: currentMatchId ?? "None" },
+      { label: "Target scene type", value: input.targetScene.sceneType },
+      { label: "Target match ID", value: targetMatchId ?? "None" },
+      { label: "Public URL", value: publicPath }
+    ],
+    messages,
+    confirmLabel: "Confirm active scene",
+    cancelLabel: "Cancel"
+  };
 }
 
 export function getPublicDisplayPreviewSummary(preview: PublicDisplayScreenResponse["data"] | null) {
