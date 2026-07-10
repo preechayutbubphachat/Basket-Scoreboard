@@ -5003,9 +5003,12 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
                 fallbackLabel="T"
               />
             ) : null}
-            <h1 className="arena-tournament-title">
-              {display?.tournament.displayName ?? "Public Scoreboard"}
-            </h1>
+            <div className="arena-title-lockup">
+              <span>Public scoreboard</span>
+              <h1 className="arena-tournament-title">
+                {display?.tournament.displayName ?? "Public Scoreboard"}
+              </h1>
+            </div>
           </div>
           <div className="arena-header-meta" aria-label="Match display metadata">
             <span>Match <strong>{display?.matchCodeLabel ?? "Pending"}</strong></span>
@@ -5180,6 +5183,12 @@ function PublicScheduleDisplayScene({
 }: {
   model: Extract<PublicDisplaySceneModel, { status: "READY"; sceneType: "SCHEDULE" }>;
 }) {
+  const densityClassName = model.rows.length <= 1
+    ? "schedule-density-single"
+    : model.rows.length <= 4
+      ? "schedule-density-low"
+      : "schedule-density-full";
+
   return (
     <div className="public-display-schedule-card">
       <header className="public-display-schedule-header">
@@ -5195,7 +5204,7 @@ function PublicScheduleDisplayScene({
           <p>{model.emptyMessage ?? "No public schedule entries available."}</p>
         </div>
       ) : (
-        <div className="public-display-schedule-grid" aria-label="Public schedule entries">
+        <div className={`public-display-schedule-grid ${densityClassName}`} aria-label="Public schedule entries">
           {model.rows.map((row) => (
             <article className={`public-display-schedule-row schedule-row-${row.status.toLowerCase()}`} key={row.matchId}>
               <time className="public-display-schedule-time" dateTime={row.scheduledAt ?? undefined}>
@@ -5248,8 +5257,10 @@ function PublicDisplayTeamPanel({
     showLogo: boolean;
   };
 }) {
+  const hasLogo = team.showLogo && Boolean(team.logoUrl);
+
   return (
-    <article className={`${team.panelClassName} ${side}`} style={team.style as CSSProperties}>
+    <article className={`${team.panelClassName} ${side} ${hasLogo ? "has-team-logo" : "no-team-logo"}`} style={team.style as CSSProperties}>
       <div className="public-display-team-badge"><span>{team.label}</span></div>
       {team.showLogo && team.logoUrl ? (
         <SafePreviewLogo className="public-display-team-logo" src={team.logoUrl} fallbackLabel={side.slice(0, 1)} />

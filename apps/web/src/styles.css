@@ -782,6 +782,17 @@ label {
   --arena-bg-secondary: #101827;
   --arena-accent: #facc15;
   --arena-text: #f8fafc;
+  --arena-score: #f8fafc;
+  --arena-clock: #67e8f9;
+  --arena-shot-warning: #ef4444;
+  --arena-secondary-text: #9fb2d2;
+  --arena-panel-radius: 6px;
+  --arena-rail-width: 8px;
+  --arena-safe-x: clamp(14px, 1.4vw, 24px);
+  --arena-safe-y: clamp(12px, 1.2vh, 20px);
+  --arena-scene-gap: clamp(7px, 0.75vw, 12px);
+  --arena-header-height: clamp(58px, 8.2vh, 82px);
+  --arena-footer-height: clamp(30px, 4.4vh, 46px);
   aspect-ratio: 16 / 9;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--arena-bg) 88%, #020617), #020617 72%),
@@ -804,9 +815,9 @@ label {
 
 .arena-layout {
   display: grid;
-  gap: 12px;
+  gap: var(--arena-scene-gap);
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  padding: 20px 24px 18px;
+  padding: var(--arena-safe-y) var(--arena-safe-x);
 }
 
 .public-display-scene-frame {
@@ -1918,6 +1929,183 @@ label {
   text-align: center;
 }
 
+/* Shared arena-broadcast grammar for every read-only public scene. */
+.public-display-scene-card,
+.public-display-schedule-card,
+.public-display-final-card,
+.public-display-final-unavailable,
+.public-display-team,
+.central-clock-panel,
+.public-display-game-clock,
+.public-display-shot-clock,
+.arena-period-chip {
+  border-radius: var(--arena-panel-radius);
+}
+
+.public-display-standby {
+  background:
+    linear-gradient(90deg, rgba(103, 232, 249, 0.08), transparent 18% 82%, rgba(250, 204, 21, 0.08)),
+    rgba(2, 6, 23, 0.52);
+  border-left: var(--arena-rail-width) solid rgba(103, 232, 249, 0.7);
+  border-right: var(--arena-rail-width) solid rgba(250, 204, 21, 0.7);
+  box-shadow: inset 0 1px 0 rgba(248, 250, 252, 0.06);
+  max-width: 1240px;
+  width: 100%;
+}
+
+.public-display-schedule-card,
+.public-display-final-card {
+  box-shadow:
+    inset var(--arena-rail-width) 0 0 rgba(250, 204, 21, 0.72),
+    inset 0 0 70px rgba(15, 23, 42, 0.54),
+    0 28px 90px rgba(0, 0, 0, 0.4);
+}
+
+.home-final-team {
+  border-left-width: var(--arena-rail-width);
+}
+
+.away-final-team {
+  border-right-width: var(--arena-rail-width);
+}
+
+.public-display-final-unavailable {
+  border-left-width: var(--arena-rail-width);
+}
+
+.public-display-schedule-grid.schedule-density-single,
+.public-display-schedule-grid.schedule-density-low {
+  align-content: center;
+}
+
+.public-display-schedule-grid.schedule-density-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.public-display-schedule-grid.schedule-density-single .public-display-schedule-row {
+  justify-self: center;
+  width: min(100%, 1040px);
+}
+
+.public-display-schedule-grid.schedule-density-low .public-display-schedule-row {
+  min-height: clamp(104px, 15vh, 148px);
+}
+
+.arena-header {
+  grid-template-columns: minmax(0, 1.2fr) minmax(270px, auto) auto;
+  min-height: var(--arena-header-height);
+  padding-bottom: 8px;
+  padding-right: 190px;
+}
+
+.arena-title-lockup {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.arena-title-lockup > span {
+  color: var(--arena-secondary-text);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.arena-scoreboard-grid {
+  gap: clamp(10px, 1.2vw, 20px);
+  grid-template-columns: minmax(0, 1.18fr) minmax(310px, 0.58fr) minmax(0, 1.18fr);
+}
+
+.public-display-team {
+  --score-color: var(--arena-score);
+  display: grid;
+  gap: clamp(5px, 0.65vh, 10px);
+  grid-template-rows: auto minmax(0, auto) minmax(0, 1fr) auto;
+  padding: 12px 18px 14px;
+}
+
+.public-display-team.has-team-logo {
+  grid-template-rows: auto auto minmax(0, auto) minmax(0, 1fr) auto;
+}
+
+.public-display-team.no-team-logo {
+  align-content: stretch;
+}
+
+.home-panel {
+  box-shadow:
+    inset var(--arena-rail-width) 0 0 var(--team-accent),
+    0 0 38px color-mix(in srgb, var(--team-primary) 24%, transparent),
+    inset 0 0 34px color-mix(in srgb, var(--team-primary) 10%, transparent);
+}
+
+.away-panel {
+  box-shadow:
+    inset calc(-1 * var(--arena-rail-width)) 0 0 var(--team-accent),
+    0 0 38px color-mix(in srgb, var(--team-primary) 24%, transparent),
+    inset 0 0 34px color-mix(in srgb, var(--team-primary) 10%, transparent);
+}
+
+.public-display-team h1 {
+  align-self: end;
+  font-size: clamp(2.2rem, 3vw, 3.4rem);
+}
+
+.public-display-score-value {
+  color: var(--arena-score);
+  font-size: clamp(10rem, 14vw, 16.8rem);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.public-display-team-metrics {
+  background: rgba(2, 6, 23, 0.34);
+  border: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.26);
+}
+
+.public-display-team-metrics div {
+  background: transparent;
+}
+
+.central-clock-panel {
+  gap: clamp(7px, 0.8vh, 12px);
+  grid-template-rows: auto minmax(0, 1.25fr) minmax(0, 0.82fr);
+  padding: clamp(8px, 0.8vw, 13px);
+}
+
+.public-display-game-clock strong {
+  color: var(--arena-clock);
+  font-size: clamp(6.5rem, 8.2vw, 9.6rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.arena-period-chip strong {
+  font-size: clamp(1.45rem, 2vw, 2.05rem);
+}
+
+.public-display-shot-clock strong {
+  color: var(--arena-shot-warning);
+  font-variant-numeric: tabular-nums;
+}
+
+.recent-event-ticker {
+  min-height: var(--arena-footer-height);
+  opacity: 0.78;
+  padding: 7px 14px;
+}
+
+.kiosk-mode .recent-event-ticker {
+  opacity: 0.52;
+}
+
+.recent-event-ticker strong {
+  font-size: clamp(0.86rem, 0.9vw, 1rem);
+}
+
 @keyframes scorePulse {
   0% {
     text-shadow: 0 0 0 rgba(250, 204, 21, 0);
@@ -2181,5 +2369,107 @@ th {
     height: 19px;
     line-height: 17px;
     width: 19px;
+  }
+}
+
+@media (max-height: 700px) and (min-width: 761px) {
+  .public-display-frame {
+    --arena-safe-x: 10px;
+    --arena-safe-y: 8px;
+    --arena-scene-gap: 5px;
+    --arena-header-height: 48px;
+    --arena-footer-height: 27px;
+  }
+
+  .arena-header {
+    padding-bottom: 5px;
+    padding-right: 174px;
+  }
+
+  .arena-title-lockup > span,
+  .arena-header-meta span,
+  .public-display-team span,
+  .public-display-game-clock span,
+  .public-display-shot-clock span,
+  .arena-period-chip span,
+  .recent-event-ticker span,
+  .compact-system-strip span {
+    font-size: 0.66rem;
+  }
+
+  .arena-tournament-title {
+    font-size: 1.6rem;
+  }
+
+  .arena-scoreboard-grid {
+    grid-template-columns: minmax(0, 1.14fr) minmax(230px, 0.56fr) minmax(0, 1.14fr);
+  }
+
+  .public-display-team {
+    gap: 3px;
+    padding: 8px 10px;
+  }
+
+  .public-display-team-badge {
+    margin-top: -8px;
+    padding: 5px 18px;
+  }
+
+  .public-display-team h1 {
+    font-size: clamp(1.55rem, 2.7vw, 2.25rem);
+  }
+
+  .public-display-score-value {
+    font-size: clamp(7rem, 14vw, 10.4rem);
+  }
+
+  .public-display-team-metrics div {
+    padding: 4px;
+  }
+
+  .public-display-team-metrics dt {
+    font-size: 0.6rem;
+  }
+
+  .public-display-team-metrics dd {
+    font-size: 1.05rem;
+  }
+
+  .central-clock-panel {
+    gap: 5px;
+    padding: 6px;
+  }
+
+  .public-display-game-clock strong {
+    font-size: clamp(4.6rem, 8.4vw, 6rem);
+  }
+
+  .public-display-shot-clock strong {
+    font-size: clamp(3.3rem, 5.8vw, 4.5rem);
+  }
+
+  .arena-period-chip strong {
+    font-size: 1.35rem;
+  }
+
+  .recent-event-ticker {
+    padding: 4px 8px;
+  }
+
+  .compact-system-strip div {
+    padding: 3px 5px;
+  }
+
+  .compact-system-strip dt {
+    height: 18px;
+    line-height: 16px;
+    width: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .score-pulse,
+  .public-display-shot-clock.shot-clock-critical {
+    animation: none;
   }
 }

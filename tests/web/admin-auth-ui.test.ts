@@ -3892,6 +3892,34 @@ describe("tournament schedule UI policy", () => {
     expect(appSource).not.toMatch(/fake|demo schedule|sample final|sample ticker/i);
   });
 
+  test("keeps the public arena hierarchy responsive, numeric, and motion-safe", () => {
+    const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
+    const styleSource = readFileSync("apps/web/src/styles.css", "utf8");
+
+    expect(styleSource).toContain("--arena-score: #f8fafc");
+    expect(styleSource).toContain("--arena-clock: #67e8f9");
+    expect(styleSource).toContain("--arena-shot-warning: #ef4444");
+    expect(styleSource).toContain("--arena-rail-width: 8px");
+    expect(styleSource).toMatch(/\.public-display-score-value\s*{[\s\S]*color:\s*var\(--arena-score\)[\s\S]*font-variant-numeric:\s*tabular-nums[\s\S]*white-space:\s*nowrap/);
+    expect(styleSource).toMatch(/\.public-display-game-clock strong\s*{[\s\S]*color:\s*var\(--arena-clock\)[\s\S]*font-variant-numeric:\s*tabular-nums/);
+    expect(styleSource).toMatch(/\.public-display-shot-clock strong\s*{[\s\S]*color:\s*var\(--arena-shot-warning\)[\s\S]*font-variant-numeric:\s*tabular-nums/);
+    expect(styleSource).toMatch(/\.public-display-team h1\s*{[\s\S]*-webkit-line-clamp:\s*2/);
+    expect(styleSource).toMatch(/\.public-display-team-metrics\s*{[\s\S]*border-radius:\s*0/);
+    expect(styleSource).toContain(".public-display-team.no-team-logo");
+    expect(appSource).toContain('hasLogo ? "has-team-logo" : "no-team-logo"');
+    expect(appSource).toContain('"schedule-density-single"');
+    expect(appSource).toContain('"schedule-density-low"');
+    expect(appSource).toContain('"schedule-density-full"');
+    expect(styleSource).toContain(".public-display-schedule-grid.schedule-density-single");
+    expect(styleSource).toContain("@media (max-height: 700px) and (min-width: 761px)");
+    expect(styleSource).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*\.public-display-shot-clock\.shot-clock-critical[\s\S]*animation:\s*none/);
+    expect(appSource).toContain("<dt>Timeouts</dt>");
+    expect(appSource).toContain("<dt>Team Fouls</dt>");
+    expect(appSource).toContain("<dt>Bonus</dt>");
+    expect(appSource).toContain("public-display-standby");
+    expect(appSource).toContain("Standby");
+  });
+
   test("builds protected live dashboard links, filters, card labels, and warning summaries", () => {
     const match = {
       ...tournamentSchedule.matches[0],
