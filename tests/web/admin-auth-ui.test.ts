@@ -3592,7 +3592,23 @@ describe("tournament schedule UI policy", () => {
       ...base,
       activeScene: {
         sceneType: "FINAL_SUMMARY",
-        publicData: { matchId: scoreboardProjection.matchId, status: "UNAVAILABLE" },
+        publicData: {
+          matchId: scoreboardProjection.matchId,
+          status: "FINAL",
+          homeTeamName: "Bangkok Home",
+          awayTeamName: "Chiang Mai Away",
+          homeScore: 91,
+          awayScore: 88,
+          winnerSide: "HOME",
+          winnerDisplayName: "Bangkok Home",
+          tournamentLabel: "Alpha Cup",
+          roundLabel: "Final",
+          venueLabel: "Main Hall",
+          courtLabel: "Court A",
+          completedAt: "2026-07-10T10:00:00.000Z",
+          playerStats: [{ name: "Private" }],
+          commandId: "private-command"
+        },
         refreshAfterMs: 30000
       }
     });
@@ -3638,10 +3654,23 @@ describe("tournament schedule UI policy", () => {
       status: "READY",
       sceneType: "FINAL_SUMMARY",
       title: "Final Summary",
-      matchId: scoreboardProjection.matchId,
-      message: "Public final summary rendering is not available yet."
+      summary: {
+        matchId: scoreboardProjection.matchId,
+        status: "FINAL",
+        homeTeamName: "Bangkok Home",
+        awayTeamName: "Chiang Mai Away",
+        homeScore: 91,
+        awayScore: 88,
+        winnerSide: "HOME",
+        winnerDisplayName: "Bangkok Home",
+        tournamentLabel: "Alpha Cup",
+        roundLabel: "Final",
+        venueLabel: "Main Hall",
+        courtLabel: "Court A",
+        completedAt: "2026-07-10T10:00:00.000Z"
+      }
     });
-    expect(JSON.stringify(finalSummary)).not.toMatch(/homeScore|awayScore|winner|boxScore|playerStats/i);
+    expect(JSON.stringify(finalSummary)).not.toMatch(/boxScore|playerStats|commandId|clock|currentSeq|event/i);
     expect(JSON.stringify([blank, live, schedule, finalSummary])).not.toMatch(/\/admin|\/operator|audit-log|replay|corrections|commandId|correlationId|actor|csrf|token/i);
     expect(publicDisplaySceneHasPrivateExposure({ commandId: "private", csrf: "token" })).toBe(true);
     expect(publicDisplaySceneHasPrivateExposure(blank)).toBe(false);
@@ -3702,6 +3731,7 @@ describe("tournament schedule UI policy", () => {
     const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
     const styleSource = readFileSync("apps/web/src/styles.css", "utf8");
     const displaySource = readFileSync("apps/web/src/lib/publicScoreboardDisplay.ts", "utf8");
+    const finalSummarySource = readFileSync("apps/web/src/components/PublicFinalSummaryDisplayScene.tsx", "utf8");
 
     expect(appSource).toContain('name: "public-display-scene"');
     expect(appSource).toContain("PublicDisplayScenePage");
@@ -3715,6 +3745,11 @@ describe("tournament schedule UI policy", () => {
     expect(styleSource).toContain(".public-display-schedule-time");
     expect(styleSource).toContain(".public-display-schedule-location");
     expect(styleSource).toContain(".public-display-schedule-versus");
+    expect(styleSource).toContain(".public-display-final-card");
+    expect(styleSource).toMatch(/\.public-display-final-score\s*{[\s\S]*color:\s*#f8fafc/);
+    expect(appSource).toContain("PublicFinalSummaryDisplayScene");
+    expect(finalSummarySource).toContain('aria-label="Final score"');
+    expect(finalSummarySource).not.toMatch(/public-display-final-score[^\n]*style=/);
     expect(styleSource).toMatch(/\.public-display-schedule-grid\s*{[\s\S]*grid-auto-rows:\s*clamp\(88px,\s*12vh,\s*116px\)/);
     expect(appSource).toContain("public-display-schedule-row");
     expect(appSource).toContain("No public schedule entries available.");

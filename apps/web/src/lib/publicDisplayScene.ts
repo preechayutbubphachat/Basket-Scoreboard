@@ -1,5 +1,7 @@
 import type {
   DisplaySceneType,
+  PublicFinalSummary,
+  PublicFinalSummaryProjection,
   PublicDisplayScreenResponse,
   PublicScheduleDisplayRow
 } from "@basket-scoreboard/api-contracts";
@@ -41,8 +43,7 @@ export type PublicDisplaySceneModel =
       screenSlug: string;
       displayName: string;
       title: string;
-      matchId: string;
-      message: string;
+      summary: PublicFinalSummaryProjection;
       refreshAfterMs: number;
     }
   | {
@@ -128,7 +129,8 @@ export function buildPublicDisplaySceneModel(
   }
 
   if (sceneType === "FINAL_SUMMARY") {
-    const matchId = getRecordString(asRecord(data.activeScene.publicData), "matchId");
+    const publicData = asRecord(data.activeScene.publicData);
+    const matchId = getRecordString(publicData, "matchId");
     if (!matchId) {
       return unavailableScene(base, sceneType, "Final summary scene is missing a match.", refreshAfterMs);
     }
@@ -137,8 +139,7 @@ export function buildPublicDisplaySceneModel(
       sceneType,
       ...base,
       title: "Final Summary",
-      matchId,
-      message: "Public final summary rendering is not available yet."
+      summary: parsePublicFinalSummary(publicData, matchId)
     };
   }
 
@@ -233,6 +234,65 @@ function parsePublicScheduleRows(value: unknown): PublicScheduleDisplayRow[] {
 
 function isPublicScheduleStatus(value: string): value is PublicScheduleDisplayRow["status"] {
   return value === "SCHEDULED" || value === "LIVE" || value === "FINAL";
+}
+
+function parsePublicFinalSummary(
+  value: Record<string, unknown>,
+  matchId: string
+): PublicFinalSummaryProjection {
+  if (value.status === "UNAVAILABLE") {
+    return {
+      matchId,
+      status: "UNAVAILABLE",
+      message: cleanText(value.message, "Final summary is not available.")
+    };
+  }
+
+  const homeTeamName = getRecordString(value, "homeTeamName");
+  const awayTeamName = getRecordString(value, "awayTeamName");
+  const homeScore = getRecordScore(value, "homeScore");
+  const awayScore = getRecordScore(value, "awayScore");
+  const winnerSide = value.winnerSide === "HOME" || value.winnerSide === "AWAY" ? value.winnerSide : null;
+  const winnerDisplayName = optionalText(value.winnerDisplayName);
+  if (
+    value.status !== "FINAL" ||
+    !homeTeamName ||
+    !awayTeamName ||
+    homeScore === null ||
+    awayScore === null ||
+    (winnerSide === null && winnerDisplayName !== null) ||
+    (winnerSide === "HOME" && winnerDisplayName !== homeTeamName) ||
+    (winnerSide === "AWAY" && winnerDisplayName !== awayTeamName)
+  ) {
+    return { matchId, status: "UNAVAILABLE", message: "Final summary is not available." };
+  }
+
+  return {
+    matchId,
+    status: "FINAL",
+    homeTeamName,
+    awayTeamName,
+    homeScore,
+    awayScore,
+    winnerSide,
+    winnerDisplayName,
+    tournamentLabel: optionalText(value.tournamentLabel),
+    roundLabel: optionalText(value.roundLabel),
+    venueLabel: optionalText(value.venueLabel),
+    courtLabel: optionalText(value.courtLabel),
+    completedAt: validIsoOrNull(value.completedAt)
+  } satisfies PublicFinalSummary;
+}
+
+function getRecordScore(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function validIsoOrNull(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
 }
 
 function optionalText(value: unknown) {

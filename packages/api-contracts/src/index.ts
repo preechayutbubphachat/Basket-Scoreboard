@@ -712,6 +712,30 @@ export type FinalSummarySceneConfig = {
   matchId: string;
 };
 
+export type PublicFinalSummary = {
+  matchId: string;
+  status: "FINAL";
+  homeTeamName: string;
+  awayTeamName: string;
+  homeScore: number;
+  awayScore: number;
+  winnerSide: "HOME" | "AWAY" | null;
+  winnerDisplayName: string | null;
+  tournamentLabel: string | null;
+  roundLabel: string | null;
+  venueLabel: string | null;
+  courtLabel: string | null;
+  completedAt: string | null;
+};
+
+export type PublicFinalSummaryUnavailable = {
+  matchId: string;
+  status: "UNAVAILABLE";
+  message: string;
+};
+
+export type PublicFinalSummaryProjection = PublicFinalSummary | PublicFinalSummaryUnavailable;
+
 export type BlankSceneConfig = {
   message?: string | null | undefined;
 };

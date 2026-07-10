@@ -30,6 +30,7 @@ import {
   upsertActiveDisplayScene
 } from "./displayScreenRepository.js";
 import { resolvePublicScheduleDisplayProjection } from "../tournaments/publicScheduleDisplayProjection.js";
+import { resolvePublicFinalSummaryProjection } from "./publicFinalSummaryProjection.js";
 
 type ServiceResult<T> =
   | { ok: true; value: T }
@@ -245,6 +246,14 @@ async function toPublicScene(pool: Pool, sceneType: DisplaySceneType, sceneConfi
       };
     }
 
+    if (sceneType === "FINAL_SUMMARY" && "matchId" in parsed) {
+      return {
+        sceneType,
+        publicData: await resolvePublicFinalSummaryProjection(pool, parsed.matchId),
+        refreshAfterMs: refreshAfterMsForScene(sceneType)
+      };
+    }
+
     return {
       sceneType,
       publicData: publicDataForScene(sceneType, parsed),
@@ -262,13 +271,6 @@ async function toPublicScene(pool: Pool, sceneType: DisplaySceneType, sceneConfi
 function publicDataForScene(sceneType: DisplaySceneType, sceneConfig: DisplaySceneConfig) {
   if (sceneType === "LIVE_SCOREBOARD" && "matchId" in sceneConfig) {
     return { matchId: sceneConfig.matchId };
-  }
-
-  if (sceneType === "FINAL_SUMMARY" && "matchId" in sceneConfig) {
-    return {
-      matchId: sceneConfig.matchId,
-      status: "UNAVAILABLE"
-    };
   }
 
   if (sceneType === "BLANK") {

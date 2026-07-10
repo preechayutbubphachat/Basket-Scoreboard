@@ -58,6 +58,34 @@ function createDisplayScreenPool() {
         return [[{ tournament_exists: params[0] === tournamentId ? 1 : 0 }], []];
       }
 
+      if (compactSql.includes("from match_projections") && compactSql.includes("projection_type = 'scoreboard'")) {
+        return [[{
+          projection_data: JSON.stringify({
+            matchId,
+            status: "FINISHED",
+            homeScore: 91,
+            awayScore: 88,
+            matchFinishedAt: "2026-07-10T10:00:00.000Z",
+            finalScore: { home: 999, away: 1 },
+            winnerSide: "AWAY"
+          })
+        }], []];
+      }
+
+      if (compactSql.includes("as tournament_label") && compactSql.includes("where m.match_id = ?")) {
+        return [[{
+          match_id: matchId,
+          home_team_id: "home-team-id",
+          away_team_id: "away-team-id",
+          home_team_name: "Bangkok Home",
+          away_team_name: "Chiang Mai Away",
+          tournament_label: "Alpha Cup",
+          round_label: "Final",
+          venue_label: "Main Hall",
+          court_label: "Court A"
+        }], []];
+      }
+
       if (compactSql.includes("from tournaments t") && compactSql.includes("match_count")) {
         return [[{
           tournament_id: tournamentId,
@@ -615,12 +643,26 @@ describe("display screen scene foundation", () => {
         data: {
           activeScene: {
             sceneType: "FINAL_SUMMARY",
-            publicData: { matchId, status: "UNAVAILABLE" },
+            publicData: {
+              matchId,
+              status: "FINAL",
+              homeTeamName: "Bangkok Home",
+              awayTeamName: "Chiang Mai Away",
+              homeScore: 91,
+              awayScore: 88,
+              winnerSide: "HOME",
+              winnerDisplayName: "Bangkok Home",
+              tournamentLabel: "Alpha Cup",
+              roundLabel: "Final",
+              venueLabel: "Main Hall",
+              courtLabel: "Court A",
+              completedAt: "2026-07-10T10:00:00.000Z"
+            },
             refreshAfterMs: 30000
           }
         }
       });
-      expect(finalSummary.body).not.toMatch(/homeScore|awayScore|winner|boxScore|playerStats/i);
+      expect(finalSummary.body).not.toMatch(/teamId|boxScore|playerStats|clock|currentSeq|event|projection/i);
       expect(finalSummary.body).not.toMatch(publicPrivateMetadataPattern());
     } finally {
       await app.close();

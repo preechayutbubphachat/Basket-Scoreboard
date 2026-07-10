@@ -35,6 +35,7 @@ import type {
   VenueSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
+import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import {
   canManageAssignments,
@@ -5070,6 +5071,10 @@ function PublicDisplaySceneCard({
     return <PublicScheduleDisplayScene model={model} />;
   }
 
+  if (model?.status === "READY" && model.sceneType === "FINAL_SUMMARY") {
+    return <PublicFinalSummaryDisplayScene model={model} />;
+  }
+
   const displayName = model?.displayName ?? fallbackSlug;
   const sceneType = model?.sceneType ?? "BLANK";
   const status = model?.status ?? "ERROR";
@@ -5085,11 +5090,6 @@ function PublicDisplaySceneCard({
       </div>
       <h2>{title}</h2>
       <p>{message}</p>
-      {model?.status === "READY" && model.sceneType === "FINAL_SUMMARY" ? (
-        <dl className="public-display-scene-details" aria-label="Final summary scene details">
-          <div><dt>Match</dt><dd>{model.matchId}</dd></div>
-        </dl>
-      ) : null}
       <small>Read-only public scene</small>
     </div>
   );
