@@ -3,44 +3,74 @@ import type {
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
-const forbiddenSequenceKeys = new Set([
-  "seq",
-  "sequence",
-  "seqno",
-  "eventseq",
-  "eventsequence",
-  "raweventseq",
-  "raweventsequence",
-  "projectionseq",
-  "projectionsequence",
-  "currentsequence",
-  "lasteventseq",
-  "expectedseq",
-  "currentseq"
-]);
-
 export function toPublicScoreboardProjection(
   projection: ScoreboardProjection
 ): PublicScoreboardProjection {
-  return stripSequenceFields(projection) as PublicScoreboardProjection;
-}
-
-function stripSequenceFields(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(stripSequenceFields);
-  }
-
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !forbiddenSequenceKeys.has(normalizeKey(key)))
-      .map(([key, nestedValue]) => [key, stripSequenceFields(nestedValue)])
-  );
-}
-
-function normalizeKey(key: string) {
-  return key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return {
+    matchId: projection.matchId,
+    ...(projection.homeTeamName !== undefined ? { homeTeamName: projection.homeTeamName } : {}),
+    ...(projection.awayTeamName !== undefined ? { awayTeamName: projection.awayTeamName } : {}),
+    homeScore: projection.homeScore,
+    awayScore: projection.awayScore,
+    teamFouls: {
+      home: projection.teamFouls.home,
+      away: projection.teamFouls.away
+    },
+    ...(projection.timeouts !== undefined
+      ? {
+          timeouts: {
+            home: {
+              used: projection.timeouts.home.used,
+              remaining: projection.timeouts.home.remaining
+            },
+            away: {
+              used: projection.timeouts.away.used,
+              remaining: projection.timeouts.away.remaining
+            }
+          }
+        }
+      : {}),
+    ...(projection.activeTimeout !== undefined
+      ? {
+          activeTimeout: projection.activeTimeout
+            ? {
+                teamSide: projection.activeTimeout.teamSide,
+                remainingMs: projection.activeTimeout.remainingMs
+              }
+            : null
+        }
+      : {}),
+    ...(projection.periodType !== undefined ? { periodType: projection.periodType } : {}),
+    periodNumber: projection.periodNumber,
+    gameClockRemainingMs: projection.gameClockRemainingMs,
+    shotClockRemainingMs: projection.shotClockRemainingMs,
+    ...(projection.gameClock !== undefined
+      ? {
+          gameClock: {
+            remainingMs: projection.gameClock.remainingMs,
+            running: projection.gameClock.running,
+            lastStartedAt: projection.gameClock.lastStartedAt
+          }
+        }
+      : {}),
+    ...(projection.shotClock !== undefined
+      ? {
+          shotClock: {
+            remainingMs: projection.shotClock.remainingMs,
+            running: projection.shotClock.running,
+            lastStartedAt: projection.shotClock.lastStartedAt
+          }
+        }
+      : {}),
+    ...(projection.serverTime !== undefined ? { serverTime: projection.serverTime } : {}),
+    status: projection.status,
+    ...(projection.finalScore !== undefined
+      ? {
+          finalScore: projection.finalScore
+            ? { home: projection.finalScore.home, away: projection.finalScore.away }
+            : null
+        }
+      : {}),
+    ...(projection.displayTheme !== undefined ? { displayTheme: projection.displayTheme } : {})
+  };
 }

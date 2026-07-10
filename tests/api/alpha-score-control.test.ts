@@ -20,11 +20,19 @@ function createProjectionFakePool(options: { found?: boolean; shotClockRunning?:
                   match_status: "LIVE",
                   projection_data: JSON.stringify({
                     matchId,
+                    homeTeamId: "home-team-id",
+                    awayTeamId: "away-team-id",
                     homeScore: 12,
                     awayScore: 9,
                     teamFouls: { home: 2, away: 1 },
                     teamFoulsByPeriod: { "2": { home: 2, away: 1 } },
-                    playerFouls: [],
+                    playerFouls: [{
+                      playerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                      teamSide: "HOME",
+                      playerName: "Private Player",
+                      jerseyNumber: "7",
+                      fouls: 1
+                    }],
                     gameClock: {
                       remainingMs: 430000,
                       running: true,
@@ -194,7 +202,13 @@ describe("alpha score control routes", () => {
         homeScore: 12,
         awayScore: 9,
         teamFouls: { home: 2, away: 1 },
-        playerFouls: [],
+        playerFouls: [{
+          playerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          teamSide: "HOME",
+          playerName: "Private Player",
+          jerseyNumber: "7",
+          fouls: 1
+        }],
         gameClock: {
           remainingMs: 430000,
           running: true,
@@ -245,7 +259,7 @@ describe("alpha score control routes", () => {
         status: "LIVE"
       });
       expect(JSON.stringify(body)).not.toMatch(
-        /currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|actor|device|audit/i
+        /homeTeamId|awayTeamId|playerId|playerFouls|roster|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|projectionVersion|actor|device|audit/i
       );
 
       const writeResponse = await app.inject({
@@ -295,14 +309,12 @@ describe("alpha score control routes", () => {
         homeScore: 0,
         awayScore: 0,
         teamFouls: { home: 0, away: 0 },
-        playerFouls: [],
         gameClock: { remainingMs: 600000, running: false, lastStartedAt: null },
         shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
         gameClockRemainingMs: 600000,
         shotClockRemainingMs: 24000,
         periodNumber: 1,
-        status: "SCHEDULED",
-        projectionVersion: "scoreboard-v1"
+        status: "SCHEDULED"
       });
       expect(JSON.stringify(response.json())).not.toMatch(/currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq/i);
     } finally {
@@ -328,7 +340,6 @@ describe("alpha score control routes", () => {
         homeScore: 0,
         awayScore: 0,
         teamFouls: { home: 0, away: 0 },
-        playerFouls: [],
         gameClock: { remainingMs: 600000, running: false, lastStartedAt: null },
         shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
         gameClockRemainingMs: 600000,

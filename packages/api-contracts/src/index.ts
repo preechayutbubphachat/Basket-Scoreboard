@@ -1480,7 +1480,43 @@ export type ScoreboardProjection = {
   displayTheme?: PublicDisplayTheme | null;
 };
 
-export type PublicScoreboardProjection = Omit<ScoreboardProjection, "currentSeq" | "lastEventSeq">;
+export type PublicScoreboardProjection = {
+  matchId: string;
+  homeTeamName?: string | null;
+  awayTeamName?: string | null;
+  homeScore: number;
+  awayScore: number;
+  teamFouls: {
+    home: number;
+    away: number;
+  };
+  timeouts?: {
+    home: { used: number; remaining: number };
+    away: { used: number; remaining: number };
+  };
+  activeTimeout?: {
+    teamSide: "HOME" | "AWAY";
+    remainingMs: number;
+  } | null;
+  periodType?: "REGULATION" | "OVERTIME";
+  periodNumber: number;
+  gameClockRemainingMs: number;
+  shotClockRemainingMs: number | null;
+  gameClock?: {
+    remainingMs: number;
+    running: boolean;
+    lastStartedAt: string | null;
+  };
+  shotClock?: {
+    remainingMs: number;
+    running: boolean;
+    lastStartedAt: string | null;
+  };
+  serverTime?: string;
+  status: ScoreboardProjection["status"];
+  finalScore?: { home: number; away: number } | null;
+  displayTheme?: PublicDisplayTheme | null;
+};
 
 export type MatchSyncResponse = {
   matchId: string;

@@ -15,8 +15,12 @@ import {
 
 export type TimeoutControlTeamSide = "HOME" | "AWAY";
 
-type TimeoutDisplayProjection = Pick<ScoreboardProjection, "activeTimeout"> &
-  Partial<Pick<ScoreboardProjection, "timeouts" | "homeTeamName" | "awayTeamName">>;
+type TimeoutDisplayProjection = Partial<Pick<ScoreboardProjection, "timeouts" | "homeTeamName" | "awayTeamName">> & {
+  activeTimeout?: {
+    teamSide: "HOME" | "AWAY";
+    remainingMs: number;
+  } | null;
+};
 
 export const timeoutRequestedByOptions: TimeoutRequestedBy[] = [
   "HEAD_COACH",

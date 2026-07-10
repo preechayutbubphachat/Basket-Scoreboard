@@ -396,9 +396,9 @@ describe("alpha match lifecycle routes", () => {
       expect(response.json()).toMatchObject({
         status: "FINISHED",
         periodType: "REGULATION",
-        winnerSide: "HOME",
         finalScore: { home: 90, away: 88 }
       });
+      expect(response.json()).not.toHaveProperty("winnerSide");
     } finally {
       await readApp.close();
     }

@@ -78,7 +78,7 @@ export function buildPublicScoreboardDisplayModel(
     tournament: theme.tournament,
     home: {
       label: homeScorePanel?.label ?? "HOME",
-      teamName: theme.home.displayName ?? homeScorePanel?.teamName ?? projection.homeTeamName ?? projection.homeTeamId ?? "HOME",
+      teamName: theme.home.displayName ?? homeScorePanel?.teamName ?? projection.homeTeamName ?? "HOME",
       score: homeScorePanel?.score ?? projection.homeScore,
       fouls: projection.teamFouls.home,
       timeouts: homeTimeoutPanel?.remaining ?? projection.timeouts?.home.remaining ?? 0,
@@ -90,7 +90,7 @@ export function buildPublicScoreboardDisplayModel(
     },
     away: {
       label: awayScorePanel?.label ?? "AWAY",
-      teamName: theme.away.displayName ?? awayScorePanel?.teamName ?? projection.awayTeamName ?? projection.awayTeamId ?? "AWAY",
+      teamName: theme.away.displayName ?? awayScorePanel?.teamName ?? projection.awayTeamName ?? "AWAY",
       score: awayScorePanel?.score ?? projection.awayScore,
       fouls: projection.teamFouls.away,
       timeouts: awayTimeoutPanel?.remaining ?? projection.timeouts?.away.remaining ?? 0,
@@ -158,7 +158,7 @@ export function buildPublicScoreboardClockState(
 }
 
 export function publicScoreboardDisplayHasPrivateExposure(serializedDisplay: string) {
-  return /"(?:seq|sequence)"|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|reason|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i.test(serializedDisplay);
+  return /homeTeamId|awayTeamId|playerId|playerFouls|roster|"(?:seq|sequence)"|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|projectionVersion|reason|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i.test(serializedDisplay);
 }
 
 export function buildPublicDisplayThemeView(theme: PublicDisplayTheme | null | undefined) {

@@ -244,6 +244,7 @@ import type {
   MatchReplayResponse,
   MatchRostersResponse,
   MatchSummaryResponse,
+  PublicScoreboardProjection,
   ScoreAddedPayload,
   ScoreboardProjection,
   TournamentListResponse,
@@ -314,6 +315,26 @@ const scoreboardProjection: ScoreboardProjection = {
   status: "LIVE",
   currentSeq: 3,
   projectionVersion: "scoreboard-v1"
+};
+
+const publicScoreboardProjection: PublicScoreboardProjection = {
+  matchId: scoreboardProjection.matchId,
+  homeTeamName: scoreboardProjection.homeTeamName,
+  awayTeamName: scoreboardProjection.awayTeamName,
+  homeScore: scoreboardProjection.homeScore,
+  awayScore: scoreboardProjection.awayScore,
+  teamFouls: scoreboardProjection.teamFouls,
+  timeouts: {
+    home: { used: 0, remaining: 5 },
+    away: { used: 0, remaining: 5 }
+  },
+  periodType: "REGULATION",
+  periodNumber: scoreboardProjection.periodNumber,
+  gameClockRemainingMs: scoreboardProjection.gameClockRemainingMs,
+  shotClockRemainingMs: scoreboardProjection.shotClockRemainingMs,
+  gameClock: scoreboardProjection.gameClock,
+  shotClock: scoreboardProjection.shotClock,
+  status: scoreboardProjection.status
 };
 
 const scorePayload: ScoreAddedPayload = {
@@ -1806,11 +1827,10 @@ describe("web API client", () => {
   });
 
   test("loads public scoreboard projection without requiring an auth envelope", async () => {
-    const { currentSeq: _currentSeq, lastEventSeq: _lastEventSeq, ...publicProjection } = scoreboardProjection;
-    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(publicProjection));
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(publicScoreboardProjection));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
 
-    await expect(client.getPublicScoreboard(scoreboardProjection.matchId)).resolves.toEqual(publicProjection);
+    await expect(client.getPublicScoreboard(scoreboardProjection.matchId)).resolves.toEqual(publicScoreboardProjection);
 
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/v1/public/matches/${scoreboardProjection.matchId}/scoreboard`,
@@ -1819,7 +1839,7 @@ describe("web API client", () => {
   });
 
   test("builds public 16:9 display model from public projection without private links or metadata", () => {
-    const display = buildPublicScoreboardDisplayModel(scoreboardProjection, {
+    const display = buildPublicScoreboardDisplayModel(publicScoreboardProjection, {
       nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
       receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
       realtimeState: "POLLING_FALLBACK"
@@ -1867,6 +1887,7 @@ describe("web API client", () => {
     ]);
     expect(display.recentEventTicker).toBe("No public play updates available.");
     expect(display.recentEventTicker).not.toMatch(/HOME|AWAY|\d+\s*-\s*\d+|SCORE_ADDED/i);
+    expect(JSON.stringify(display)).not.toMatch(/homeTeamId|awayTeamId|playerId|playerFouls|roster/i);
     expect(JSON.stringify(display)).not.toMatch(/seqLabel|"SQ"|"Seq"|"(?:seq|sequence)"|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq/i);
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });
@@ -1874,7 +1895,7 @@ describe("web API client", () => {
   test("public display renders team stats in panels without duplicated bottom stat strip", () => {
     const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
     const styleSource = readFileSync("apps/web/src/styles.css", "utf8");
-    const display = buildPublicScoreboardDisplayModel(scoreboardProjection, {
+    const display = buildPublicScoreboardDisplayModel(publicScoreboardProjection, {
       nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
       receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
       realtimeState: "CONNECTED"
@@ -1892,7 +1913,7 @@ describe("web API client", () => {
 
   test("public display model derives running clocks and final label safely", () => {
     const display = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       status: "FINAL",
       finalScore: { home: 88, away: 84 },
       gameClock: {
@@ -1905,8 +1926,7 @@ describe("web API client", () => {
         running: true,
         lastStartedAt: "2026-07-01T10:00:00.000Z"
       },
-      serverTime: "2026-07-01T10:00:00.000Z",
-      lastEventSeq: 12
+      serverTime: "2026-07-01T10:00:00.000Z"
     }, {
       nowMs: Date.parse("2026-07-01T10:00:02.000Z"),
       receivedAtMs: Date.parse("2026-07-01T10:00:00.000Z"),
@@ -1921,7 +1941,7 @@ describe("web API client", () => {
 
   test("public display applies sanitized tournament and team display theme", () => {
     const display = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       displayTheme: {
         tournament: {
           displayName: "Youth Cup Display",
@@ -2006,7 +2026,7 @@ describe("web API client", () => {
 
   test("public display model keeps long tournament and team names public safe for broadcast layout", () => {
     const display = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       homeTeamName: "Bangkok International Youth Basketball Academy Tigers",
       awayTeamName: "Phuket Provincial Demonstration School Ocean Sharks",
       displayTheme: {
@@ -2073,7 +2093,7 @@ describe("web API client", () => {
 
   test("public display model keeps default fallback when no display theme exists", () => {
     const display = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       displayTheme: null
     }, {
       nowMs: Date.parse("2026-07-01T10:00:00.000Z"),
@@ -2157,7 +2177,7 @@ describe("web API client", () => {
 
   test("public display score color stays readable with dark team and match override colors", () => {
     const display = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       displayTheme: {
         tournament: {
           displayName: "Night Cup",
@@ -2221,7 +2241,7 @@ describe("web API client", () => {
 
   test("public display marks low and critical shot clock states without exposing commands", () => {
     const lowDisplay = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       shotClockRemainingMs: 5000,
       shotClock: { remainingMs: 5000, running: false, lastStartedAt: null }
     }, {
@@ -2230,7 +2250,7 @@ describe("web API client", () => {
       realtimeState: "RECONNECTING"
     });
     const criticalDisplay = buildPublicScoreboardDisplayModel({
-      ...scoreboardProjection,
+      ...publicScoreboardProjection,
       shotClockRemainingMs: 3000,
       shotClock: { remainingMs: 3000, running: false, lastStartedAt: null }
     }, {

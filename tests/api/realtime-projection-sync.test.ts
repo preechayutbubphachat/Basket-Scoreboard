@@ -9,13 +9,21 @@ const matchId = "11111111-1111-4111-8111-111111111111";
 function baseProjection(overrides: Partial<ScoreboardProjection> = {}): ScoreboardProjection {
   return {
     matchId,
+    homeTeamId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     homeTeamName: "HOME",
+    awayTeamId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     awayTeamName: "AWAY",
     homeScore: 0,
     awayScore: 0,
     teamFouls: { home: 0, away: 0 },
     teamFoulsByPeriod: {},
-    playerFouls: [],
+    playerFouls: [{
+      playerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      teamSide: "HOME",
+      playerName: "Private Player",
+      jerseyNumber: "7",
+      fouls: 1
+    }],
     periodNumber: 1,
     gameClockRemainingMs: 600000,
     shotClockRemainingMs: 24000,
@@ -149,7 +157,7 @@ describe("realtime projection sync", () => {
         }
       });
       expect(JSON.stringify((snapshot as { publicScoreboard: unknown }).publicScoreboard)).not.toMatch(
-        /currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq/i
+        /homeTeamId|awayTeamId|playerId|playerFouls|roster|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|projectionVersion/i
       );
     } finally {
       socket.close();
@@ -233,7 +241,8 @@ describe("realtime projection sync", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      await expect(updatePromise).resolves.toMatchObject({
+      const update = await updatePromise;
+      expect(update).toMatchObject({
         matchId,
         lastEventSeq: 1,
         publicScoreboard: {
@@ -241,6 +250,9 @@ describe("realtime projection sync", () => {
           homeScore: 2
         }
       });
+      expect(JSON.stringify((update as { publicScoreboard: unknown }).publicScoreboard)).not.toMatch(
+        /homeTeamId|awayTeamId|playerId|playerFouls|roster|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|projectionVersion/i
+      );
       expect(events).toHaveLength(1);
     } finally {
       socket.close();
