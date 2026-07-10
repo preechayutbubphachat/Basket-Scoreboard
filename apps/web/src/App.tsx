@@ -23,6 +23,7 @@ import type {
   PlayerPosition,
   ReplayGroupFilter,
   ReplayItem,
+  PublicScoreboardProjection,
   ScoreboardProjection,
   TimeoutRequestedBy,
   TournamentLiveDashboardResponse,
@@ -263,6 +264,7 @@ import {
 } from "./lib/publicDisplayScene";
 import {
   buildPublicScoreboardDisplayLink,
+  buildPublicScoreboardClockState,
   buildPublicScoreboardDisplayModel,
   getPublicDisplayControlsClassName,
   isPublicDisplayKioskMode
@@ -2826,21 +2828,24 @@ function OperatorMatchesPage() {
 
 function usePublicProjectionRealtime(
   matchId: string,
-  projection: ScoreboardProjection | null,
-  setProjection: React.Dispatch<React.SetStateAction<ScoreboardProjection | null>>,
+  projection: ScoreboardProjection | PublicScoreboardProjection | null,
+  setProjection: React.Dispatch<React.SetStateAction<ScoreboardProjection | null>> | React.Dispatch<React.SetStateAction<PublicScoreboardProjection | null>>,
   onProjectionReceived?: () => void,
-  onSequenceGap?: () => void | Promise<void>
+  onSequenceGap?: () => void | Promise<void>,
+  visibility: "PROTECTED" | "PUBLIC" = "PROTECTED"
 ) {
   const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("POLLING_FALLBACK");
   const projectionSeqRef = useRef(0);
-  const projectionRef = useRef<ScoreboardProjection | null>(null);
+  const projectionRef = useRef<ScoreboardProjection | PublicScoreboardProjection | null>(null);
   const onProjectionReceivedRef = useRef(onProjectionReceived);
   const onSequenceGapRef = useRef(onSequenceGap);
   const fallbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     projectionRef.current = projection;
-    projectionSeqRef.current = projection?.lastEventSeq ?? projection?.currentSeq ?? 0;
+    if (projection && "currentSeq" in projection) {
+      projectionSeqRef.current = projection.lastEventSeq ?? projection.currentSeq;
+    }
   }, [projection]);
 
   useEffect(() => {
@@ -2878,18 +2883,26 @@ function usePublicProjectionRealtime(
       });
     };
 
-    const applyProjection = (next: ScoreboardProjection) => {
-      if (shouldRefetchAfterRealtimeProjection(projectionRef.current, next)) {
+    const applyProjection = (next: PublicScoreboardProjection, incomingSeq: number, authoritative: boolean) => {
+      const currentSeq = projectionSeqRef.current;
+      if (!authoritative && shouldRefetchAfterRealtimeProjection(currentSeq, incomingSeq)) {
+        projectionSeqRef.current = incomingSeq;
         void onSequenceGapRef.current?.();
         return;
       }
 
-      const incomingSeq = next.lastEventSeq ?? next.currentSeq;
-      if (projectionRef.current && incomingSeq < projectionSeqRef.current) {
+      if (!authoritative && projectionRef.current && incomingSeq < currentSeq) {
         return;
       }
 
-      setProjection((current) => applyRealtimeProjectionUpdate(current, next));
+      projectionSeqRef.current = incomingSeq;
+      if (visibility === "PROTECTED") {
+        void onSequenceGapRef.current?.();
+        return;
+      }
+
+      const publicSetter = setProjection as React.Dispatch<React.SetStateAction<PublicScoreboardProjection | null>>;
+      publicSetter((current) => applyRealtimeProjectionUpdate(current, next, currentSeq, incomingSeq));
       onProjectionReceivedRef.current?.();
     };
 
@@ -2908,12 +2921,12 @@ function usePublicProjectionRealtime(
     });
     socket.on("match:snapshot", (payload) => {
       if (payload.matchId === matchId) {
-        applyProjection(payload.publicScoreboard);
+        applyProjection(payload.publicScoreboard, payload.lastEventSeq, true);
       }
     });
     socket.on("projection.updated", (payload) => {
       if (payload.matchId === matchId) {
-        applyProjection(payload.publicScoreboard);
+        applyProjection(payload.publicScoreboard, payload.lastEventSeq, false);
       }
     });
     socket.on("match:error", () => {
@@ -4709,14 +4722,14 @@ function AuditLogRowView({ row }: { row: AuditLogRow }) {
 
 function PublicScoreboardPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
-  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [projection, setProjection] = useState<PublicScoreboardProjection | null>(null);
   const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
     setMessage(null);
-  }, refreshPublicScoreboard);
+  }, refreshPublicScoreboard, "PUBLIC");
 
   async function refreshPublicScoreboard(cancelled?: () => boolean) {
     try {
@@ -4778,13 +4791,13 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
           <div className="clock-display public-clock" aria-label="Public clock">
             <div>
               <span>Game Clock</span>
-              <strong>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).gameClockLabel}</strong>
-              <small>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).gameClockRunning ? "Running" : "Stopped"}</small>
+              <strong>{buildPublicScoreboardClockState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).gameClockLabel}</strong>
+              <small>{buildPublicScoreboardClockState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).gameClockRunning ? "Running" : "Stopped"}</small>
             </div>
             <div>
               <span>Shot Clock</span>
-              <strong>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockLabel}</strong>
-              <small>{buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockRunning ? "Running" : "Stopped"}</small>
+              <strong>{buildPublicScoreboardClockState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockLabel}</strong>
+              <small>{buildPublicScoreboardClockState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }).shotClockRunning ? "Running" : "Stopped"}</small>
             </div>
           </div>
           <div className="state-strip" aria-label="Timeouts">
@@ -4800,7 +4813,6 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Type</dt><dd>{projection.periodType === "OVERTIME" ? "OT" : "REG"}</dd></div>
-            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           {projection.status === "FINISHED" ? (
@@ -4820,7 +4832,7 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
 function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const kioskMode = isPublicDisplayKioskMode(window.location.search);
-  const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [projection, setProjection] = useState<PublicScoreboardProjection | null>(null);
   const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const [controlsVisible, setControlsVisible] = useState(() => !kioskMode);
@@ -4830,7 +4842,7 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
     setMessage(null);
-  }, refreshPublicScoreboard);
+  }, refreshPublicScoreboard, "PUBLIC");
 
   async function refreshPublicScoreboard(cancelled?: () => boolean) {
     try {

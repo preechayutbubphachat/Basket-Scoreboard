@@ -1480,6 +1480,8 @@ export type ScoreboardProjection = {
   displayTheme?: PublicDisplayTheme | null;
 };
 
+export type PublicScoreboardProjection = Omit<ScoreboardProjection, "currentSeq" | "lastEventSeq">;
+
 export type MatchSyncResponse = {
   matchId: string;
   currentSeq: number;
@@ -1495,7 +1497,7 @@ export type MatchSyncResponse = {
 export type MatchSnapshotPayload = {
   matchId: string;
   lastEventSeq: number;
-  publicScoreboard: ScoreboardProjection;
+  publicScoreboard: PublicScoreboardProjection;
   serverTime: string;
 };
 
@@ -1503,7 +1505,7 @@ export type ProjectionUpdatedPayload = {
   matchId: string;
   lastEventSeq: number;
   updatedAt: string;
-  publicScoreboard: ScoreboardProjection;
+  publicScoreboard: PublicScoreboardProjection;
 };
 
 export type RealtimeErrorPayload = {

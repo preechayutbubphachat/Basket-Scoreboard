@@ -10,6 +10,7 @@ import {
   type ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 import { getScoreboardProjectionView } from "../matchEventStore/repositories.js";
+import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboardProjection.js";
 
 export type ProjectionRealtime = {
   emitProjectionUpdated: (projection: ScoreboardProjection) => void;
@@ -66,7 +67,7 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
       socket.emit("match:snapshot", {
         matchId: payload.matchId,
         lastEventSeq: projection.lastEventSeq ?? projection.currentSeq,
-        publicScoreboard: projection,
+        publicScoreboard: toPublicScoreboardProjection(projection),
         serverTime: new Date().toISOString()
       });
     });
@@ -85,7 +86,7 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
         matchId: projection.matchId,
         lastEventSeq: projection.lastEventSeq ?? projection.currentSeq,
         updatedAt: projection.updatedAt ?? new Date().toISOString(),
-        publicScoreboard: projection
+        publicScoreboard: toPublicScoreboardProjection(projection)
       };
 
       io.to(matchRoom(projection.matchId)).emit("projection.updated", payload);

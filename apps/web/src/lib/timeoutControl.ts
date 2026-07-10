@@ -15,6 +15,9 @@ import {
 
 export type TimeoutControlTeamSide = "HOME" | "AWAY";
 
+type TimeoutDisplayProjection = Pick<ScoreboardProjection, "activeTimeout"> &
+  Partial<Pick<ScoreboardProjection, "timeouts" | "homeTeamName" | "awayTeamName">>;
+
 export const timeoutRequestedByOptions: TimeoutRequestedBy[] = [
   "HEAD_COACH",
   "ASSISTANT_COACH",
@@ -23,7 +26,7 @@ export const timeoutRequestedByOptions: TimeoutRequestedBy[] = [
   "OTHER"
 ];
 
-export function buildTimeoutControlPanels(projection: ScoreboardProjection | null) {
+export function buildTimeoutControlPanels(projection: TimeoutDisplayProjection | null) {
   const timeouts = getTimeouts(projection);
   return [
     {
@@ -73,7 +76,7 @@ export function buildTimeoutEndPayload(
   };
 }
 
-export function getActiveTimeoutLabel(projection: ScoreboardProjection | null) {
+export function getActiveTimeoutLabel(projection: TimeoutDisplayProjection | null) {
   if (!projection?.activeTimeout) {
     return "No active timeout";
   }
@@ -122,7 +125,7 @@ export function getTimeoutControlLinks(matchId: string) {
   };
 }
 
-function getTimeouts(projection: ScoreboardProjection | null) {
+function getTimeouts(projection: TimeoutDisplayProjection | null) {
   return projection?.timeouts ?? {
     home: { used: 0, remaining: 5 },
     away: { used: 0, remaining: 5 }

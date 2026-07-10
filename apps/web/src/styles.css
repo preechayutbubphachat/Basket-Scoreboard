@@ -1695,7 +1695,7 @@ label {
 .compact-system-strip {
   display: grid;
   gap: 6px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
   opacity: 0.34;
 }

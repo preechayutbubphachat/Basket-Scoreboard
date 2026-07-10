@@ -47,6 +47,7 @@ import type {
   TournamentStandingsResponse,
   TournamentSetupTeam,
   TournamentSummary,
+  PublicScoreboardProjection,
   PublicDisplayScreenResponse,
   UpdateDisplaySceneInput,
   UpdateDisplayScreenInput,
@@ -774,7 +775,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       return lifecycleCommand("/commands/lifecycle/finish-match", matchId, input);
     },
     async getPublicScoreboard(matchId: string) {
-      return request<ScoreboardProjection>(
+      return request<PublicScoreboardProjection>(
         `/public/matches/${encodeURIComponent(matchId)}/scoreboard`,
         {},
         false,

@@ -48,7 +48,7 @@ describe("public final summary DOM", () => {
     expect(html).toContain('class="public-display-final-score">91');
     expect(html).toContain('class="public-display-final-score">88');
     expect(html).toContain("Bangkok Home wins");
-    expect(html).not.toMatch(/playerStats|boxScore|private-command|commandId|clock|sequence|event/i);
+    expect(html).not.toMatch(/playerStats|boxScore|private-command|commandId|clock|sequence|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq|event/i);
   });
 
   it("renders a neutral tie without inventing a winner", () => {

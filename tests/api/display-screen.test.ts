@@ -741,5 +741,5 @@ function adminHeaders() {
 }
 
 function publicPrivateMetadataPattern() {
-  return /assigned_by_user_id|created_by_user_id|updated_by_user_id|createdBy|updatedBy|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i;
+  return /assigned_by_user_id|created_by_user_id|updated_by_user_id|createdBy|updatedBy|"(?:seq|sequence)"|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i;
 }

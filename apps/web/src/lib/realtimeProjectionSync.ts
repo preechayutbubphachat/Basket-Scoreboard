@@ -2,7 +2,7 @@ import { io, type Socket } from "socket.io-client";
 import type {
   MatchSnapshotPayload,
   ProjectionUpdatedPayload,
-  ScoreboardProjection
+  PublicScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
 export type RealtimeSocketTransport = "polling" | "websocket";
@@ -16,32 +16,24 @@ export type PublicProjectionSocket = Socket<{
   "match:join": (payload: { matchId: string; lastSeq?: number; view: "PUBLIC_SCOREBOARD" }) => void;
 }>;
 
-export function applyRealtimeProjectionUpdate(
-  current: ScoreboardProjection | null,
-  incoming: ScoreboardProjection
+export function applyRealtimeProjectionUpdate<T extends PublicScoreboardProjection>(
+  current: T | null,
+  incoming: T,
+  currentSeq: number,
+  incomingSeq: number
 ) {
   if (!current) {
     return incoming;
   }
 
-  const currentSeq = current.lastEventSeq ?? current.currentSeq;
-  const incomingSeq = incoming.lastEventSeq ?? incoming.currentSeq;
-
   return incomingSeq >= currentSeq ? incoming : current;
 }
 
 export function shouldRefetchAfterRealtimeProjection(
-  current: ScoreboardProjection | null,
-  incoming: ScoreboardProjection
+  currentSeq: number,
+  incomingSeq: number
 ) {
-  if (!current) {
-    return false;
-  }
-
-  const currentSeq = current.lastEventSeq ?? current.currentSeq;
-  const incomingSeq = incoming.lastEventSeq ?? incoming.currentSeq;
-
-  return incomingSeq > currentSeq + 1;
+  return currentSeq > 0 && incomingSeq > currentSeq + 1;
 }
 
 export function parseRealtimeSocketTransports(rawValue: string | undefined): RealtimeSocketTransport[] {

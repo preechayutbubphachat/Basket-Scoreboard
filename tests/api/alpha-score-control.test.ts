@@ -242,11 +242,11 @@ describe("alpha score control routes", () => {
           running: true,
           lastStartedAt: "2026-07-01T09:59:30.000Z"
         },
-        lastEventSeq: 7
+        status: "LIVE"
       });
-      expect(JSON.stringify(body)).not.toContain("actor");
-      expect(JSON.stringify(body)).not.toContain("device");
-      expect(JSON.stringify(body)).not.toContain("audit");
+      expect(JSON.stringify(body)).not.toMatch(
+        /currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|actor|device|audit/i
+      );
 
       const writeResponse = await app.inject({
         method: "POST",
@@ -302,10 +302,9 @@ describe("alpha score control routes", () => {
         shotClockRemainingMs: 24000,
         periodNumber: 1,
         status: "SCHEDULED",
-        currentSeq: 0,
-        lastEventSeq: 0,
         projectionVersion: "scoreboard-v1"
       });
+      expect(JSON.stringify(response.json())).not.toMatch(/currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq/i);
     } finally {
       await app.close();
     }
@@ -334,9 +333,9 @@ describe("alpha score control routes", () => {
         shotClock: { remainingMs: 24000, running: false, lastStartedAt: null },
         gameClockRemainingMs: 600000,
         shotClockRemainingMs: 24000,
-        status: "SCHEDULED",
-        lastEventSeq: 0
+        status: "SCHEDULED"
       });
+      expect(JSON.stringify(response.json())).not.toMatch(/currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq/i);
     } finally {
       await app.close();
     }

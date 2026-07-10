@@ -75,6 +75,7 @@ import {
   resolvePublicDisplayTheme,
   saveMatchDisplayOverride
 } from "../displayThemes/displayThemeService.js";
+import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboardProjection.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -313,10 +314,10 @@ export function registerMatchRoutes(
 
         try {
           const displayTheme = await resolvePublicDisplayTheme(pool, request.params.matchId);
-          return {
+          return toPublicScoreboardProjection({
             ...projection,
             displayTheme
-          };
+          });
         } catch (themeError) {
           request.log.warn(
             {
@@ -326,10 +327,10 @@ export function registerMatchRoutes(
             },
             "Public display theme could not be resolved; using default arena theme"
           );
-          return {
+          return toPublicScoreboardProjection({
             ...projection,
             displayTheme: null
-          };
+          });
         }
       } catch (error) {
         request.log.error(

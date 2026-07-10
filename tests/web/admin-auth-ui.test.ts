@@ -1806,10 +1806,11 @@ describe("web API client", () => {
   });
 
   test("loads public scoreboard projection without requiring an auth envelope", async () => {
-    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(scoreboardProjection));
+    const { currentSeq: _currentSeq, lastEventSeq: _lastEventSeq, ...publicProjection } = scoreboardProjection;
+    const fetchMock = vi.fn<FetchLike>().mockResolvedValue(jsonResponse(publicProjection));
     const client = createApiClient({ baseUrl: "/api/v1", fetchImpl: fetchMock });
 
-    await expect(client.getPublicScoreboard(scoreboardProjection.matchId)).resolves.toEqual(scoreboardProjection);
+    await expect(client.getPublicScoreboard(scoreboardProjection.matchId)).resolves.toEqual(publicProjection);
 
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/v1/public/matches/${scoreboardProjection.matchId}/scoreboard`,
@@ -1853,7 +1854,6 @@ describe("web API client", () => {
       statusLabel: "LIVE",
       statusClassName: "arena-live-badge is-live",
       matchCodeLabel: "11111111",
-      seqLabel: "Seq 3",
       syncLabel: "Polling fallback active"
     });
     expect(display.home.panelClassName).toContain("home-panel");
@@ -1863,11 +1863,11 @@ describe("web API client", () => {
       { icon: "DB", label: "Projection", value: "Public" },
       { icon: "SY", label: "Sync", value: "Poll" },
       { icon: "WF", label: "Connection", value: "Poll" },
-      { icon: "SQ", label: "Seq", value: "3" },
       { icon: "LS", label: "Last sync", value: expect.any(String) }
     ]);
     expect(display.recentEventTicker).toBe("No public play updates available.");
     expect(display.recentEventTicker).not.toMatch(/HOME|AWAY|\d+\s*-\s*\d+|SCORE_ADDED/i);
+    expect(JSON.stringify(display)).not.toMatch(/seqLabel|"SQ"|"Seq"|"(?:seq|sequence)"|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq/i);
     expect(publicScoreboardDisplayHasPrivateExposure(JSON.stringify(display))).toBe(false);
   });
 
@@ -1916,7 +1916,6 @@ describe("web API client", () => {
     expect(display.gameClock).toMatchObject({ label: "0:58", stateLabel: "Running" });
     expect(display.shotClock).toMatchObject({ label: "7", stateLabel: "Running" });
     expect(display.finalLabel).toBe("Final 88 - 84");
-    expect(display.seqLabel).toBe("Seq 12");
     expect(display.syncLabel).toBe("Realtime connected");
   });
 
@@ -3769,6 +3768,12 @@ describe("tournament schedule UI policy", () => {
     expect(styleSource).toContain(".kiosk-mode .recent-event-ticker");
     expect(styleSource).toMatch(/\.recent-event-ticker\s*{[\s\S]*opacity:\s*0\.72/);
     expect(styleSource).toMatch(/\.compact-system-strip\s*{[\s\S]*opacity:\s*0\.34/);
+    expect(styleSource).toMatch(/\.compact-system-strip\s*{[\s\S]*grid-template-columns:\s*repeat\(4,/);
+    const publicScoreboardSource = appSource.slice(
+      appSource.indexOf("function PublicScoreboardPage"),
+      appSource.indexOf("function PublicDisplayScenePage")
+    );
+    expect(publicScoreboardSource).not.toMatch(/<dt>Seq<\/dt>|icon:\s*"SQ"|label:\s*"Seq"|seqLabel/);
     expect(displaySource).toContain('recentEventTicker: "No public play updates available."');
     expect(appSource).not.toMatch(/fake|demo schedule|sample final|sample ticker/i);
   });
@@ -4414,8 +4419,8 @@ describe("public scoreboard realtime sync policy", () => {
       lastEventSeq: 4
     };
 
-    expect(applyRealtimeProjectionUpdate(scoreboardProjection, incoming)).toEqual(incoming);
-    expect(applyRealtimeProjectionUpdate({ ...scoreboardProjection, currentSeq: 4 }, incoming)).toEqual(incoming);
+    expect(applyRealtimeProjectionUpdate(scoreboardProjection, incoming, 3, 4)).toEqual(incoming);
+    expect(applyRealtimeProjectionUpdate({ ...scoreboardProjection, currentSeq: 4 }, incoming, 4, 4)).toEqual(incoming);
   });
 
   test("ignores stale realtime projection updates so polling remains authoritative", () => {
@@ -4432,7 +4437,7 @@ describe("public scoreboard realtime sync policy", () => {
       lastEventSeq: 4
     };
 
-    expect(applyRealtimeProjectionUpdate(current, stale)).toBe(current);
+    expect(applyRealtimeProjectionUpdate(current, stale, 5, 4)).toBe(current);
   });
 
   test("detects realtime sequence gaps so callers can refetch authoritative projection", () => {
@@ -4442,8 +4447,8 @@ describe("public scoreboard realtime sync policy", () => {
       lastEventSeq: 5
     };
 
-    expect(shouldRefetchAfterRealtimeProjection(current, { ...scoreboardProjection, currentSeq: 6, lastEventSeq: 6 })).toBe(false);
-    expect(shouldRefetchAfterRealtimeProjection(current, { ...scoreboardProjection, currentSeq: 8, lastEventSeq: 8 })).toBe(true);
+    expect(shouldRefetchAfterRealtimeProjection(5, 6)).toBe(false);
+    expect(shouldRefetchAfterRealtimeProjection(5, 8)).toBe(true);
   });
 
   test("derives socket base URL from same-origin and absolute API bases", () => {

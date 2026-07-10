@@ -1,5 +1,5 @@
-import type { DisplayBackgroundStyle, DisplayColors, PublicDisplayTheme, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
-import { buildClockControlState, deriveDisplayClockMs } from "./clockControl";
+import type { DisplayBackgroundStyle, DisplayColors, PublicDisplayTheme, PublicScoreboardProjection } from "@basket-scoreboard/api-contracts";
+import { deriveDisplayClockMs, formatClockMs, formatShotClockMs } from "./clockControl";
 import { buildPublicScoreboardLink } from "./operatorMatches";
 import { getRealtimeConnectionLabel, type RealtimeConnectionState } from "./realtimeProjectionSync";
 import { buildScoreControlPanels } from "./scoreControl";
@@ -29,7 +29,7 @@ export function getPublicDisplayControlsClassName(input: { kioskMode: boolean; c
 }
 
 export function buildPublicScoreboardDisplayModel(
-  projection: ScoreboardProjection,
+  projection: PublicScoreboardProjection,
   options: {
     nowMs: number;
     receivedAtMs: number | null;
@@ -39,14 +39,13 @@ export function buildPublicScoreboardDisplayModel(
   const theme = buildPublicDisplayThemeView(projection.displayTheme);
   const scorePanels = buildScoreControlPanels(projection);
   const [homeScorePanel, awayScorePanel] = scorePanels;
-  const clock = buildClockControlState(projection, {
+  const clock = buildPublicScoreboardClockState(projection, {
     nowMs: options.nowMs,
     receivedAtMs: options.receivedAtMs
   });
   const timeoutPanels = buildTimeoutControlPanels(projection);
   const [homeTimeoutPanel, awayTimeoutPanel] = timeoutPanels;
   const periodType = projection.periodType === "OVERTIME" ? "OT" : "REG";
-  const seq = projection.lastEventSeq ?? projection.currentSeq;
   const shotClockRemainingMs = deriveDisplayClockMs({
     clock: projection.shotClock,
     fallbackRemainingMs: projection.shotClockRemainingMs ?? 24000,
@@ -117,13 +116,11 @@ export function buildPublicScoreboardDisplayModel(
     statusLabel: projection.status,
     statusClassName: projection.status === "LIVE" ? "arena-live-badge is-live" : "arena-live-badge",
     activeTimeoutLabel: getActiveTimeoutLabel(projection),
-    seqLabel: `Seq ${seq}`,
     syncLabel: getRealtimeConnectionLabel(options.realtimeState),
     systemStatus: [
       { icon: "DB", label: "Projection", value: "Public" },
       { icon: "SY", label: "Sync", value: syncShortLabel },
       { icon: "WF", label: "Connection", value: syncShortLabel },
-      { icon: "SQ", label: "Seq", value: String(seq) },
       { icon: "LS", label: "Last sync", value: receivedAt }
     ],
     recentEventTicker: "No public play updates available.",
@@ -133,8 +130,35 @@ export function buildPublicScoreboardDisplayModel(
   };
 }
 
+export function buildPublicScoreboardClockState(
+  projection: PublicScoreboardProjection,
+  options: { nowMs: number; receivedAtMs: number | null }
+) {
+  const gameClockRemainingMs = deriveDisplayClockMs({
+    clock: projection.gameClock,
+    fallbackRemainingMs: projection.gameClockRemainingMs,
+    nowMs: options.nowMs,
+    serverTime: projection.serverTime,
+    receivedAtMs: options.receivedAtMs
+  });
+  const shotClockRemainingMs = deriveDisplayClockMs({
+    clock: projection.shotClock,
+    fallbackRemainingMs: projection.shotClockRemainingMs ?? 24000,
+    nowMs: options.nowMs,
+    serverTime: projection.serverTime,
+    receivedAtMs: options.receivedAtMs
+  });
+
+  return {
+    gameClockLabel: formatClockMs(gameClockRemainingMs),
+    gameClockRunning: projection.gameClock?.running ?? false,
+    shotClockLabel: formatShotClockMs(shotClockRemainingMs),
+    shotClockRunning: projection.shotClock?.running ?? false
+  };
+}
+
 export function publicScoreboardDisplayHasPrivateExposure(serializedDisplay: string) {
-  return /reason|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i.test(serializedDisplay);
+  return /"(?:seq|sequence)"|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|reason|actor|device|session|token|csrf|password|authorization|commandId|correlationId|causationId|audit|correctionDetails|\/operator|\/admin|audit-log|replay|corrections/i.test(serializedDisplay);
 }
 
 export function buildPublicDisplayThemeView(theme: PublicDisplayTheme | null | undefined) {

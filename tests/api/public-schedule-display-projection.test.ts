@@ -53,7 +53,7 @@ describe("public schedule display projection", () => {
       emptyMessage: null
     });
     expect(JSON.stringify(result)).not.toMatch(
-      /homeTeamId|awayTeamId|courtId|currentSeq|clock|score|readiness|conflict|operations|metadata|actor|device|session|token|csrf|commandId|correlationId|audit|correction/i
+      /homeTeamId|awayTeamId|courtId|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|clock|score|readiness|conflict|operations|metadata|actor|device|session|token|csrf|commandId|correlationId|audit|correction/i
     );
   });
 

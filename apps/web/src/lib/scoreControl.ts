@@ -19,11 +19,14 @@ export const finishedMatchLiveControlWarning = "Match is finished. Use correctio
 export type ScoreControlTeamSide = ScoreAddedPayload["teamSide"];
 export type ScoreControlPoint = ScoreAddedPayload["points"];
 
+type ScorePanelProjection = Pick<ScoreboardProjection, "homeScore" | "awayScore"> &
+  Partial<Pick<ScoreboardProjection, "homeTeamName" | "homeTeamId" | "awayTeamName" | "awayTeamId">>;
+
 export function buildScorePendingKey(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
   return `${teamSide}-${points}`;
 }
 
-export function buildScoreControlPanels(projection: ScoreboardProjection) {
+export function buildScoreControlPanels(projection: ScorePanelProjection) {
   return (["HOME", "AWAY"] as const).map((teamSide) => ({
     teamSide,
     label: teamSide,

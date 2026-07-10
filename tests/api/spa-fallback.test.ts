@@ -43,6 +43,7 @@ describe("Plesk SPA fallback", () => {
       expect(response.statusCode).toBe(200);
       expect(response.headers["content-type"]).toContain("text/html");
       expect(response.body).toContain('<div id="root"></div>');
+      expect(response.body).not.toMatch(/data-[^=]*(?:seq|sequence)|aria-label="[^"]*(?:seq|sequence)|currentSeq|lastEventSeq|eventSeq|projectionSeq/i);
     } finally {
       await app.close();
     }

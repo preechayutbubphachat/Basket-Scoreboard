@@ -138,16 +138,19 @@ describe("realtime projection sync", () => {
       await waitForSocketEvent(socket, "connect");
       const snapshotPromise = waitForSocketEvent(socket, "match:snapshot");
       socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
-      await expect(snapshotPromise).resolves.toMatchObject({
+      const snapshot = await snapshotPromise;
+      expect(snapshot).toMatchObject({
         matchId,
         lastEventSeq: 0,
         publicScoreboard: {
           matchId,
           homeTeamName: "HOME",
-          awayTeamName: "AWAY",
-          currentSeq: 0
+          awayTeamName: "AWAY"
         }
       });
+      expect(JSON.stringify((snapshot as { publicScoreboard: unknown }).publicScoreboard)).not.toMatch(
+        /currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq/i
+      );
     } finally {
       socket.close();
       await app.close();
@@ -235,8 +238,7 @@ describe("realtime projection sync", () => {
         lastEventSeq: 1,
         publicScoreboard: {
           matchId,
-          homeScore: 2,
-          currentSeq: 1
+          homeScore: 2
         }
       });
       expect(events).toHaveLength(1);
