@@ -225,6 +225,8 @@ import {
   getDisplaySceneMatchId,
   getDisplaySceneSaveState,
   getDisplayScreenSaveState,
+  getFinalSummaryMatchReadiness,
+  getFinalSummarySceneReadiness,
   getPublicDisplayPreviewSummary,
   getPublicActiveSceneSummary,
   getPublicSchedulePreviewSummary,
@@ -240,6 +242,7 @@ import type {
   DisplayScreenResponse,
   MatchAuditLogResponse,
   MatchLineupResponse,
+  OperatorMatchSummary,
   MatchReadiness,
   MatchReplayResponse,
   MatchRostersResponse,
@@ -3561,6 +3564,87 @@ describe("tournament schedule UI policy", () => {
     ]));
   });
 
+  test("builds readiness-aware FINAL_SUMMARY admin handoff and activation copy", () => {
+    const screen: DisplayScreenResponse = {
+      screenId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      screenSlug: "final-test",
+      displayName: "Arena Final",
+      tournamentId: null,
+      description: null,
+      publicEnabled: true,
+      active: true
+    };
+    const finalScene: DisplaySceneResponse = {
+      sceneId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      screenId: screen.screenId,
+      sceneType: "FINAL_SUMMARY",
+      sceneName: "Championship Final",
+      sceneConfig: { matchId: scoreboardProjection.matchId },
+      sortOrder: 2,
+      active: true
+    };
+    const baseMatch: OperatorMatchSummary = {
+      matchId: scoreboardProjection.matchId,
+      matchCode: "Gold Medal Game",
+      homeTeamId: "11111111-1111-4111-8111-111111111111",
+      homeTeamName: "Bangkok Home",
+      awayTeamId: "22222222-2222-4222-8222-222222222222",
+      awayTeamName: "Chiang Mai Away",
+      status: "FINISHED",
+      scheduledAt: null,
+      venueName: null,
+      assignedRoleCodes: [],
+      currentSeq: 44,
+      homeScore: 101,
+      awayScore: 99
+    };
+
+    const ready = getFinalSummarySceneReadiness(finalScene, [baseMatch]);
+    const nonFinal = getFinalSummaryMatchReadiness(baseMatch.matchId, [{ ...baseMatch, status: "LIVE" }]);
+    const incomplete = getFinalSummaryMatchReadiness(baseMatch.matchId, [{ ...baseMatch, homeTeamId: null }]);
+    const missing = getFinalSummaryMatchReadiness("33333333-3333-4333-8333-333333333333", []);
+    const readyConfirmation = buildDisplaySceneActivationConfirmation({
+      screen,
+      targetScene: finalScene,
+      currentScene: { sceneType: "BLANK", matchId: null },
+      targetFinalSummaryReadiness: ready
+    });
+    const unavailableConfirmation = buildDisplaySceneActivationConfirmation({
+      screen,
+      targetScene: finalScene,
+      currentScene: { sceneType: "LIVE_SCOREBOARD", matchId: "44444444-4444-4444-8444-444444444444" },
+      targetFinalSummaryReadiness: nonFinal
+    });
+
+    expect(ready).toMatchObject({
+      matchLabel: "Gold Medal Game",
+      matchupLabel: "Bangkok Home vs Chiang Mai Away",
+      lifecycleStatus: "FINISHED",
+      state: "READY",
+      statusLabel: "Ready - Final result available",
+      resultAvailable: true
+    });
+    expect(nonFinal).toMatchObject({ state: "NOT_FINAL", statusLabel: "Unavailable - Match is not finalized" });
+    expect(incomplete).toMatchObject({ state: "UNAVAILABLE", resultAvailable: false });
+    expect(missing).toMatchObject({
+      matchupLabel: "Match details unavailable",
+      statusLabel: "Unavailable - Final result cannot be published yet"
+    });
+    expect(readyConfirmation.messages).toContain(
+      "This will make the authoritative final result for Gold Medal Game publicly visible."
+    );
+    expect(readyConfirmation.summaryRows).toEqual(expect.arrayContaining([
+      { label: "Selected match", value: "Gold Medal Game" },
+      { label: "Matchup", value: "Bangkok Home vs Chiang Mai Away" },
+      { label: "Result readiness", value: "Ready - Final result available" }
+    ]));
+    expect(unavailableConfirmation.messages).toContain(
+      "The public screen will display the safe unavailable state because no publishable final result is currently available."
+    );
+    expect(unavailableConfirmation.warnings).toContain("Unavailable - Match is not finalized");
+    expect(JSON.stringify(readyConfirmation)).not.toMatch(/homeTeamId|awayTeamId|currentSeq|player|roster|audit|correction/i);
+  });
+
   test("builds public display scene models safely for all active scene types", () => {
     const base = {
       screen: { screenSlug: "court-1-main", displayName: "Court 1 Main" },
@@ -3739,8 +3823,13 @@ describe("tournament schedule UI policy", () => {
     expect(controlSource).toContain("Cancel");
     expect(controlSource).toContain("This will show the public schedule for tournament");
     expect(controlSource).toContain("No public schedule entries are currently available for this scene.");
+    expect(controlSource).toContain("This will make the authoritative final result for");
+    expect(controlSource).toContain("safe unavailable state");
     expect(appSource).toContain("Schedule tournament");
     expect(appSource).toContain("Qualifying rows");
+    expect(appSource).toContain("Result readiness");
+    expect(appSource).toContain("STALE_CONFIRMATION");
+    expect(appSource).toContain("activationInFlightRef.current");
     expect(appSource).toContain("requestSetActive(scene)");
     expect(appSource).toContain("confirmSetActive");
     expect(appSource).not.toContain("onClick={() => void setActive(scene)}");
@@ -3766,6 +3855,11 @@ describe("tournament schedule UI policy", () => {
     expect(styleSource).toContain(".public-display-schedule-versus");
     expect(styleSource).toContain(".public-display-final-card");
     expect(styleSource).toMatch(/\.public-display-final-score\s*{[\s\S]*color:\s*#f8fafc/);
+    expect(styleSource).toMatch(/\.public-display-final-team\.final-winner\s*{[\s\S]*border-color:/);
+    expect(styleSource).toMatch(/\.final-tie \.home-final-team,[\s\S]*box-shadow:\s*none/);
+    expect(styleSource).toMatch(/\.public-display-final-card\s*{[\s\S]*container-type:\s*inline-size/);
+    expect(styleSource).toMatch(/\.public-display-final-score\s*{[\s\S]*white-space:\s*nowrap/);
+    expect(styleSource).toContain(".public-display-final-unavailable");
     expect(appSource).toContain("PublicFinalSummaryDisplayScene");
     expect(finalSummarySource).toContain('aria-label="Final score"');
     expect(finalSummarySource).not.toMatch(/public-display-final-score[^\n]*style=/);

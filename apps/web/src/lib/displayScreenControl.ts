@@ -5,6 +5,7 @@ import type {
   DisplaySceneResponse,
   DisplaySceneType,
   DisplayScreenResponse,
+  OperatorMatchSummary,
   PublicDisplayScreenResponse,
   UpdateDisplaySceneInput,
   UpdateDisplayScreenInput
@@ -76,6 +77,18 @@ export type ScheduleSceneHandoff = {
   limit: number;
   rowCount: number | null;
   empty: boolean | null;
+};
+
+export type FinalSummaryReadinessState = "READY" | "NOT_FINAL" | "UNAVAILABLE";
+
+export type FinalSummarySceneReadiness = {
+  matchId: string;
+  matchLabel: string;
+  matchupLabel: string;
+  lifecycleStatus: string;
+  state: FinalSummaryReadinessState;
+  statusLabel: string;
+  resultAvailable: boolean;
 };
 
 export type DisplaySceneActivationConfirmation = {
@@ -316,11 +329,83 @@ export function getScheduleSceneHandoff(
   };
 }
 
+export function getFinalSummaryMatchReadiness(
+  matchId: string | null | undefined,
+  matches: OperatorMatchSummary[]
+): FinalSummarySceneReadiness | null {
+  const normalizedMatchId = matchId?.trim();
+  if (!normalizedMatchId) return null;
+
+  const match = matches.find((candidate) => candidate.matchId === normalizedMatchId);
+  if (!match) {
+    return {
+      matchId: normalizedMatchId,
+      matchLabel: normalizedMatchId,
+      matchupLabel: "Match details unavailable",
+      lifecycleStatus: "Unavailable",
+      state: "UNAVAILABLE",
+      statusLabel: "Unavailable - Final result cannot be published yet",
+      resultAvailable: false
+    };
+  }
+
+  const matchLabel = cleanAdminLabel(match.matchCode) ?? match.matchId;
+  const homeTeamName = cleanAdminLabel(match.homeTeamName);
+  const awayTeamName = cleanAdminLabel(match.awayTeamName);
+  const matchupLabel = homeTeamName && awayTeamName
+    ? `${homeTeamName} vs ${awayTeamName}`
+    : "Matchup details unavailable";
+  const lifecycleStatus = cleanAdminLabel(match.status)?.toUpperCase() ?? "UNAVAILABLE";
+  const isFinal = lifecycleStatus === "FINISHED" || lifecycleStatus === "FINAL";
+  if (!isFinal) {
+    return {
+      matchId: match.matchId,
+      matchLabel,
+      matchupLabel,
+      lifecycleStatus,
+      state: "NOT_FINAL",
+      statusLabel: "Unavailable - Match is not finalized",
+      resultAvailable: false
+    };
+  }
+
+  const hasCompleteResult = Boolean(
+    homeTeamName &&
+    awayTeamName &&
+    match.homeTeamId &&
+    match.awayTeamId &&
+    match.homeTeamId !== match.awayTeamId &&
+    isPublicScore(match.homeScore) &&
+    isPublicScore(match.awayScore)
+  );
+
+  return {
+    matchId: match.matchId,
+    matchLabel,
+    matchupLabel,
+    lifecycleStatus,
+    state: hasCompleteResult ? "READY" : "UNAVAILABLE",
+    statusLabel: hasCompleteResult
+      ? "Ready - Final result available"
+      : "Unavailable - Final result cannot be published yet",
+    resultAvailable: hasCompleteResult
+  };
+}
+
+export function getFinalSummarySceneReadiness(
+  scene: DisplaySceneResponse | ActiveDisplaySceneResponse["scene"] | null | undefined,
+  matches: OperatorMatchSummary[]
+) {
+  if (scene?.sceneType !== "FINAL_SUMMARY") return null;
+  return getFinalSummaryMatchReadiness(getDisplaySceneMatchId(scene), matches);
+}
+
 export function buildDisplaySceneActivationConfirmation(input: {
   screen: DisplayScreenResponse;
   targetScene: DisplaySceneResponse;
   currentScene: PublicDisplayActiveSceneSummary | null;
   targetSchedulePreview?: PublicSchedulePreviewSummary | null;
+  targetFinalSummaryReadiness?: FinalSummarySceneReadiness | null;
 }): DisplaySceneActivationConfirmation {
   const publicPath = buildPublicDisplayScreenLink(input.screen.screenSlug);
   const targetMatchId = getDisplaySceneMatchId(input.targetScene);
@@ -328,6 +413,9 @@ export function buildDisplaySceneActivationConfirmation(input: {
   const messages: string[] = [];
   const warnings: string[] = [];
   const scheduleHandoff = getScheduleSceneHandoff(input.targetScene, input.targetSchedulePreview ?? null);
+  const finalReadiness = input.targetScene.sceneType === "FINAL_SUMMARY"
+    ? input.targetFinalSummaryReadiness ?? null
+    : null;
 
   if (input.targetScene.sceneType === "LIVE_SCOREBOARD" && targetMatchId) {
     messages.push(`This will show the live scoreboard for match ${targetMatchId} on the public display.`);
@@ -342,6 +430,14 @@ export function buildDisplaySceneActivationConfirmation(input: {
     if (scheduleHandoff.rowCount !== null) messages.push(`Rows available: ${scheduleHandoff.rowCount}`);
     if (scheduleHandoff.empty) {
       warnings.push("No public schedule entries are currently available for this scene.");
+    }
+  }
+  if (input.targetScene.sceneType === "FINAL_SUMMARY") {
+    if (finalReadiness?.resultAvailable) {
+      messages.push(`This will make the authoritative final result for ${finalReadiness.matchLabel} publicly visible.`);
+    } else {
+      messages.push("The public screen will display the safe unavailable state because no publishable final result is currently available.");
+      warnings.push(finalReadiness?.statusLabel ?? "Unavailable - Final result cannot be published yet");
     }
   }
   if (input.currentScene?.sceneType === "BLANK" && input.targetScene.sceneType === "LIVE_SCOREBOARD") {
@@ -370,6 +466,13 @@ export function buildDisplaySceneActivationConfirmation(input: {
           : [])
       ]
     : [];
+  const finalSummaryRows = finalReadiness
+    ? [
+        { label: "Selected match", value: finalReadiness.matchLabel },
+        { label: "Matchup", value: finalReadiness.matchupLabel },
+        { label: "Result readiness", value: finalReadiness.statusLabel }
+      ]
+    : [];
 
   return {
     title: "Set this scene active?",
@@ -386,6 +489,7 @@ export function buildDisplaySceneActivationConfirmation(input: {
       { label: "Target scene type", value: input.targetScene.sceneType },
       { label: "Target match ID", value: targetMatchId ?? "None" },
       ...scheduleSummaryRows,
+      ...finalSummaryRows,
       { label: "Public URL", value: publicPath }
     ],
     messages,
@@ -429,4 +533,13 @@ function defaultSceneName(sceneType: DisplaySceneType) {
 function normalizeOptionalString(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function cleanAdminLabel(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function isPublicScore(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }

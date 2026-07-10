@@ -48,7 +48,28 @@ describe("public final summary DOM", () => {
     expect(html).toContain('class="public-display-final-score">91');
     expect(html).toContain('class="public-display-final-score">88');
     expect(html).toContain("Bangkok Home wins");
+    expect(html).toContain("winner-home");
+    expect(html).toContain("home-final-team final-winner");
+    expect(html).not.toContain("away-final-team final-winner");
     expect(html).not.toMatch(/playerStats|boxScore|private-command|commandId|clock|sequence|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq|event/i);
+  });
+
+  it("renders an away winner from the public projection without calculating one", () => {
+    const html = render({
+      matchId,
+      status: "FINAL",
+      homeTeamName: "Bangkok Home",
+      awayTeamName: "Chiang Mai Away",
+      homeScore: 98,
+      awayScore: 105,
+      winnerSide: "AWAY",
+      winnerDisplayName: "Chiang Mai Away"
+    });
+
+    expect(html).toContain("Chiang Mai Away wins");
+    expect(html).toContain("winner-away");
+    expect(html).toContain("away-final-team final-winner");
+    expect(html).not.toContain("home-final-team final-winner");
   });
 
   it("renders a neutral tie without inventing a winner", () => {
@@ -63,8 +84,34 @@ describe("public final summary DOM", () => {
       winnerDisplayName: null
     });
 
-    expect(html).toContain("Final tie");
+    expect(html).toContain("Tied game");
+    expect(html).toContain("final-tie");
     expect(html).not.toContain(" wins");
+    expect(html).not.toContain("final-winner");
+  });
+
+  it("keeps long names and three-digit scores in the fixed public score structure", () => {
+    const html = render({
+      matchId,
+      status: "FINAL",
+      homeTeamName: "Bangkok Metropolitan Championship Basketball Club",
+      awayTeamName: "Chiang Mai International Arena Selection",
+      homeScore: 123,
+      awayScore: 119,
+      winnerSide: "HOME",
+      winnerDisplayName: "Bangkok Metropolitan Championship Basketball Club",
+      tournamentLabel: null,
+      roundLabel: null,
+      venueLabel: null,
+      courtLabel: null,
+      completedAt: null
+    });
+
+    expect(html).toContain('class="public-display-final-score">123');
+    expect(html).toContain('class="public-display-final-score">119');
+    expect(html).not.toContain("public-display-final-meta");
+    expect(html).not.toContain("<time");
+    expect(html).not.toMatch(/Unknown|Venue TBD|Time TBD/);
   });
 
   it("renders only the safe unavailable state for a non-final match", () => {
@@ -76,10 +123,12 @@ describe("public final summary DOM", () => {
       awayScore: 76
     });
 
-    expect(html).toContain("Final result unavailable");
+    expect(html).toContain("Final Result");
+    expect(html).toContain("Result not available");
     expect(html).toContain("Final summary is not available.");
     expect(html).not.toContain("77");
     expect(html).not.toContain("76");
     expect(html).not.toContain("public-display-final-score");
+    expect(html).not.toMatch(/winner| wins|Tied game/i);
   });
 });

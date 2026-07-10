@@ -243,6 +243,8 @@ import {
   getDisplaySceneMatchId,
   getDisplaySceneSaveState,
   getDisplayScreenSaveState,
+  getFinalSummaryMatchReadiness,
+  getFinalSummarySceneReadiness,
   getPublicDisplayPreviewSummary,
   getPublicActiveSceneSummary,
   getPublicSchedulePreviewSummary,
@@ -1783,6 +1785,7 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   const [scenes, setScenes] = useState<DisplaySceneResponse[]>([]);
   const [activeScene, setActiveScene] = useState<ActiveDisplaySceneResponse | null>(null);
   const [publicPreview, setPublicPreview] = useState<Awaited<ReturnType<typeof api.getPublicDisplayScreen>> | null>(null);
+  const [adminMatches, setAdminMatches] = useState<OperatorMatchSummary[]>([]);
   const [activationConfirmation, setActivationConfirmation] = useState<{
     scene: DisplaySceneResponse;
     details: DisplaySceneActivationConfirmation;
@@ -1792,18 +1795,21 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const activationInFlightRef = useRef(false);
 
   async function loadScenes() {
     setLoading(true);
     setMessage(null);
     setActivationConfirmation(null);
     try {
-      const [loadedScreen, loadedScenes] = await Promise.all([
+      const [loadedScreen, loadedScenes, loadedMatches] = await Promise.all([
         api.getDisplayScreen(screenId),
-        api.listDisplayScenes(screenId)
+        api.listDisplayScenes(screenId),
+        api.getAdminMatches().catch(() => [])
       ]);
       setScreen(loadedScreen);
       setScenes(loadedScenes);
+      setAdminMatches(loadedMatches);
       if (isPublicActiveDisplayScreen(loadedScreen)) {
         try {
           setPublicPreview(await api.getPublicDisplayScreen(loadedScreen.screenSlug));
@@ -1871,7 +1877,8 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
         screen,
         targetScene: scene,
         currentScene: getPublicActiveSceneSummary(publicPreview),
-        targetSchedulePreview: getSchedulePreviewForScene(scene)
+        targetSchedulePreview: getSchedulePreviewForScene(scene),
+        targetFinalSummaryReadiness: getFinalSummarySceneReadiness(scene, adminMatches)
       })
     });
     setMessage(null);
@@ -1890,12 +1897,40 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   }
 
   async function confirmSetActive() {
-    if (!activationConfirmation || !screen) return;
+    if (!activationConfirmation || !screen || activationInFlightRef.current) return;
+    activationInFlightRef.current = true;
     const scene = activationConfirmation.scene;
     setSaving(true);
     setActivationConfirmation(null);
     setMessage({ tone: "success", text: `Assigning ${scene.sceneName} as active scene...` });
     try {
+      const [latestScreen, latestScenes, latestMatches] = await Promise.all([
+        api.getDisplayScreen(screenId),
+        api.listDisplayScenes(screenId),
+        scene.sceneType === "FINAL_SUMMARY" ? api.getAdminMatches() : Promise.resolve(adminMatches)
+      ]);
+      const latestScene = latestScenes.find((candidate) => candidate.sceneId === scene.sceneId);
+      const originalReadiness = getFinalSummarySceneReadiness(scene, adminMatches);
+      const latestReadiness = getFinalSummarySceneReadiness(latestScene, latestMatches);
+      const sceneChanged = !latestScene ||
+        !latestScene.active ||
+        latestScene.sceneType !== scene.sceneType ||
+        JSON.stringify(latestScene.sceneConfig) !== JSON.stringify(scene.sceneConfig);
+      const readinessChanged = JSON.stringify(latestReadiness) !== JSON.stringify(originalReadiness);
+      const screenChanged = latestScreen.screenSlug !== screen.screenSlug ||
+        latestScreen.publicEnabled !== screen.publicEnabled ||
+        latestScreen.active !== screen.active;
+      setScreen(latestScreen);
+      setScenes(latestScenes);
+      setAdminMatches(latestMatches);
+      if (sceneChanged || readinessChanged || screenChanged) {
+        setMessage({
+          tone: "error",
+          code: "STALE_CONFIRMATION",
+          text: "Display or match readiness changed after confirmation opened. Review the latest state before activating."
+        });
+        return;
+      }
       const active = await api.setActiveDisplayScene(screenId, scene.sceneId);
       setActiveScene(active);
       if (isPublicActiveDisplayScreen(screen)) {
@@ -1909,6 +1944,7 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
+      activationInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -1929,6 +1965,13 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
     ? getScheduleSceneHandoff(currentScheduleScene, publicSchedulePreview)
     : null;
   const publicPath = screen ? buildPublicDisplayScreenLink(screen.screenSlug) : null;
+  const currentFinalScene = currentPublicScene?.sceneType === "FINAL_SUMMARY"
+    ? scenes.find((scene) => scene.sceneType === "FINAL_SUMMARY" && getDisplaySceneMatchId(scene) === currentPublicScene.matchId) ?? null
+    : null;
+  const currentFinalReadiness = getFinalSummarySceneReadiness(currentFinalScene, adminMatches);
+  const configuredFinalReadiness = form.sceneType === "FINAL_SUMMARY"
+    ? getFinalSummaryMatchReadiness(form.matchId, adminMatches)
+    : null;
 
   return (
     <section className="panel">
@@ -1974,6 +2017,16 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
               <dd>{currentScheduleHandoff?.courtFilter ?? (currentScheduleHandoff ? "All courts" : "Unavailable")}</dd>
               <dt>Qualifying rows</dt>
               <dd>{publicSchedulePreview?.rowCount ?? "Unavailable"}</dd>
+            </>
+          ) : null}
+          {currentPublicScene?.sceneType === "FINAL_SUMMARY" ? (
+            <>
+              <dt>Selected match</dt>
+              <dd>{currentFinalReadiness?.matchLabel ?? currentPublicScene.matchId ?? "Unavailable"}</dd>
+              <dt>Matchup</dt>
+              <dd>{currentFinalReadiness?.matchupLabel ?? "Match details unavailable"}</dd>
+              <dt>Result readiness</dt>
+              <dd>{currentFinalReadiness?.statusLabel ?? "Unavailable - Final result cannot be published yet"}</dd>
             </>
           ) : null}
           <dt>Public URL</dt>
@@ -2034,7 +2087,14 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
                     <p className="muted">Sort {scene.sortOrder}</p>
                   </td>
                   <td>{scene.sceneType}</td>
-                  <td>{getDisplaySceneConfigSummary(scene)}</td>
+                  <td>
+                    {getDisplaySceneConfigSummary(scene)}
+                    {scene.sceneType === "FINAL_SUMMARY" ? (
+                      <small className={`final-summary-readiness ${getFinalSummarySceneReadiness(scene, adminMatches)?.resultAvailable ? "ready" : "unavailable"}`}>
+                        {getFinalSummarySceneReadiness(scene, adminMatches)?.statusLabel ?? "Unavailable - Final result cannot be published yet"}
+                      </small>
+                    ) : null}
+                  </td>
                   <td>{scene.active ? "Enabled" : "Disabled"}{activeScene?.scene.sceneId === scene.sceneId ? " / Active" : ""}</td>
                   <td>
                     <div className="button-row">
@@ -2065,6 +2125,14 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
         <TextInput label="Scene name" value={form.sceneName} maxLength={120} onChange={(value) => setForm((current) => ({ ...current, sceneName: value }))} />
         {form.sceneType === "LIVE_SCOREBOARD" || form.sceneType === "FINAL_SUMMARY" ? (
           <TextInput label="Match ID" value={form.matchId} maxLength={36} placeholder="Match UUID" onChange={(value) => setForm((current) => ({ ...current, matchId: value }))} />
+        ) : null}
+        {form.sceneType === "FINAL_SUMMARY" && configuredFinalReadiness ? (
+          <section className={`final-summary-config-status ${configuredFinalReadiness.resultAvailable ? "ready" : "unavailable"}`} aria-label="Final summary result readiness">
+            <strong>{configuredFinalReadiness.statusLabel}</strong>
+            <span>{configuredFinalReadiness.matchLabel}</span>
+            <span>{configuredFinalReadiness.matchupLabel}</span>
+            <small>Public activation uses authoritative finalized data only.</small>
+          </section>
         ) : null}
         {form.sceneType === "SCHEDULE" ? (
           <>
