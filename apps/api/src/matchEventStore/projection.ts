@@ -70,6 +70,18 @@ export type ScoreboardProjection = {
   projectionVersion: "scoreboard-v1";
 };
 
+export type DerivedFinalOutcome = {
+  finalScore: { home: number; away: number };
+  winnerSide: "HOME" | "AWAY" | null;
+};
+
+export function deriveFinalOutcome(homeScore: number, awayScore: number): DerivedFinalOutcome {
+  return {
+    finalScore: { home: homeScore, away: awayScore },
+    winnerSide: homeScore === awayScore ? null : homeScore > awayScore ? "HOME" : "AWAY"
+  };
+}
+
 export function createInitialScoreboardProjection(matchId: string): ScoreboardProjection {
   return {
     matchId,
@@ -109,7 +121,7 @@ export function normalizeScoreboardProjection(
   const periodNumber = numberOrDefault(projection.periodNumber, 1);
   const gameClock = normalizeClockState(projection.gameClock, numberOrDefault(projection.gameClockRemainingMs, 600000));
   const shotClock = normalizeClockState(projection.shotClock, numberOrDefault(projection.shotClockRemainingMs, 24000));
-  return {
+  const normalized: ScoreboardProjection = {
     matchId: projection.matchId,
     homeScore: numberOrDefault(projection.homeScore, 0),
     awayScore: numberOrDefault(projection.awayScore, 0),
@@ -151,6 +163,8 @@ export function normalizeScoreboardProjection(
     currentSeq: numberOrDefault(projection.currentSeq, 0),
     projectionVersion: "scoreboard-v1"
   };
+
+  return recomputeFinalOutcomeIfFinished(normalized);
 }
 
 export function applyScoreAdded(
@@ -158,7 +172,8 @@ export function applyScoreAdded(
   payload: ScoreAddedPayload,
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  const wasFinished = isFinishedStatus(projection.status);
+  const updatedProjection: ScoreboardProjection = {
     ...projection,
     homeScore:
       payload.teamSide === "HOME" ? projection.homeScore + payload.points : projection.homeScore,
@@ -170,9 +185,11 @@ export function applyScoreAdded(
       ...projection.gameClock,
       remainingMs: payload.gameClockRemainingMs
     },
-    status: "LIVE",
+    status: wasFinished ? projection.status : "LIVE",
     currentSeq: seqNo
   };
+
+  return recomputeFinalOutcomeIfFinished(updatedProjection);
 }
 
 export function applyGameClockStarted(
@@ -551,12 +568,13 @@ export function applyMatchFinished(
   },
   seqNo: number
 ): ScoreboardProjection {
+  const finalOutcome = deriveFinalOutcome(projection.homeScore, projection.awayScore);
+
   return {
     ...projection,
     status: "FINISHED",
     matchFinishedAt: payload.finishedAt,
-    finalScore: { home: payload.finalHomeScore, away: payload.finalAwayScore },
-    winnerSide: payload.winnerSide,
+    ...finalOutcome,
     gameClockRemainingMs: projection.gameClock.remainingMs,
     shotClockRemainingMs: projection.shotClock.remainingMs,
     gameClock: { ...projection.gameClock, running: false, lastStartedAt: null },
@@ -572,7 +590,7 @@ export function applyScoreRemovedByCorrection(
   payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  const updatedProjection: ScoreboardProjection = {
     ...projection,
     homeScore:
       payload.teamSide === "HOME" ? Math.max(0, projection.homeScore - payload.points) : projection.homeScore,
@@ -580,6 +598,8 @@ export function applyScoreRemovedByCorrection(
       payload.teamSide === "AWAY" ? Math.max(0, projection.awayScore - payload.points) : projection.awayScore,
     currentSeq: seqNo
   };
+
+  return recomputeFinalOutcomeIfFinished(updatedProjection);
 }
 
 export function applyScoreCorrected(
@@ -745,6 +765,16 @@ function normalizeLifecycleStatus(value: unknown): MatchLifecycleStatus {
     value === "FINAL"
     ? value
     : "SCHEDULED";
+}
+
+function isFinishedStatus(status: MatchLifecycleStatus) {
+  return status === "FINISHED" || status === "FINAL";
+}
+
+function recomputeFinalOutcomeIfFinished(projection: ScoreboardProjection): ScoreboardProjection {
+  return isFinishedStatus(projection.status)
+    ? { ...projection, ...deriveFinalOutcome(projection.homeScore, projection.awayScore) }
+    : projection;
 }
 
 function normalizeFinalScore(value: unknown): ScoreboardProjection["finalScore"] {
