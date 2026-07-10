@@ -253,6 +253,8 @@ import {
 } from "./lib/displayScreenControl";
 import {
   buildPublicDisplaySceneModel,
+  formatPublicScheduleDisplayLocation,
+  formatPublicScheduleDisplayTime,
   getPublicDisplaySceneRefreshMs,
   type PublicDisplaySceneModel
 } from "./lib/publicDisplayScene";
@@ -5019,6 +5021,10 @@ function PublicDisplaySceneCard({
   model: PublicDisplaySceneModel | null;
   fallbackSlug: string;
 }) {
+  if (model?.status === "READY" && model.sceneType === "SCHEDULE") {
+    return <PublicScheduleDisplayScene model={model} />;
+  }
+
   const displayName = model?.displayName ?? fallbackSlug;
   const sceneType = model?.sceneType ?? "BLANK";
   const status = model?.status ?? "ERROR";
@@ -5034,19 +5040,55 @@ function PublicDisplaySceneCard({
       </div>
       <h2>{title}</h2>
       <p>{message}</p>
-      {model?.status === "READY" && model.sceneType === "SCHEDULE" ? (
-        <dl className="public-display-scene-details" aria-label="Schedule scene details">
-          <div><dt>Tournament</dt><dd>{model.tournamentId}</dd></div>
-          <div><dt>Court</dt><dd>{model.courtId ?? "All courts"}</dd></div>
-          <div><dt>Limit</dt><dd>{model.limit}</dd></div>
-        </dl>
-      ) : null}
       {model?.status === "READY" && model.sceneType === "FINAL_SUMMARY" ? (
         <dl className="public-display-scene-details" aria-label="Final summary scene details">
           <div><dt>Match</dt><dd>{model.matchId}</dd></div>
         </dl>
       ) : null}
       <small>Read-only public scene</small>
+    </div>
+  );
+}
+
+function PublicScheduleDisplayScene({
+  model
+}: {
+  model: Extract<PublicDisplaySceneModel, { status: "READY"; sceneType: "SCHEDULE" }>;
+}) {
+  return (
+    <div className="public-display-schedule-card">
+      <header className="public-display-schedule-header">
+        <div>
+          <p className="eyebrow">Public Schedule</p>
+          <h1>{model.tournamentLabel}</h1>
+        </div>
+        <span className="public-display-scene-status">Schedule</span>
+      </header>
+      {model.rows.length === 0 ? (
+        <div className="public-display-schedule-empty">
+          <h2>Schedule unavailable</h2>
+          <p>{model.emptyMessage ?? "No public schedule entries available."}</p>
+        </div>
+      ) : (
+        <div className="public-display-schedule-grid" aria-label="Public schedule entries">
+          {model.rows.map((row) => (
+            <article className="public-display-schedule-row" key={row.matchId}>
+              <time dateTime={row.scheduledAt ?? undefined}>{formatPublicScheduleDisplayTime(row.scheduledAt)}</time>
+              <div className="public-display-schedule-matchup">
+                <strong>{row.homeTeamName}</strong>
+                <span>vs</span>
+                <strong>{row.awayTeamName}</strong>
+                <small>{formatPublicScheduleDisplayLocation(row.venueLabel, row.courtLabel)}</small>
+              </div>
+              <div className="public-display-schedule-meta">
+                <span>{row.stageLabel ?? row.roundLabel ?? "Match"}</span>
+                <b className={`schedule-status status-${row.status.toLowerCase()}`}>{row.status}</b>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      <small className="public-display-schedule-readonly">Read-only public scene</small>
     </div>
   );
 }

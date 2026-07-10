@@ -687,6 +687,27 @@ export type ScheduleSceneConfig = {
   limit?: number | undefined;
 };
 
+export type PublicScheduleDisplayStatus = "SCHEDULED" | "LIVE" | "FINAL";
+
+export type PublicScheduleDisplayRow = {
+  matchId: string;
+  scheduledAt: string | null;
+  homeTeamName: string;
+  awayTeamName: string;
+  status: PublicScheduleDisplayStatus;
+  courtLabel: string | null;
+  venueLabel: string | null;
+  tournamentLabel: string;
+  stageLabel: string | null;
+  roundLabel: string | null;
+};
+
+export type PublicScheduleDisplayProjection = {
+  tournamentLabel: string;
+  rows: PublicScheduleDisplayRow[];
+  emptyMessage: string | null;
+};
+
 export type FinalSummarySceneConfig = {
   matchId: string;
 };

@@ -99,6 +99,10 @@ export async function getTournamentSchedule(
     return null;
   }
 
+  const publicMatchFilter = options.publicOnly
+    ? "AND m.status IN ('SCHEDULED', 'LIVE', 'FINAL')"
+    : "";
+
   const [rows] = await pool.query<ScheduleRow[]>(
     `
     SELECT
@@ -126,6 +130,7 @@ export async function getTournamentSchedule(
     LEFT JOIN match_projections mp ON mp.match_id = m.match_id
       AND mp.projection_type = 'scoreboard'
     WHERE m.tournament_id = ?
+      ${publicMatchFilter}
     ORDER BY m.scheduled_at IS NULL, m.scheduled_at ASC, m.created_at ASC
     `,
     [tournamentId]

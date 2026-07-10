@@ -188,6 +188,8 @@ import {
 } from "../../apps/web/src/lib/publicScoreboardDisplay";
 import {
   buildPublicDisplaySceneModel,
+  formatPublicScheduleDisplayLocation,
+  formatPublicScheduleDisplayTime,
   getPublicDisplaySceneRefreshMs,
   publicDisplaySceneHasPrivateExposure
 } from "../../apps/web/src/lib/publicDisplayScene";
@@ -3489,7 +3491,24 @@ describe("tournament schedule UI policy", () => {
       ...base,
       activeScene: {
         sceneType: "SCHEDULE",
-        publicData: { tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", courtId: null, limit: 6 },
+        publicData: {
+          tournamentLabel: "Alpha Cup",
+          rows: [{
+            matchId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            scheduledAt: null,
+            homeTeamName: "Bangkok Home",
+            awayTeamName: "Chiang Mai Away",
+            status: "LIVE",
+            courtLabel: null,
+            venueLabel: null,
+            tournamentLabel: "Alpha Cup",
+            stageLabel: null,
+            roundLabel: "Round 1",
+            homeScore: 88,
+            commandId: "private-command"
+          }],
+          emptyMessage: null
+        },
         refreshAfterMs: 15000
       }
     });
@@ -3519,11 +3538,26 @@ describe("tournament schedule UI policy", () => {
       status: "READY",
       sceneType: "SCHEDULE",
       title: "Schedule",
-      tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      courtId: null,
-      limit: 6
+      tournamentLabel: "Alpha Cup",
+      rows: [{
+        matchId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        scheduledAt: null,
+        homeTeamName: "Bangkok Home",
+        awayTeamName: "Chiang Mai Away",
+        status: "LIVE",
+        courtLabel: null,
+        venueLabel: null,
+        tournamentLabel: "Alpha Cup",
+        stageLabel: null,
+        roundLabel: "Round 1"
+      }],
+      emptyMessage: null
     });
-    expect(JSON.stringify(schedule)).not.toMatch(/homeTeam|awayTeam|scheduledAt|venueName|score|winner/i);
+    expect(JSON.stringify(schedule)).not.toMatch(/homeScore|awayScore|commandId|courtId|teamId|currentSeq|clock|winner/i);
+    expect(publicDisplaySceneHasPrivateExposure(schedule)).toBe(false);
+    expect(formatPublicScheduleDisplayTime(null)).toBe("Time TBD");
+    expect(formatPublicScheduleDisplayLocation(null, null)).toBe("Venue TBD");
+    expect(formatPublicScheduleDisplayLocation("Main Hall", "Court A")).toBe("Main Hall / Court A");
     expect(finalSummary).toMatchObject({
       status: "READY",
       sceneType: "FINAL_SUMMARY",
@@ -3596,6 +3630,10 @@ describe("tournament schedule UI policy", () => {
     expect(appSource).not.toMatch(/case "public-display-scene":[\s\S]{0,200}ProtectedRoute/);
     expect(styleSource).toContain(".public-display-scene-card");
     expect(styleSource).toContain(".public-display-standby");
+    expect(styleSource).toContain(".public-display-schedule-card");
+    expect(styleSource).toContain(".public-display-schedule-grid");
+    expect(appSource).toContain("public-display-schedule-row");
+    expect(appSource).toContain("No public schedule entries available.");
     expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*aspect-ratio:\s*16\s*\/\s*9/);
     expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*overflow:\s*hidden/);
     expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*repeating-linear-gradient/);

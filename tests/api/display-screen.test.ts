@@ -10,6 +10,10 @@ const liveSceneId = "55555555-5555-4555-8555-555555555555";
 const matchId = "66666666-6666-4666-8666-666666666666";
 const scheduleSceneId = "77777777-7777-4777-8777-777777777777";
 const finalSummarySceneId = "88888888-8888-4888-8888-888888888888";
+const scheduleMatchId = "99999999-9999-4999-8999-999999999999";
+const draftMatchId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const emptyScheduleSceneId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const emptyCourtId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 type ScreenRow = {
   screen_id: string;
@@ -49,6 +53,64 @@ function createDisplayScreenPool() {
     async query(sql: string, params: unknown[] = []) {
       calls.push({ sql, params });
       const compactSql = sql.replace(/\s+/g, " ").toLowerCase();
+
+      if (compactSql.includes("count(*) as tournament_exists")) {
+        return [[{ tournament_exists: params[0] === tournamentId ? 1 : 0 }], []];
+      }
+
+      if (compactSql.includes("from tournaments t") && compactSql.includes("match_count")) {
+        return [[{
+          tournament_id: tournamentId,
+          name: "Alpha Cup",
+          status: "ACTIVE",
+          match_count: 3,
+          live_match_count: 1,
+          finished_match_count: 0
+        }], []];
+      }
+
+      if (compactSql.includes("from matches m") && compactSql.includes("projection_data")) {
+        return [[
+          {
+            match_id: scheduleMatchId,
+            tournament_id: tournamentId,
+            tournament_name: "Alpha Cup",
+            stage_name: null,
+            group_name: null,
+            round_label: "Round 1",
+            court_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            court_label: "Court A",
+            venue_label: "Main Hall",
+            scheduled_at: null,
+            home_team_id: "home-team-id",
+            home_team_name: "Bangkok Home",
+            away_team_id: "away-team-id",
+            away_team_name: "Chiang Mai Away",
+            match_status: "SCHEDULED",
+            projection_data: JSON.stringify({ status: "LIVE", homeScore: 88, awayScore: 84, currentSeq: 55 }),
+            last_event_seq: 55
+          },
+          {
+            match_id: draftMatchId,
+            tournament_id: tournamentId,
+            tournament_name: "Alpha Cup",
+            stage_name: null,
+            group_name: null,
+            round_label: null,
+            court_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            court_label: "Court A",
+            venue_label: "Main Hall",
+            scheduled_at: "2026-07-11T09:00:00.000Z",
+            home_team_id: "draft-home-id",
+            home_team_name: "Draft Home",
+            away_team_id: "draft-away-id",
+            away_team_name: "Draft Away",
+            match_status: "DRAFT",
+            projection_data: null,
+            last_event_seq: 0
+          }
+        ], []];
+      }
 
       if (compactSql.includes("from tournaments")) {
         return [params[0] === tournamentId ? [{ tournament_id: tournamentId }] : [], []];
@@ -471,13 +533,63 @@ describe("display screen scene foundation", () => {
         data: {
           activeScene: {
             sceneType: "SCHEDULE",
-            publicData: { tournamentId, courtId: null, limit: 6 },
+            publicData: {
+              tournamentLabel: "Alpha Cup",
+              rows: [{
+                matchId: scheduleMatchId,
+                scheduledAt: null,
+                homeTeamName: "Bangkok Home",
+                awayTeamName: "Chiang Mai Away",
+                status: "LIVE",
+                courtLabel: "Court A",
+                venueLabel: "Main Hall",
+                tournamentLabel: "Alpha Cup",
+                stageLabel: null,
+                roundLabel: "Round 1"
+              }],
+              emptyMessage: null
+            },
             refreshAfterMs: 15000
           }
         }
       });
-      expect(schedule.body).not.toMatch(/homeTeam|awayTeam|scheduledAt|venueName|score|winner/i);
+      expect(schedule.body).not.toContain(draftMatchId);
+      expect(schedule.body).not.toMatch(/homeTeamId|awayTeamId|courtId|currentSeq|clock|score|winner|readiness|conflicts|operations/i);
       expect(schedule.body).not.toMatch(publicPrivateMetadataPattern());
+
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/display-screens/${screenId}/scenes`,
+        headers: adminHeaders(),
+        payload: {
+          sceneId: emptyScheduleSceneId,
+          sceneType: "SCHEDULE",
+          sceneName: "Empty Safe Schedule",
+          sceneConfig: { tournamentId, courtId: emptyCourtId, limit: 6 }
+        }
+      });
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/display-screens/${screenId}/active-scene`,
+        headers: adminHeaders(),
+        payload: { sceneId: emptyScheduleSceneId }
+      });
+
+      const emptySchedule = await app.inject({ method: "GET", url: "/api/v1/public/display/court-1-main" });
+      expect(emptySchedule.statusCode).toBe(200);
+      expect(emptySchedule.json()).toMatchObject({
+        data: {
+          activeScene: {
+            sceneType: "SCHEDULE",
+            publicData: {
+              tournamentLabel: "Alpha Cup",
+              rows: [],
+              emptyMessage: "No public schedule entries available."
+            }
+          }
+        }
+      });
+      expect(emptySchedule.body).not.toMatch(/TBD vs TBD|Sample|Demo/i);
 
       await app.inject({
         method: "POST",

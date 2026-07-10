@@ -29,6 +29,7 @@ import {
   updateDisplayScreen,
   upsertActiveDisplayScene
 } from "./displayScreenRepository.js";
+import { resolvePublicScheduleDisplayProjection } from "../tournaments/publicScheduleDisplayProjection.js";
 
 type ServiceResult<T> =
   | { ok: true; value: T }
@@ -199,8 +200,8 @@ export async function getPublicDisplay(
 
   const scene = display.scene;
   const activeScene = scene
-    ? toPublicScene(scene.sceneType, scene.sceneConfig)
-    : toPublicScene("BLANK", { message: "Standby" });
+    ? await toPublicScene(pool, scene.sceneType, scene.sceneConfig)
+    : await toPublicScene(pool, "BLANK", { message: "Standby" });
 
   return {
     ok: true,
@@ -225,9 +226,25 @@ async function checkTournamentOwner(pool: Pool, tournamentId: string | null): Pr
     : { ok: false, statusCode: 404, reasonCode: reasonCodes.MATCH_NOT_FOUND, message: "Tournament was not found" };
 }
 
-function toPublicScene(sceneType: DisplaySceneType, sceneConfig: DisplaySceneConfig) {
+async function toPublicScene(pool: Pool, sceneType: DisplaySceneType, sceneConfig: DisplaySceneConfig) {
   try {
     const parsed = parseDisplaySceneConfig(sceneType, sceneConfig);
+    if (sceneType === "SCHEDULE" && "tournamentId" in parsed) {
+      const projection = await resolvePublicScheduleDisplayProjection(pool, parsed.tournamentId, {
+        courtId: parsed.courtId ?? null,
+        limit: parsed.limit ?? 8
+      });
+      return {
+        sceneType,
+        publicData: projection ?? {
+          tournamentLabel: "Schedule",
+          rows: [],
+          emptyMessage: "No public schedule entries available."
+        },
+        refreshAfterMs: refreshAfterMsForScene(sceneType)
+      };
+    }
+
     return {
       sceneType,
       publicData: publicDataForScene(sceneType, parsed),
@@ -245,14 +262,6 @@ function toPublicScene(sceneType: DisplaySceneType, sceneConfig: DisplaySceneCon
 function publicDataForScene(sceneType: DisplaySceneType, sceneConfig: DisplaySceneConfig) {
   if (sceneType === "LIVE_SCOREBOARD" && "matchId" in sceneConfig) {
     return { matchId: sceneConfig.matchId };
-  }
-
-  if (sceneType === "SCHEDULE" && "tournamentId" in sceneConfig) {
-    return {
-      tournamentId: sceneConfig.tournamentId,
-      courtId: sceneConfig.courtId ?? null,
-      limit: sceneConfig.limit ?? 8
-    };
   }
 
   if (sceneType === "FINAL_SUMMARY" && "matchId" in sceneConfig) {

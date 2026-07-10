@@ -563,7 +563,7 @@ describe("alpha tournament public schedule", () => {
   });
 
   it("lets public users read public-safe tournament schedule without private metadata", async () => {
-    const { pool } = createTournamentSchedulePool();
+    const { pool, calls } = createTournamentSchedulePool();
     const app = buildApiApp({ pool: pool as never });
 
     try {
@@ -595,6 +595,8 @@ describe("alpha tournament public schedule", () => {
       expect(JSON.stringify(body)).not.toContain("operations");
       expect(JSON.stringify(body)).not.toContain("readiness");
       expect(JSON.stringify(body)).not.toMatch(/SCORER|REFEREE|TIMER|SHOT_CLOCK_OPERATOR|officials/i);
+      const scheduleQuery = calls.find((call) => call.sql.includes("FROM matches m"));
+      expect(scheduleQuery?.sql).toContain("m.status IN ('SCHEDULED', 'LIVE', 'FINAL')");
     } finally {
       await app.close();
     }

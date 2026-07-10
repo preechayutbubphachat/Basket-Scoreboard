@@ -1,4 +1,8 @@
-import type { DisplaySceneType, PublicDisplayScreenResponse } from "@basket-scoreboard/api-contracts";
+import type {
+  DisplaySceneType,
+  PublicDisplayScreenResponse,
+  PublicScheduleDisplayRow
+} from "@basket-scoreboard/api-contracts";
 
 type PublicDisplaySceneData = PublicDisplayScreenResponse["data"];
 
@@ -26,9 +30,9 @@ export type PublicDisplaySceneModel =
       screenSlug: string;
       displayName: string;
       title: string;
-      tournamentId: string;
-      courtId: string | null;
-      limit: number;
+      tournamentLabel: string;
+      rows: PublicScheduleDisplayRow[];
+      emptyMessage: string | null;
       refreshAfterMs: number;
     }
   | {
@@ -109,18 +113,17 @@ export function buildPublicDisplaySceneModel(
 
   if (sceneType === "SCHEDULE") {
     const publicData = asRecord(data.activeScene.publicData);
-    const tournamentId = getRecordString(publicData, "tournamentId");
-    if (!tournamentId) {
-      return unavailableScene(base, sceneType, "Schedule scene is missing a tournament.", refreshAfterMs);
-    }
+    const rows = parsePublicScheduleRows(publicData.rows);
     return {
       status: "READY",
       sceneType,
       ...base,
       title: "Schedule",
-      tournamentId,
-      courtId: getRecordString(publicData, "courtId"),
-      limit: getSafeLimit(publicData.limit)
+      tournamentLabel: cleanText(publicData.tournamentLabel, "Schedule"),
+      rows,
+      emptyMessage: rows.length === 0
+        ? cleanText(publicData.emptyMessage, "No public schedule entries available.")
+        : null
     };
   }
 
@@ -177,7 +180,61 @@ function cleanText(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function getSafeLimit(value: unknown) {
-  const parsed = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 8;
-  return Math.max(1, Math.min(20, parsed));
+export function formatPublicScheduleDisplayTime(value: string | null) {
+  if (!value) {
+    return "Time TBD";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Time TBD"
+    : new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(date);
+}
+
+export function formatPublicScheduleDisplayLocation(venueLabel: string | null, courtLabel: string | null) {
+  const venue = optionalText(venueLabel);
+  const court = optionalText(courtLabel);
+  return venue && court ? `${venue} / ${court}` : venue ?? court ?? "Venue TBD";
+}
+
+function parsePublicScheduleRows(value: unknown): PublicScheduleDisplayRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((candidate): PublicScheduleDisplayRow[] => {
+    const row = asRecord(candidate);
+    const matchId = getRecordString(row, "matchId");
+    const homeTeamName = getRecordString(row, "homeTeamName");
+    const awayTeamName = getRecordString(row, "awayTeamName");
+    const status = getRecordString(row, "status");
+    if (!matchId || !homeTeamName || !awayTeamName || !status || !isPublicScheduleStatus(status)) {
+      return [];
+    }
+
+    return [{
+      matchId,
+      scheduledAt: optionalText(row.scheduledAt),
+      homeTeamName,
+      awayTeamName,
+      status,
+      courtLabel: optionalText(row.courtLabel),
+      venueLabel: optionalText(row.venueLabel),
+      tournamentLabel: cleanText(row.tournamentLabel, "Schedule"),
+      stageLabel: optionalText(row.stageLabel),
+      roundLabel: optionalText(row.roundLabel)
+    }];
+  });
+}
+
+function isPublicScheduleStatus(value: string): value is PublicScheduleDisplayRow["status"] {
+  return value === "SCHEDULED" || value === "LIVE" || value === "FINAL";
+}
+
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
