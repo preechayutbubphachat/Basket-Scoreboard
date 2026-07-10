@@ -60,6 +60,22 @@ export type DisplaySceneFormState = {
 export type PublicDisplayActiveSceneSummary = {
   sceneType: DisplaySceneType;
   matchId: string | null;
+  schedulePreview?: PublicSchedulePreviewSummary;
+};
+
+export type PublicSchedulePreviewSummary = {
+  tournamentLabel: string | null;
+  rowCount: number;
+  empty: boolean;
+};
+
+export type ScheduleSceneHandoff = {
+  tournamentLabel: string;
+  tournamentId: string;
+  courtFilter: string | null;
+  limit: number;
+  rowCount: number | null;
+  empty: boolean | null;
 };
 
 export type DisplaySceneActivationConfirmation = {
@@ -67,6 +83,7 @@ export type DisplaySceneActivationConfirmation = {
   publicWarning: string | null;
   summaryRows: Array<{ label: string; value: string }>;
   messages: string[];
+  warnings: string[];
   confirmLabel: string;
   cancelLabel: string;
 };
@@ -252,29 +269,80 @@ export function getPublicActiveSceneSummary(publicPreview: PublicDisplayScreenRe
   if (!activeScene) return null;
   const publicData = activeScene.publicData;
   const publicDataRecord = publicData && typeof publicData === "object" ? publicData : null;
-  return {
+  const summary: PublicDisplayActiveSceneSummary = {
     sceneType: activeScene.sceneType,
     matchId: publicDataRecord && "matchId" in publicDataRecord && typeof publicDataRecord.matchId === "string"
       ? publicDataRecord.matchId
       : null
-  } satisfies PublicDisplayActiveSceneSummary;
+  };
+  const schedulePreview = getPublicSchedulePreviewSummary(publicPreview);
+  return schedulePreview ? { ...summary, schedulePreview } : summary;
+}
+
+export function getPublicSchedulePreviewSummary(
+  publicPreview: PublicDisplayScreenResponse["data"] | null | undefined
+): PublicSchedulePreviewSummary | null {
+  if (publicPreview?.activeScene.sceneType !== "SCHEDULE") return null;
+  const publicData = publicPreview.activeScene.publicData;
+  if (!publicData || typeof publicData !== "object" || Array.isArray(publicData)) return null;
+  const record = publicData as Record<string, unknown>;
+  const rows = Array.isArray(record.rows) ? record.rows : [];
+  return {
+    tournamentLabel: typeof record.tournamentLabel === "string" && record.tournamentLabel.trim()
+      ? record.tournamentLabel.trim()
+      : null,
+    rowCount: rows.length,
+    empty: rows.length === 0
+  };
+}
+
+export function getScheduleSceneHandoff(
+  scene: DisplaySceneResponse | ActiveDisplaySceneResponse["scene"],
+  preview: PublicSchedulePreviewSummary | null = null
+): ScheduleSceneHandoff | null {
+  if (scene.sceneType !== "SCHEDULE" || !("tournamentId" in scene.sceneConfig)) return null;
+  const config = scene.sceneConfig;
+  const tournamentId = config.tournamentId;
+  const courtFilter = "courtId" in config && typeof config.courtId === "string" && config.courtId.trim()
+    ? config.courtId.trim()
+    : null;
+  return {
+    tournamentLabel: preview?.tournamentLabel ?? tournamentId,
+    tournamentId,
+    courtFilter,
+    limit: "limit" in config && typeof config.limit === "number" ? config.limit : 8,
+    rowCount: preview?.rowCount ?? null,
+    empty: preview?.empty ?? null
+  };
 }
 
 export function buildDisplaySceneActivationConfirmation(input: {
   screen: DisplayScreenResponse;
   targetScene: DisplaySceneResponse;
   currentScene: PublicDisplayActiveSceneSummary | null;
+  targetSchedulePreview?: PublicSchedulePreviewSummary | null;
 }): DisplaySceneActivationConfirmation {
   const publicPath = buildPublicDisplayScreenLink(input.screen.screenSlug);
   const targetMatchId = getDisplaySceneMatchId(input.targetScene);
   const currentMatchId = input.currentScene?.matchId ?? null;
   const messages: string[] = [];
+  const warnings: string[] = [];
+  const scheduleHandoff = getScheduleSceneHandoff(input.targetScene, input.targetSchedulePreview ?? null);
 
   if (input.targetScene.sceneType === "LIVE_SCOREBOARD" && targetMatchId) {
     messages.push(`This will show the live scoreboard for match ${targetMatchId} on the public display.`);
   }
   if (input.targetScene.sceneType === "BLANK") {
     messages.push("This will switch the public display to the standby screen.");
+  }
+  if (scheduleHandoff) {
+    messages.push(`This will show the public schedule for tournament ${scheduleHandoff.tournamentLabel} on the public display.`);
+    if (scheduleHandoff.courtFilter) messages.push(`Court filter: ${scheduleHandoff.courtFilter}`);
+    messages.push(`Limit: ${scheduleHandoff.limit}`);
+    if (scheduleHandoff.rowCount !== null) messages.push(`Rows available: ${scheduleHandoff.rowCount}`);
+    if (scheduleHandoff.empty) {
+      warnings.push("No public schedule entries are currently available for this scene.");
+    }
   }
   if (input.currentScene?.sceneType === "BLANK" && input.targetScene.sceneType === "LIVE_SCOREBOARD") {
     messages.push("You are switching from BLANK to LIVE_SCOREBOARD.");
@@ -292,6 +360,17 @@ export function buildDisplaySceneActivationConfirmation(input: {
     messages.push("This scene change may be visible immediately.");
   }
 
+  const scheduleSummaryRows = scheduleHandoff
+    ? [
+        { label: "Target tournament", value: scheduleHandoff.tournamentLabel },
+        { label: "Court filter", value: scheduleHandoff.courtFilter ?? "All courts" },
+        { label: "Limit", value: String(scheduleHandoff.limit) },
+        ...(scheduleHandoff.rowCount !== null
+          ? [{ label: "Rows available", value: String(scheduleHandoff.rowCount) }]
+          : [])
+      ]
+    : [];
+
   return {
     title: "Set this scene active?",
     publicWarning: isPublicActiveDisplayScreen(input.screen)
@@ -306,9 +385,11 @@ export function buildDisplaySceneActivationConfirmation(input: {
       { label: "Current active match ID", value: currentMatchId ?? "None" },
       { label: "Target scene type", value: input.targetScene.sceneType },
       { label: "Target match ID", value: targetMatchId ?? "None" },
+      ...scheduleSummaryRows,
       { label: "Public URL", value: publicPath }
     ],
     messages,
+    warnings,
     confirmLabel: "Confirm active scene",
     cancelLabel: "Cancel"
   };

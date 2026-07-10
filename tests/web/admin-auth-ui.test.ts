@@ -227,6 +227,8 @@ import {
   getDisplayScreenSaveState,
   getPublicDisplayPreviewSummary,
   getPublicActiveSceneSummary,
+  getPublicSchedulePreviewSummary,
+  getScheduleSceneHandoff,
   isPublicActiveDisplayScreen,
   publicDisplayPreviewHasPrivateExposure,
   validateDisplaySceneForm,
@@ -3466,6 +3468,80 @@ describe("tournament schedule UI policy", () => {
     expect(privateConfirmation.publicWarning).toBeNull();
   });
 
+  test("builds public-safe schedule handoff and activation details", () => {
+    const screen: DisplayScreenResponse = {
+      screenId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      screenSlug: "schedule-test",
+      displayName: "Schedule Test Display",
+      tournamentId: null,
+      description: null,
+      publicEnabled: true,
+      active: true
+    };
+    const scheduleScene: DisplaySceneResponse = {
+      sceneId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      screenId: screen.screenId,
+      sceneType: "SCHEDULE",
+      sceneName: "Production Schedule",
+      sceneConfig: {
+        tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        courtId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        limit: 5
+      },
+      sortOrder: 0,
+      active: true
+    };
+    const publicPreview = {
+      screen: { screenSlug: screen.screenSlug, displayName: screen.displayName },
+      activeScene: {
+        sceneType: "SCHEDULE" as const,
+        publicData: {
+          tournamentLabel: "nongPhok Cup9",
+          rows: [],
+          emptyMessage: "No public schedule entries available."
+        },
+        refreshAfterMs: 15000
+      },
+      serverTime: "2026-07-10T00:00:00.000Z"
+    };
+
+    const preview = getPublicSchedulePreviewSummary(publicPreview);
+    const handoff = getScheduleSceneHandoff(scheduleScene, preview);
+    const confirmation = buildDisplaySceneActivationConfirmation({
+      screen,
+      targetScene: scheduleScene,
+      currentScene: getPublicActiveSceneSummary(publicPreview),
+      targetSchedulePreview: preview
+    });
+
+    expect(preview).toEqual({
+      tournamentLabel: "nongPhok Cup9",
+      rowCount: 0,
+      empty: true
+    });
+    expect(handoff).toEqual({
+      tournamentLabel: "nongPhok Cup9",
+      tournamentId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      courtFilter: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      limit: 5,
+      rowCount: 0,
+      empty: true
+    });
+    expect(confirmation.messages).toEqual(expect.arrayContaining([
+      "This will show the public schedule for tournament nongPhok Cup9 on the public display.",
+      "Court filter: cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "Limit: 5",
+      "Rows available: 0"
+    ]));
+    expect(confirmation.warnings).toContain("No public schedule entries are currently available for this scene.");
+    expect(confirmation.summaryRows).toEqual(expect.arrayContaining([
+      { label: "Target tournament", value: "nongPhok Cup9" },
+      { label: "Court filter", value: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" },
+      { label: "Limit", value: "5" },
+      { label: "Rows available", value: "0" }
+    ]));
+  });
+
   test("builds public display scene models safely for all active scene types", () => {
     const base = {
       screen: { screenSlug: "court-1-main", displayName: "Court 1 Main" },
@@ -3613,6 +3689,10 @@ describe("tournament schedule UI policy", () => {
     expect(appSource).toContain("buildDisplaySceneActivationConfirmation");
     expect(controlSource).toContain("Confirm active scene");
     expect(controlSource).toContain("Cancel");
+    expect(controlSource).toContain("This will show the public schedule for tournament");
+    expect(controlSource).toContain("No public schedule entries are currently available for this scene.");
+    expect(appSource).toContain("Schedule tournament");
+    expect(appSource).toContain("Qualifying rows");
     expect(appSource).toContain("requestSetActive(scene)");
     expect(appSource).toContain("confirmSetActive");
     expect(appSource).not.toContain("onClick={() => void setActive(scene)}");
@@ -3632,6 +3712,10 @@ describe("tournament schedule UI policy", () => {
     expect(styleSource).toContain(".public-display-standby");
     expect(styleSource).toContain(".public-display-schedule-card");
     expect(styleSource).toContain(".public-display-schedule-grid");
+    expect(styleSource).toContain(".public-display-schedule-time");
+    expect(styleSource).toContain(".public-display-schedule-location");
+    expect(styleSource).toContain(".public-display-schedule-versus");
+    expect(styleSource).toMatch(/\.public-display-schedule-grid\s*{[\s\S]*grid-auto-rows:\s*clamp\(88px,\s*12vh,\s*116px\)/);
     expect(appSource).toContain("public-display-schedule-row");
     expect(appSource).toContain("No public schedule entries available.");
     expect(styleSource).toMatch(/\.public-display-frame\s*{[\s\S]*aspect-ratio:\s*16\s*\/\s*9/);

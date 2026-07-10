@@ -865,13 +865,13 @@ label {
 .public-display-schedule-card {
   align-self: stretch;
   background:
-    linear-gradient(180deg, rgba(8, 13, 23, 0.94), rgba(2, 6, 23, 0.9)),
-    repeating-linear-gradient(90deg, rgba(103, 232, 249, 0.04) 0 1px, transparent 1px 38px);
+    linear-gradient(180deg, rgba(8, 13, 23, 0.97), rgba(2, 6, 23, 0.94)),
+    repeating-linear-gradient(90deg, rgba(103, 232, 249, 0.045) 0 1px, transparent 1px 38px);
   border: 1px solid rgba(103, 232, 249, 0.28);
   border-radius: 8px;
   box-shadow: inset 8px 0 0 rgba(250, 204, 21, 0.72), inset 0 0 60px rgba(15, 23, 42, 0.5);
   display: grid;
-  gap: 12px;
+  gap: clamp(10px, 1.2vw, 18px);
   grid-template-rows: auto minmax(0, 1fr) auto;
   max-width: 1480px;
   overflow: hidden;
@@ -880,12 +880,13 @@ label {
 }
 
 .public-display-schedule-header {
-  align-items: end;
+  align-items: center;
   border-bottom: 1px solid rgba(148, 163, 184, 0.22);
   display: flex;
   gap: 24px;
   justify-content: space-between;
-  padding-bottom: 12px;
+  min-height: 76px;
+  padding: 0 4px 14px;
 }
 
 .public-display-schedule-header h1 {
@@ -899,7 +900,8 @@ label {
 .public-display-schedule-grid {
   align-content: start;
   display: grid;
-  gap: 8px;
+  gap: clamp(8px, 0.8vw, 13px);
+  grid-auto-rows: clamp(88px, 12vh, 116px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   min-height: 0;
   overflow: hidden;
@@ -907,21 +909,32 @@ label {
 
 .public-display-schedule-row {
   align-items: center;
-  background: linear-gradient(90deg, rgba(15, 23, 42, 0.84), rgba(30, 41, 59, 0.58));
+  background:
+    linear-gradient(90deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.68)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-left: 4px solid rgba(103, 232, 249, 0.72);
   border-radius: 6px;
   display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(92px, 0.42fr) minmax(0, 1fr) auto;
-  min-height: 58px;
-  padding: 8px 10px;
+  gap: clamp(10px, 1vw, 16px);
+  grid-template-columns: minmax(104px, 0.42fr) minmax(0, 1fr) minmax(74px, auto);
+  min-height: 0;
+  padding: clamp(9px, 0.8vw, 14px);
 }
 
-.public-display-schedule-row time {
+.public-display-schedule-row.schedule-row-live {
+  border-left-color: #ef4444;
+}
+
+.public-display-schedule-row.schedule-row-final {
+  border-left-color: #94a3b8;
+}
+
+.public-display-schedule-time {
   color: #67e8f9;
-  font-size: clamp(14px, 1.2vw, 20px);
+  font-size: clamp(16px, 1.35vw, 23px);
   font-weight: 900;
+  line-height: 1.05;
 }
 
 .public-display-schedule-matchup {
@@ -934,22 +947,24 @@ label {
 
 .public-display-schedule-matchup strong {
   color: #f8fafc;
-  font-size: clamp(14px, 1.25vw, 21px);
+  font-size: clamp(16px, 1.45vw, 25px);
+  line-height: 1.1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.public-display-schedule-matchup span {
+.public-display-schedule-versus {
   color: rgba(148, 163, 184, 0.82);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.public-display-schedule-matchup small {
+.public-display-schedule-location {
   color: rgba(203, 213, 225, 0.78);
-  font-size: 11px;
+  font-size: clamp(11px, 0.82vw, 14px);
+  font-weight: 700;
   grid-column: 1 / -1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -963,9 +978,9 @@ label {
   justify-items: end;
 }
 
-.public-display-schedule-meta > span {
+.public-display-schedule-stage {
   color: rgba(203, 213, 225, 0.72);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   max-width: 110px;
   overflow: hidden;
@@ -977,8 +992,10 @@ label {
   border: 1px solid rgba(148, 163, 184, 0.32);
   border-radius: 999px;
   color: #f8fafc;
-  font-size: 10px;
-  padding: 4px 7px;
+  font-size: 11px;
+  min-width: 64px;
+  padding: 5px 8px;
+  text-align: center;
 }
 
 .public-display-schedule-meta .status-live {

@@ -243,6 +243,8 @@ import {
   getDisplayScreenSaveState,
   getPublicDisplayPreviewSummary,
   getPublicActiveSceneSummary,
+  getPublicSchedulePreviewSummary,
+  getScheduleSceneHandoff,
   isPublicActiveDisplayScreen,
   publicDisplayPreviewHasPrivateExposure,
   validateDisplaySceneForm,
@@ -1865,10 +1867,23 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
       details: buildDisplaySceneActivationConfirmation({
         screen,
         targetScene: scene,
-        currentScene: getPublicActiveSceneSummary(publicPreview)
+        currentScene: getPublicActiveSceneSummary(publicPreview),
+        targetSchedulePreview: getSchedulePreviewForScene(scene)
       })
     });
     setMessage(null);
+  }
+
+  function getSchedulePreviewForScene(scene: DisplaySceneResponse) {
+    if (scene.sceneType !== "SCHEDULE") return null;
+    const preview = getPublicSchedulePreviewSummary(publicPreview);
+    if (!preview || getPublicActiveSceneSummary(publicPreview)?.sceneType !== "SCHEDULE") return null;
+    const scheduleScenes = scenes.filter((candidate) => candidate.sceneType === "SCHEDULE");
+    const knownActiveSceneId = activeScene?.scene.sceneId ?? null;
+    const previewMatchesScene = knownActiveSceneId
+      ? knownActiveSceneId === scene.sceneId
+      : scheduleScenes.length === 1;
+    return previewMatchesScene ? preview : null;
   }
 
   async function confirmSetActive() {
@@ -1898,6 +1913,18 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
   const validationMessage = validateDisplaySceneForm(form);
   const saveState = getDisplaySceneSaveState({ saving, screenId, validationMessage });
   const currentPublicScene = getPublicActiveSceneSummary(publicPreview);
+  const publicSchedulePreview = getPublicSchedulePreviewSummary(publicPreview);
+  const scheduleScenes = scenes.filter((scene) => scene.sceneType === "SCHEDULE");
+  const currentScheduleScene = currentPublicScene?.sceneType === "SCHEDULE"
+    ? activeScene?.scene.sceneType === "SCHEDULE"
+      ? activeScene.scene
+      : scheduleScenes.length === 1
+        ? scheduleScenes[0] ?? null
+        : null
+    : null;
+  const currentScheduleHandoff = currentScheduleScene
+    ? getScheduleSceneHandoff(currentScheduleScene, publicSchedulePreview)
+    : null;
   const publicPath = screen ? buildPublicDisplayScreenLink(screen.screenSlug) : null;
 
   return (
@@ -1934,9 +1961,24 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
           <dd>{currentPublicScene?.sceneType ?? activeScene?.scene.sceneType ?? "Unavailable"}</dd>
           <dt>Current active match ID</dt>
           <dd>{currentPublicScene?.matchId ?? getDisplaySceneMatchId(activeScene?.scene) ?? "None"}</dd>
+          {currentPublicScene?.sceneType === "SCHEDULE" ? (
+            <>
+              <dt>Schedule tournament</dt>
+              <dd>{currentScheduleHandoff?.tournamentLabel ?? publicSchedulePreview?.tournamentLabel ?? "Unavailable"}</dd>
+              <dt>Schedule limit</dt>
+              <dd>{currentScheduleHandoff?.limit ?? "Unavailable"}</dd>
+              <dt>Court filter</dt>
+              <dd>{currentScheduleHandoff?.courtFilter ?? (currentScheduleHandoff ? "All courts" : "Unavailable")}</dd>
+              <dt>Qualifying rows</dt>
+              <dd>{publicSchedulePreview?.rowCount ?? "Unavailable"}</dd>
+            </>
+          ) : null}
           <dt>Public URL</dt>
           <dd>{publicPath ?? "Unavailable"}</dd>
         </dl>
+        {currentPublicScene?.sceneType === "SCHEDULE" && publicSchedulePreview?.empty ? (
+          <Notice tone="error" text="No public schedule entries are currently available for this scene." />
+        ) : null}
       </section>
       {activeScene ? <Notice tone="success" text={`Active scene: ${activeScene.scene.sceneName} (${activeScene.scene.sceneType})`} /> : null}
       {activationConfirmation ? (
@@ -1953,6 +1995,9 @@ function AdminDisplayScreenScenesPage({ screenId }: { screenId: string }) {
           </dl>
           {activationConfirmation.details.messages.map((text) => (
             <p className="muted" key={text}>{text}</p>
+          ))}
+          {activationConfirmation.details.warnings.map((text) => (
+            <Notice tone="error" text={text} key={text} />
           ))}
           <div className="button-row">
             <button type="button" onClick={() => void confirmSetActive()} disabled={saving}>
@@ -5072,16 +5117,20 @@ function PublicScheduleDisplayScene({
       ) : (
         <div className="public-display-schedule-grid" aria-label="Public schedule entries">
           {model.rows.map((row) => (
-            <article className="public-display-schedule-row" key={row.matchId}>
-              <time dateTime={row.scheduledAt ?? undefined}>{formatPublicScheduleDisplayTime(row.scheduledAt)}</time>
+            <article className={`public-display-schedule-row schedule-row-${row.status.toLowerCase()}`} key={row.matchId}>
+              <time className="public-display-schedule-time" dateTime={row.scheduledAt ?? undefined}>
+                {formatPublicScheduleDisplayTime(row.scheduledAt)}
+              </time>
               <div className="public-display-schedule-matchup">
                 <strong>{row.homeTeamName}</strong>
-                <span>vs</span>
+                <span className="public-display-schedule-versus">vs</span>
                 <strong>{row.awayTeamName}</strong>
-                <small>{formatPublicScheduleDisplayLocation(row.venueLabel, row.courtLabel)}</small>
+                <small className="public-display-schedule-location">
+                  {formatPublicScheduleDisplayLocation(row.venueLabel, row.courtLabel)}
+                </small>
               </div>
               <div className="public-display-schedule-meta">
-                <span>{row.stageLabel ?? row.roundLabel ?? "Match"}</span>
+                <span className="public-display-schedule-stage">{row.stageLabel ?? row.roundLabel ?? "Match"}</span>
                 <b className={`schedule-status status-${row.status.toLowerCase()}`}>{row.status}</b>
               </div>
             </article>
