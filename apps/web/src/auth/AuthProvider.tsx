@@ -15,8 +15,17 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reduceAuthState, undefined, createInitialAuthState);
+export function AuthProvider({
+  bootstrapCurrentUser,
+  children
+}: {
+  bootstrapCurrentUser: boolean;
+  children: React.ReactNode;
+}) {
+  const [state, dispatch] = useReducer(reduceAuthState, bootstrapCurrentUser, (shouldBootstrap) => ({
+    ...createInitialAuthState(),
+    loading: shouldBootstrap
+  }));
   const api = useMemo(() => createApiClient(), []);
 
   async function refreshCurrentUser() {
@@ -60,8 +69,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    if (!bootstrapCurrentUser) return;
     void refreshCurrentUser();
-  }, []);
+  }, [bootstrapCurrentUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

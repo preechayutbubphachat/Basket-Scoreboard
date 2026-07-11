@@ -38,6 +38,7 @@ import type {
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
+import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
 import {
   canManageAssignments,
   createAssignmentCandidateOptions,
@@ -6280,9 +6281,7 @@ function formatDate(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function RoutedApp() {
-  const route = useRoute();
-
+function RoutedApp({ route }: { route: Route }) {
   const content = useMemo(() => {
     switch (route.name) {
       case "login":
@@ -6500,9 +6499,15 @@ function RoutedApp() {
 }
 
 export default function App() {
+  const route = useRoute();
+  const bootstrapCurrentUser = shouldBootstrapAuthForPath(window.location.pathname);
+
   return (
-    <AuthProvider>
-      <RoutedApp />
+    <AuthProvider
+      key={bootstrapCurrentUser ? "protected" : "public"}
+      bootstrapCurrentUser={bootstrapCurrentUser}
+    >
+      <RoutedApp route={route} />
     </AuthProvider>
   );
 }
