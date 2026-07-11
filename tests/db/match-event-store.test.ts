@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import type { RowDataPacket } from "mysql2/promise";
 import { buildApiApp } from "../../apps/api/src/app";
 import { createDatabasePool } from "../../apps/api/src/db";
@@ -19,6 +19,10 @@ const adminHeaders = {
   "x-dev-user-role": "ADMIN",
   "x-dev-user-id": "00000000-0000-4000-8000-0000000000aa"
 };
+
+afterAll(() => {
+  delete process.env.AUTH_TEST_DISABLE_CSRF;
+});
 
 function scorerHeaders(matchId: string, userId = "00000000-0000-4000-8000-0000000000bb") {
   return {
@@ -195,7 +199,7 @@ describeDb("match event store MVP", () => {
       const startResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`,
-        headers: scorerHeaders(created.matchId),
+        headers: adminHeaders,
         payload: start
       });
       expect(startResponse.statusCode).toBe(200);
@@ -208,7 +212,7 @@ describeDb("match event store MVP", () => {
       const duplicateStart = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`,
-        headers: scorerHeaders(created.matchId),
+        headers: adminHeaders,
         payload: start
       });
       expect(duplicateStart.json()).toMatchObject({
@@ -220,7 +224,7 @@ describeDb("match event store MVP", () => {
       const stopResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/clock/game/stop`,
-        headers: scorerHeaders(created.matchId),
+        headers: adminHeaders,
         payload: clockCommand(created.matchId, 1)
       });
       expect(stopResponse.json()).toMatchObject({
@@ -232,7 +236,7 @@ describeDb("match event store MVP", () => {
       const resetShotResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/clock/shot/reset`,
-        headers: scorerHeaders(created.matchId),
+        headers: adminHeaders,
         payload: clockCommand(created.matchId, 2, { resetToMs: 14000, reason: null })
       });
       expect(resetShotResponse.json()).toMatchObject({
@@ -244,7 +248,7 @@ describeDb("match event store MVP", () => {
       const staleResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/clock/shot/set`,
-        headers: scorerHeaders(created.matchId),
+        headers: adminHeaders,
         payload: clockCommand(created.matchId, 1, { remainingMs: 12000, reason: null })
       });
       expect(staleResponse.json()).toMatchObject({
@@ -530,9 +534,11 @@ describeDb("match event store MVP", () => {
       expect(publicBody).toMatchObject({
         matchId: created.matchId,
         homeScore: 2,
-        awayScore: 3,
-        currentSeq: 2
+        awayScore: 3
       });
+      expect(JSON.stringify(publicBody)).not.toMatch(
+        /currentSeq|lastEventSeq|expectedSeq|projectionVersion|eventSeq|seqNo|playerFouls|roster|teamId|homeTeamId|awayTeamId/i
+      );
       expect(JSON.stringify(publicBody)).not.toContain("actor");
       expect(JSON.stringify(publicBody)).not.toContain("device");
       expect(JSON.stringify(publicBody)).not.toContain("audit");

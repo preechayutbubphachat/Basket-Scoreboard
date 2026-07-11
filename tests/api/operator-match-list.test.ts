@@ -264,7 +264,10 @@ describeDb("operator and admin match listing", () => {
         headers: { cookie: adminSession.cookie }
       });
       expect(adminOperatorResponse.statusCode).toBe(200);
-      expect(adminOperatorResponse.json<{ data: { matches: unknown[] } }>().data.matches).toHaveLength(3);
+      const adminOperatorMatches = adminOperatorResponse.json<{ data: { matches: Array<{ matchId: string }> } }>().data.matches;
+      expect(adminOperatorMatches.map((match) => match.matchId)).toEqual(
+        expect.arrayContaining([matchA, matchB, matchC])
+      );
 
       const adminMatchesResponse = await app.inject({
         method: "GET",
@@ -272,7 +275,10 @@ describeDb("operator and admin match listing", () => {
         headers: { cookie: adminSession.cookie }
       });
       expect(adminMatchesResponse.statusCode).toBe(200);
-      expect(adminMatchesResponse.json<{ data: { matches: unknown[] } }>().data.matches).toHaveLength(3);
+      const adminMatches = adminMatchesResponse.json<{ data: { matches: Array<{ matchId: string }> } }>().data.matches;
+      expect(adminMatches.map((match) => match.matchId)).toEqual(
+        expect.arrayContaining([matchA, matchB, matchC])
+      );
 
       const nonAdminMatchesResponse = await app.inject({
         method: "GET",

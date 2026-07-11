@@ -18,6 +18,7 @@ import {
   getScoreboardProjection,
   insertCommandResult,
   lockMatchStream,
+  recoverMatchStreamReadConflict,
   updateScoreboardProjection
 } from "./repositories.js";
 import {
@@ -212,6 +213,8 @@ async function appendClockCommand(options: {
     return result;
   } catch (error) {
     await connection.rollback();
+    const conflict = await recoverMatchStreamReadConflict({ error, pool: options.pool, command: options.command });
+    if (conflict) return conflict;
     throw error;
   } finally {
     connection.release();

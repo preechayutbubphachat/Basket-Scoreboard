@@ -25,6 +25,7 @@ import {
   insertCommandResult,
   listMatchEvents,
   lockMatchStream,
+  recoverMatchStreamReadConflict,
   updateScoreboardProjection,
   type MatchEventRecord
 } from "./repositories.js";
@@ -220,6 +221,8 @@ async function runCorrectionTransaction<T extends CommandResult = CommandResult>
     return result;
   } catch (error) {
     await connection.rollback();
+    const conflict = await recoverMatchStreamReadConflict({ error, pool, command });
+    if (conflict) return conflict as T;
     throw error;
   } finally {
     connection.release();

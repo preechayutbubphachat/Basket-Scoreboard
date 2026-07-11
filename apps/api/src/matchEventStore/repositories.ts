@@ -1,9 +1,10 @@
-import type { PoolConnection, RowDataPacket } from "mysql2/promise";
+import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   CommandResult,
   MatchEventType,
   ScoreboardProjection as ApiScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
+import { reasonCodes } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { normalizeScoreboardProjection, type ScoreboardProjection } from "./projection.js";
 import { parseJsonField } from "./json.js";
@@ -110,6 +111,54 @@ export async function lockMatchStream(connection: PoolConnection, matchId: strin
   );
 
   return rows[0]?.last_seq_no ?? null;
+}
+
+type MatchStreamCommand = {
+  commandId: string;
+  matchId: string;
+  expectedSeq: number;
+};
+
+export function isMatchStreamReadConflict(error: unknown) {
+  const candidate = error as { code?: string; errno?: number; sqlState?: string; sqlMessage?: string };
+  return candidate?.code === "ER_CHECKREAD" &&
+    candidate.errno === 1020 &&
+    candidate.sqlState === "HY000" &&
+    typeof candidate.sqlMessage === "string" &&
+    candidate.sqlMessage.includes("table 'match_streams'");
+}
+
+export async function recoverMatchStreamReadConflict(options: {
+  error: unknown;
+  pool: Pool;
+  command: MatchStreamCommand;
+}): Promise<CommandResult | null> {
+  if (!isMatchStreamReadConflict(options.error)) {
+    return null;
+  }
+
+  const connection = await options.pool.getConnection();
+  try {
+    const duplicate = await findDuplicateCommand(connection, options.command.matchId, options.command.commandId);
+    if (duplicate) {
+      return { ...duplicate, status: "DUPLICATE_ACCEPTED", appendedEvents: [] };
+    }
+    const currentSeq = await getCurrentSeq(connection, options.command.matchId);
+    if (currentSeq === null) {
+      return null;
+    }
+    return {
+      status: "SYNC_REQUIRED",
+      commandId: options.command.commandId,
+      matchId: options.command.matchId,
+      currentSeq,
+      appendedEvents: [],
+      reasonCode: reasonCodes.INVALID_EXPECTED_SEQ,
+      message: `Expected seq ${options.command.expectedSeq}, current seq ${currentSeq}`
+    };
+  } finally {
+    connection.release();
+  }
 }
 
 export async function findDuplicateCommand(
