@@ -66,7 +66,7 @@ export function buildPublicScoreboardDisplayModel(
 
   return {
     matchId: projection.matchId,
-    matchCodeLabel: projection.matchId.slice(0, 8).toUpperCase(),
+    matchCodeLabel: null,
     arenaFrameClassName: [
       "public-display-frame",
       "arena-layout",
@@ -86,7 +86,8 @@ export function buildPublicScoreboardDisplayModel(
       scoreClassName: "public-display-score-value score-pulse",
       style: theme.home.style,
       logoUrl: theme.home.logoUrl,
-      showLogo: theme.home.showLogo
+      showLogo: theme.home.showLogo,
+      monogram: buildTeamMonogram(theme.home.displayName ?? projection.homeTeamName ?? "HOME")
     },
     away: {
       label: awayScorePanel?.label ?? "AWAY",
@@ -98,7 +99,8 @@ export function buildPublicScoreboardDisplayModel(
       scoreClassName: "public-display-score-value score-pulse",
       style: theme.away.style,
       logoUrl: theme.away.logoUrl,
-      showLogo: theme.away.showLogo
+      showLogo: theme.away.showLogo,
+      monogram: buildTeamMonogram(theme.away.displayName ?? projection.awayTeamName ?? "AWAY")
     },
     gameClock: {
       label: clock.gameClockLabel,
@@ -129,6 +131,8 @@ export function buildPublicScoreboardDisplayModel(
       : null
   };
 }
+
+export type PublicScoreboardDisplayModel = ReturnType<typeof buildPublicScoreboardDisplayModel>;
 
 export function buildPublicScoreboardClockState(
   projection: PublicScoreboardProjection,
@@ -230,6 +234,14 @@ function cleanDisplayName(value: string | null | undefined) {
 function cleanLogoUrl(value: string | null | undefined) {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed || null;
+}
+
+function buildTeamMonogram(value: string) {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  const letters = words.length > 1
+    ? `${words[0]?.[0] ?? ""}${words[words.length - 1]?.[0] ?? ""}`
+    : value.trim().slice(0, 2);
+  return letters.toLocaleUpperCase().slice(0, 2) || "--";
 }
 
 const defaultTournamentColors: ResolvedDisplayColors = {
