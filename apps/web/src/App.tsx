@@ -37,6 +37,7 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
+import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
 import {
@@ -5001,30 +5002,6 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
         style={display?.arenaFrameStyle as CSSProperties | undefined}
         aria-label="16:9 public scoreboard display"
       >
-        <header className="arena-header">
-          <div className="arena-brand-lockup">
-            {display?.tournament.showLogo && display.tournament.logoUrl ? (
-              <SafePreviewLogo
-                className="arena-tournament-logo"
-                src={display.tournament.logoUrl}
-                fallbackLabel="T"
-              />
-            ) : null}
-            <div className="arena-title-lockup">
-              <span>Public scoreboard</span>
-              <h1 className="arena-tournament-title">
-                {display?.tournament.displayName ?? "Public Scoreboard"}
-              </h1>
-            </div>
-          </div>
-          <div className="arena-header-meta" aria-label="Match display metadata">
-            <span>Match <strong>{display?.matchCodeLabel ?? "Pending"}</strong></span>
-            <span>Period <strong>{display?.periodLabel ?? "Pending"}</strong></span>
-          </div>
-          <div className={display?.statusClassName ?? "arena-live-badge"}>
-            {display?.statusLabel ?? "Loading"}
-          </div>
-        </header>
         <nav className="arena-display-actions" aria-label="Public display actions">
           <a
             href={buildPublicScoreboardLink(matchId)}
@@ -5047,48 +5024,7 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
 
         {message ? <Notice {...message} /> : null}
         {!display ? <p className="public-display-loading">Loading scoreboard...</p> : null}
-        {display ? (
-          <>
-            <div className="arena-scoreboard-grid">
-              <PublicDisplayTeamPanel side="home" team={display.home} />
-              <div className="central-clock-panel">
-                <div className="public-display-game-clock">
-                  <span>Game</span>
-                  <strong>{display.gameClock.label}</strong>
-                  <small>{display.gameClock.stateLabel}</small>
-                </div>
-                <div className="arena-period-chip">
-                  <span>Period</span>
-                  <strong>{display.periodLabel}</strong>
-                </div>
-                <div className={display.shotClock.className}>
-                  <span>Shot</span>
-                  <strong>{display.shotClock.label}</strong>
-                  <small>{display.shotClock.stateLabel}</small>
-                </div>
-              </div>
-              <PublicDisplayTeamPanel side="away" team={display.away} />
-            </div>
-
-            <div className="recent-event-ticker" aria-label="Recent event ticker">
-              <span>Recent</span>
-              <strong>{display.recentEventTicker}</strong>
-            </div>
-
-            <dl className="compact-system-strip" aria-label="Compact system status">
-              {display.systemStatus.map((item) => (
-                <div key={item.label}>
-                  <dt aria-hidden="true">{item.icon}</dt>
-                  <dd><span>{item.label}</span><strong>{item.value}</strong></dd>
-                </div>
-              ))}
-            </dl>
-
-            {display.finalLabel ? (
-              <div className="public-display-final" role="status">{display.finalLabel}</div>
-            ) : null}
-          </>
-        ) : null}
+        {display ? <PublicLiveScoreboard display={display} /> : null}
       </section>
     </main>
   );
@@ -5244,43 +5180,6 @@ function getPublicDisplaySceneCardTitle(model: PublicDisplaySceneModel | null) {
 
 function getPublicDisplaySceneCardMessage(model: PublicDisplaySceneModel | null) {
   return model && "message" in model ? model.message : "Loading active display scene.";
-}
-
-function PublicDisplayTeamPanel({
-  side,
-  team
-}: {
-  side: "home" | "away";
-  team: {
-    label: string;
-    teamName: string;
-    score: number;
-    fouls: number;
-    timeouts: number;
-    panelClassName: string;
-    scoreClassName: string;
-    style: Record<string, string>;
-    logoUrl: string | null;
-    showLogo: boolean;
-  };
-}) {
-  const hasLogo = team.showLogo && Boolean(team.logoUrl);
-
-  return (
-    <article className={`${team.panelClassName} ${side} ${hasLogo ? "has-team-logo" : "no-team-logo"}`} style={team.style as CSSProperties}>
-      <div className="public-display-team-badge"><span>{team.label}</span></div>
-      {team.showLogo && team.logoUrl ? (
-        <SafePreviewLogo className="public-display-team-logo" src={team.logoUrl} fallbackLabel={side.slice(0, 1)} />
-      ) : null}
-      <h1>{team.teamName}</h1>
-      <strong key={`${side}-${team.score}`} className={team.scoreClassName}>{team.score}</strong>
-      <dl className="public-display-team-metrics" aria-label={`${team.label} public game metrics`}>
-        <div><dt>Timeouts</dt><dd>{team.timeouts}</dd></div>
-        <div><dt>Team Fouls</dt><dd>{team.fouls}</dd></div>
-        <div><dt>Bonus</dt><dd>--</dd></div>
-      </dl>
-    </article>
-  );
 }
 
 function TournamentSummaryStrip({ tournament }: { tournament: TournamentSummary }) {
