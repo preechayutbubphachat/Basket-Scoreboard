@@ -7,26 +7,15 @@ import {
   type RoleCode
 } from "@basket-scoreboard/api-contracts";
 import { apiError } from "../errors/apiErrors.js";
+import {
+  assignmentRoleAllowsPermission,
+  defaultAssignmentRoleForSystemRole,
+  permissionsForSystemRole
+} from "./operatorPermissionPolicy.js";
 
 export type { AuthenticatedUser, AuthorizationDecision, PermissionCode, RoleCode };
 
 export const defaultDevUserId = "00000000-0000-4000-8000-000000000001";
-
-const rolePermissions: Record<RoleCode, PermissionCode[]> = {
-  ADMIN: [
-    "match.create",
-    "match.read",
-    "match.score.operate",
-    "match.correction.request",
-    "match.correction.apply",
-    "match.correction.reject",
-    "match.audit.read",
-    "public.scoreboard.read"
-  ],
-  SCORER: ["match.read", "match.score.operate", "match.correction.request", "public.scoreboard.read"],
-  REFEREE: ["match.read", "match.score.operate", "match.correction.request", "public.scoreboard.read"],
-  VIEWER: ["match.read", "public.scoreboard.read"]
-};
 
 function devAuthEnabled() {
   return process.env.NODE_ENV !== "production" || process.env.DEV_AUTH_ENABLED === "true";
@@ -71,7 +60,7 @@ export function resolveDevUser(request: FastifyRequest): AuthenticatedUser | nul
   return {
     userId,
     role,
-    permissions: rolePermissions[role],
+    permissions: permissionsForSystemRole(role),
     assignedMatchIds,
     deviceId: `dev-${role.toLowerCase()}-device`,
     authMode: "DEV_HEADER"
@@ -132,11 +121,18 @@ export function authorize(
     return {
       allowed: false,
       reasonCode: reasonCodes.INSUFFICIENT_PERMISSION,
-      message: `Permission ${permission} is required`
+      message: "Operation is not permitted"
     };
   }
 
-  if (resource.matchId && !user.assignedMatchIds.includes(resource.matchId)) {
+  const assignmentRole = defaultAssignmentRoleForSystemRole(user.role);
+  if (
+    resource.matchId &&
+    (
+      !user.assignedMatchIds.includes(resource.matchId) ||
+      !assignmentRoleAllowsPermission(assignmentRole ?? "", permission)
+    )
+  ) {
     return {
       allowed: false,
       reasonCode: reasonCodes.MATCH_NOT_ASSIGNED,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import {
+  assignmentRoleAllowsPermission,
   reasonCodes,
   type MatchOfficialRoleCode,
   type OfficialCandidate,
@@ -67,31 +68,6 @@ const allowedRoleCodes = new Set<string>([
 
 export function isMatchOfficialRoleCode(value: string): value is MatchOfficialRoleCode {
   return allowedRoleCodes.has(value);
-}
-
-export function assignmentRoleAllowsPermission(roleCode: string, permission: PermissionCode) {
-  if (permission === "match.read") {
-    return true;
-  }
-
-  if (permission === "match.score.operate") {
-    return roleCode === "SCORER" || roleCode === "ASSISTANT_SCORER" || roleCode === "MATCH_OPERATOR";
-  }
-
-  if (permission === "match.correction.request") {
-    return (
-      roleCode === "SCORER" ||
-      roleCode === "ASSISTANT_SCORER" ||
-      roleCode === "MATCH_OPERATOR" ||
-      roleCode === "REFEREE"
-    );
-  }
-
-  if (permission === "match.correction.apply" || permission === "match.correction.reject") {
-    return roleCode === "REFEREE";
-  }
-
-  return false;
 }
 
 async function exists(queryable: Queryable, sql: string, values: unknown[]) {

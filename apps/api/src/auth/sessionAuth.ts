@@ -13,26 +13,16 @@ import {
 } from "@basket-scoreboard/api-contracts";
 import { apiError } from "../errors/apiErrors.js";
 import { getUserMatchAssignments, isUserAssignedToMatch } from "../matchOfficials/matchOfficialService.js";
+import {
+  assignmentRoleAllowsPermission,
+  defaultAssignmentRoleForSystemRole,
+  mergeCodeDerivedPermissions,
+  permissionsForSystemRole
+} from "./operatorPermissionPolicy.js";
 
 export type { AuthenticatedUser, AuthorizationDecision, PermissionCode, RoleCode };
 
 export const defaultDevUserId = "00000000-0000-4000-8000-000000000001";
-
-const rolePermissions: Record<RoleCode, PermissionCode[]> = {
-  ADMIN: [
-    "match.create",
-    "match.read",
-    "match.score.operate",
-    "match.correction.request",
-    "match.correction.apply",
-    "match.correction.reject",
-    "match.audit.read",
-    "public.scoreboard.read"
-  ],
-  SCORER: ["match.read", "match.score.operate", "match.correction.request", "public.scoreboard.read"],
-  REFEREE: ["match.read", "match.score.operate", "match.correction.request", "public.scoreboard.read"],
-  VIEWER: ["match.read", "public.scoreboard.read"]
-};
 
 type UserRow = RowDataPacket & {
   user_id: string;
@@ -208,7 +198,7 @@ export function resolveDevUser(request: FastifyRequest): AuthenticatedUser | nul
     userId,
     role,
     roles: [role],
-    permissions: rolePermissions[role],
+    permissions: permissionsForSystemRole(role),
     assignedMatchIds,
     deviceId: `dev-${role.toLowerCase()}-device`,
     authMode: "DEV_HEADER"
@@ -231,7 +221,7 @@ async function loadRolesAndPermissions(connection: PoolConnection, userId: strin
     )
   );
 
-  return { roles, permissions };
+  return { roles, permissions: mergeCodeDerivedPermissions(roles, permissions) };
 }
 
 function isPermissionCode(value: string | null): value is PermissionCode {
@@ -239,6 +229,11 @@ function isPermissionCode(value: string | null): value is PermissionCode {
     value === "match.create" ||
     value === "match.read" ||
     value === "match.score.operate" ||
+    value === "match.foul.operate" ||
+    value === "match.clock.game.operate" ||
+    value === "match.clock.shot.operate" ||
+    value === "match.timeout.operate" ||
+    value === "match.lifecycle.operate" ||
     value === "match.correction.request" ||
     value === "match.correction.apply" ||
     value === "match.correction.reject" ||
@@ -454,14 +449,15 @@ export function createAuthHandlers(pool: Pool) {
       return {
         allowed: false,
         reasonCode: reasonCodes.FORBIDDEN,
-        message: `Permission ${permission} is required`
+        message: "Operation is not permitted"
       };
     }
 
     if (resource.matchId) {
       const assigned =
         user.authMode === "DEV_HEADER"
-          ? user.assignedMatchIds.includes(resource.matchId)
+          ? user.assignedMatchIds.includes(resource.matchId) &&
+            assignmentRoleAllowsPermission(defaultAssignmentRoleForSystemRole(user.role) ?? "", permission)
           : await isUserAssignedToMatch(pool, user.userId, resource.matchId, permission);
 
       if (!assigned) {
@@ -493,7 +489,7 @@ export function createAuthHandlers(pool: Pool) {
       return {
         allowed: false,
         reasonCode: reasonCodes.FORBIDDEN,
-        message: `Permission ${permission} is required`
+        message: "Operation is not permitted"
       };
     }
 

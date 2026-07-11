@@ -68,6 +68,11 @@ import {
   buildOperatorMatchCard,
   canAccessOperatorMatches,
   canOperateScore,
+  canOperateFoul,
+  canOperateGameClock,
+  canOperateShotClock,
+  canOperateTimeout,
+  canOperateLifecycle,
   createEmptyOperatorMatchesMessage,
   getTeamLabel
 } from "./lib/operatorMatches";
@@ -3020,7 +3025,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitScore = canOperateScore(currentUser);
+  const canSubmitScore = canOperateScore(currentUser, matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
@@ -3212,7 +3217,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [foulType, setFoulType] = useState<FoulType>("PERSONAL");
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitFoul = canOperateScore(currentUser);
+  const canSubmitFoul = canOperateFoul(currentUser, matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
@@ -3444,7 +3449,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const [shotSeconds, setShotSeconds] = useState(24);
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitClock = canOperateScore(currentUser);
+  const canSubmitGameClock = canOperateGameClock(currentUser, matchId);
+  const canSubmitShotClock = canOperateShotClock(currentUser, matchId);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
@@ -3499,8 +3505,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
   }
 
-  async function runClockCommand(key: string, command: () => Promise<CommandResult>) {
-    if (!projection || !canSubmitClock) return;
+  async function runClockCommand(key: string, permitted: boolean, command: () => Promise<CommandResult>) {
+    if (!projection || !permitted) return;
     setPendingKey(key);
     setMessage(null);
     const previousSeq = projection.currentSeq;
@@ -3530,7 +3536,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
       <div className="panel">
         <h1>Clock Control</h1>
         <p className="muted">Match ID: {matchId}</p>
-        {!canSubmitClock ? <ErrorMessage code="FORBIDDEN" message="Clock operation permission is required." /> : null}
+        {!canSubmitGameClock && !canSubmitShotClock ? <ErrorMessage code="FORBIDDEN" message="Clock operation permission is required." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
       </div>
@@ -3563,8 +3569,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             <button
               type="button"
               className="score-button"
-              disabled={!canSubmitClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("game-start", () =>
+              disabled={!canSubmitGameClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("game-start", canSubmitGameClock, () =>
                 api.startGameClock(matchId, { expectedSeq: projection.currentSeq })
               )}
             >
@@ -3573,8 +3579,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             <button
               type="button"
               className="score-button"
-              disabled={!canSubmitClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("game-stop", () =>
+              disabled={!canSubmitGameClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("game-stop", canSubmitGameClock, () =>
                 api.stopGameClock(matchId, { expectedSeq: projection.currentSeq })
               )}
             >
@@ -3583,8 +3589,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             <button
               type="button"
               className="score-button"
-              disabled={!canSubmitClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("shot-24", () =>
+              disabled={!canSubmitShotClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("shot-24", canSubmitShotClock, () =>
                 api.resetShotClock(matchId, buildShotClockResetPayload(projection, 24000, reason))
               )}
             >
@@ -3593,8 +3599,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             <button
               type="button"
               className="score-button"
-              disabled={!canSubmitClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("shot-14", () =>
+              disabled={!canSubmitShotClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("shot-14", canSubmitShotClock, () =>
                 api.resetShotClock(matchId, buildShotClockResetPayload(projection, 14000, reason))
               )}
             >
@@ -3640,8 +3646,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
           <div className="button-row">
             <button
               type="button"
-              disabled={!canSubmitClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("game-set", () =>
+              disabled={!canSubmitGameClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("game-set", canSubmitGameClock, () =>
                 api.setGameClock(matchId, buildGameClockSetPayload(projection, {
                   minutes: gameMinutes,
                   seconds: gameSeconds,
@@ -3653,8 +3659,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             </button>
             <button
               type="button"
-              disabled={!canSubmitClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("shot-set", () =>
+              disabled={!canSubmitShotClock || Boolean(pendingKey)}
+              onClick={() => void runClockCommand("shot-set", canSubmitShotClock, () =>
                 api.setShotClock(matchId, buildShotClockSetPayload(projection, { seconds: shotSeconds, reason }))
               )}
             >
@@ -3691,7 +3697,7 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   const [durationSeconds, setDurationSeconds] = useState(60);
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitTimeout = canOperateScore(currentUser);
+  const canSubmitTimeout = canOperateTimeout(currentUser, matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
@@ -3894,7 +3900,7 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   const [pendingKey, setPendingKey] = useState<LifecycleAction | null>(null);
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitLifecycle = canOperateScore(currentUser);
+  const canSubmitLifecycle = canOperateLifecycle(currentUser, matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {

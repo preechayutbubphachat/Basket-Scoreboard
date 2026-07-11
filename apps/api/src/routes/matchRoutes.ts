@@ -76,6 +76,7 @@ import {
   saveMatchDisplayOverride
 } from "../displayThemes/displayThemeService.js";
 import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboardProjection.js";
+import { matchCommandPermissions } from "../auth/operatorPermissionPolicy.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -89,6 +90,11 @@ export function registerMatchRoutes(
       permission:
         | "match.read"
         | "match.score.operate"
+        | "match.foul.operate"
+        | "match.clock.game.operate"
+        | "match.clock.shot.operate"
+        | "match.timeout.operate"
+        | "match.lifecycle.operate"
         | "match.correction.request"
         | "match.correction.apply"
         | "match.correction.reject"
@@ -397,15 +403,15 @@ export function registerMatchRoutes(
     "/api/v1/matches/:matchId/commands/score/add",
     {
       preHandler: [
+        auth.requireAuth,
+        auth.requireCsrf,
         async (request) => {
           (request as FastifyRequest & { scoreCommandStartedAt?: number }).scoreCommandStartedAt = performance.now();
         },
-        auth.requireAuth,
         auth.requireMatchPermission(
-          "match.score.operate",
+          matchCommandPermissions.score,
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {
@@ -441,11 +447,11 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
+        auth.requireCsrf,
         auth.requireMatchPermission(
-          "match.score.operate",
+          matchCommandPermissions.foul,
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {
@@ -479,11 +485,11 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
+        auth.requireCsrf,
         auth.requireMatchPermission(
-          "match.score.operate",
+          matchCommandPermissions.foul,
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {
@@ -512,18 +518,45 @@ export function registerMatchRoutes(
     }
   );
 
-  const clockPreHandlers = [
+  const gameClockPreHandlers = [
     auth.requireAuth,
+    auth.requireCsrf,
     auth.requireMatchPermission(
-      "match.score.operate",
+      matchCommandPermissions.gameClock,
       (request: FastifyRequest) => (request.params as { matchId: string }).matchId
-    ),
-    auth.requireCsrf
+    )
+  ];
+
+  const shotClockPreHandlers = [
+    auth.requireAuth,
+    auth.requireCsrf,
+    auth.requireMatchPermission(
+      matchCommandPermissions.shotClock,
+      (request: FastifyRequest) => (request.params as { matchId: string }).matchId
+    )
+  ];
+
+  const timeoutPreHandlers = [
+    auth.requireAuth,
+    auth.requireCsrf,
+    auth.requireMatchPermission(
+      matchCommandPermissions.timeout,
+      (request: FastifyRequest) => (request.params as { matchId: string }).matchId
+    )
+  ];
+
+  const lifecyclePreHandlers = [
+    auth.requireAuth,
+    auth.requireCsrf,
+    auth.requireMatchPermission(
+      matchCommandPermissions.lifecycle,
+      (request: FastifyRequest) => (request.params as { matchId: string }).matchId
+    )
   ];
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/clock/game/start",
-    { preHandler: clockPreHandlers },
+    { preHandler: gameClockPreHandlers },
     async (request, reply) => {
       const command = gameClockStartCommandSchema.parse(request.body);
 
@@ -539,7 +572,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/clock/game/stop",
-    { preHandler: clockPreHandlers },
+    { preHandler: gameClockPreHandlers },
     async (request, reply) => {
       const command = gameClockStopCommandSchema.parse(request.body);
 
@@ -555,7 +588,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/clock/game/set",
-    { preHandler: clockPreHandlers },
+    { preHandler: gameClockPreHandlers },
     async (request, reply) => {
       const command = gameClockSetCommandSchema.parse(request.body);
 
@@ -571,7 +604,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/clock/shot/reset",
-    { preHandler: clockPreHandlers },
+    { preHandler: shotClockPreHandlers },
     async (request, reply) => {
       const command = shotClockResetCommandSchema.parse(request.body);
 
@@ -587,7 +620,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/clock/shot/set",
-    { preHandler: clockPreHandlers },
+    { preHandler: shotClockPreHandlers },
     async (request, reply) => {
       const command = shotClockSetCommandSchema.parse(request.body);
 
@@ -603,7 +636,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/timeout/grant",
-    { preHandler: clockPreHandlers },
+    { preHandler: timeoutPreHandlers },
     async (request, reply) => {
       const command = timeoutGrantCommandSchema.parse(request.body);
 
@@ -619,7 +652,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/timeout/end",
-    { preHandler: clockPreHandlers },
+    { preHandler: timeoutPreHandlers },
     async (request, reply) => {
       const command = timeoutEndCommandSchema.parse(request.body);
 
@@ -635,7 +668,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/lifecycle/start-match",
-    { preHandler: clockPreHandlers },
+    { preHandler: lifecyclePreHandlers },
     async (request, reply) => {
       const command = lifecycleCommandSchema.parse(request.body);
 
@@ -651,7 +684,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/lifecycle/end-period",
-    { preHandler: clockPreHandlers },
+    { preHandler: lifecyclePreHandlers },
     async (request, reply) => {
       const command = lifecycleCommandSchema.parse(request.body);
 
@@ -667,7 +700,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/lifecycle/start-next-period",
-    { preHandler: clockPreHandlers },
+    { preHandler: lifecyclePreHandlers },
     async (request, reply) => {
       const command = lifecycleCommandSchema.parse(request.body);
 
@@ -683,7 +716,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/lifecycle/start-overtime",
-    { preHandler: clockPreHandlers },
+    { preHandler: lifecyclePreHandlers },
     async (request, reply) => {
       const command = lifecycleCommandSchema.parse(request.body);
 
@@ -699,7 +732,7 @@ export function registerMatchRoutes(
 
   app.post<{ Params: { matchId: string } }>(
     "/api/v1/matches/:matchId/commands/lifecycle/finish-match",
-    { preHandler: clockPreHandlers },
+    { preHandler: lifecyclePreHandlers },
     async (request, reply) => {
       const command = lifecycleCommandSchema.parse(request.body);
 
@@ -718,11 +751,11 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
+        auth.requireCsrf,
         auth.requireMatchPermission(
           "match.correction.request",
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {
@@ -755,11 +788,11 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
+        auth.requireCsrf,
         auth.requireMatchPermission(
           "match.correction.apply",
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {
@@ -792,11 +825,11 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
+        auth.requireCsrf,
         auth.requireMatchPermission(
           "match.correction.reject",
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {
@@ -857,11 +890,11 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
+        auth.requireCsrf,
         auth.requireMatchPermission(
           "match.correction.request",
           (request) => (request.params as { matchId: string }).matchId
-        ),
-        auth.requireCsrf
+        )
       ]
     },
     async (request, reply) => {

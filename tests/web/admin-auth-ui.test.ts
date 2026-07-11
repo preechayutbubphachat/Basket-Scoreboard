@@ -33,7 +33,12 @@ import {
   buildOperatorMatchCard,
   canAccessOperatorMatches,
   canReadAuditLog,
+  canOperateFoul,
+  canOperateGameClock,
+  canOperateLifecycle,
   canOperateScore,
+  canOperateShotClock,
+  canOperateTimeout,
   createEmptyOperatorMatchesMessage
 } from "../../apps/web/src/lib/operatorMatches";
 import {
@@ -2480,16 +2485,60 @@ describe("operator match landing UI policy", () => {
     expect(card.currentSeqLabel).toBe("Seq 0");
   });
 
-  test("score control requires score operation permission", () => {
+  test("operator controls require granular permission and an active matching assignment", () => {
     const scorerUser: AuthenticatedUser = {
       ...viewerUser,
       role: "SCORER",
       roles: ["SCORER"],
-      permissions: ["match.read", "match.score.operate", "public.scoreboard.read"]
+      permissions: [
+        "match.read",
+        "match.score.operate",
+        "match.foul.operate",
+        "match.clock.game.operate",
+        "match.clock.shot.operate",
+        "match.timeout.operate",
+        "match.lifecycle.operate",
+        "public.scoreboard.read"
+      ],
+      assignedMatchIds: ["match-1"],
+      matchAssignments: [{
+        id: "assignment-1",
+        matchId: "match-1",
+        userId: viewerUser.userId,
+        roleCode: "SCORER",
+        assignmentStatus: "ACTIVE",
+        assignedAt: "2026-07-01T00:00:00.000Z",
+        revokedAt: null
+      }]
     };
 
-    expect(canOperateScore(scorerUser)).toBe(true);
-    expect(canOperateScore(viewerUser)).toBe(false);
+    expect(canOperateScore(scorerUser, "match-1")).toBe(true);
+    expect(canOperateFoul(scorerUser, "match-1")).toBe(true);
+    expect(canOperateTimeout(scorerUser, "match-1")).toBe(false);
+    expect(canOperateLifecycle(scorerUser, "match-1")).toBe(false);
+    expect(canOperateScore(scorerUser, "match-2")).toBe(false);
+    expect(canOperateScore(viewerUser, "match-1")).toBe(false);
+
+    const timerUser: AuthenticatedUser = {
+      ...scorerUser,
+      matchAssignments: [{ ...scorerUser.matchAssignments![0], roleCode: "TIMER" }]
+    };
+    expect(canOperateGameClock(timerUser, "match-1")).toBe(true);
+    expect(canOperateShotClock(timerUser, "match-1")).toBe(false);
+    expect(canOperateScore(timerUser, "match-1")).toBe(false);
+
+    const shotClockUser: AuthenticatedUser = {
+      ...scorerUser,
+      matchAssignments: [{ ...scorerUser.matchAssignments![0], roleCode: "SHOT_CLOCK_OPERATOR" }]
+    };
+    expect(canOperateShotClock(shotClockUser, "match-1")).toBe(true);
+    expect(canOperateGameClock(shotClockUser, "match-1")).toBe(false);
+
+    const revokedUser: AuthenticatedUser = {
+      ...scorerUser,
+      matchAssignments: [{ ...scorerUser.matchAssignments![0], assignmentStatus: "REVOKED" }]
+    };
+    expect(canOperateScore(revokedUser, "match-1")).toBe(false);
     expect(canReadAuditLog(adminUser)).toBe(true);
     expect(canReadAuditLog(scorerUser)).toBe(false);
     expect(buildOperatorMatchScoreLink("match 1")).toBe("/operator/matches/match%201/score");

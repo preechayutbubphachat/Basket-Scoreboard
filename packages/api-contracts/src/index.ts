@@ -799,11 +799,61 @@ export type PermissionCode =
   | "match.create"
   | "match.read"
   | "match.score.operate"
+  | "match.foul.operate"
+  | "match.clock.game.operate"
+  | "match.clock.shot.operate"
+  | "match.timeout.operate"
+  | "match.lifecycle.operate"
   | "match.correction.request"
   | "match.correction.apply"
   | "match.correction.reject"
   | "match.audit.read"
   | "public.scoreboard.read";
+
+export type MatchOperatorPermission =
+  | "match.score.operate"
+  | "match.foul.operate"
+  | "match.clock.game.operate"
+  | "match.clock.shot.operate"
+  | "match.timeout.operate"
+  | "match.lifecycle.operate";
+
+export const matchOperatorPermissions: readonly MatchOperatorPermission[] = [
+  "match.score.operate",
+  "match.foul.operate",
+  "match.clock.game.operate",
+  "match.clock.shot.operate",
+  "match.timeout.operate",
+  "match.lifecycle.operate"
+];
+
+export function assignmentRoleAllowsPermission(roleCode: string, permission: PermissionCode) {
+  if (permission === "match.read") return true;
+
+  const operatorPermissionsByAssignment: Partial<Record<MatchOfficialRoleCode, readonly MatchOperatorPermission[]>> = {
+    SCORER: ["match.score.operate", "match.foul.operate"],
+    ASSISTANT_SCORER: ["match.score.operate", "match.foul.operate"],
+    TIMER: ["match.clock.game.operate"],
+    SHOT_CLOCK_OPERATOR: ["match.clock.shot.operate"],
+    MATCH_OPERATOR: matchOperatorPermissions
+  };
+
+  if (matchOperatorPermissions.includes(permission as MatchOperatorPermission)) {
+    return operatorPermissionsByAssignment[roleCode as MatchOfficialRoleCode]?.includes(
+      permission as MatchOperatorPermission
+    ) ?? false;
+  }
+
+  if (permission === "match.correction.request") {
+    return ["SCORER", "ASSISTANT_SCORER", "MATCH_OPERATOR", "REFEREE"].includes(roleCode);
+  }
+
+  if (permission === "match.correction.apply" || permission === "match.correction.reject") {
+    return roleCode === "REFEREE";
+  }
+
+  return false;
+}
 
 export type AuthenticatedUser = {
   userId: string;

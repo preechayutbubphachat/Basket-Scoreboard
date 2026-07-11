@@ -1,11 +1,56 @@
-import type { AuthenticatedUser, OperatorMatchSummary } from "@basket-scoreboard/api-contracts";
+import {
+  assignmentRoleAllowsPermission,
+  type AuthenticatedUser,
+  type OperatorMatchSummary,
+  type PermissionCode
+} from "@basket-scoreboard/api-contracts";
 
 export function canAccessOperatorMatches(user: AuthenticatedUser | null) {
   return user?.role === "ADMIN" || user?.role === "SCORER" || user?.role === "REFEREE";
 }
 
-export function canOperateScore(user: AuthenticatedUser | null) {
-  return user?.permissions.includes("match.score.operate") ?? false;
+export function canOperateMatchPermission(
+  user: AuthenticatedUser | null,
+  matchId: string,
+  permission: PermissionCode
+) {
+  if (!user?.permissions.includes(permission)) return false;
+  if (user.role === "ADMIN") return true;
+
+  if (user.matchAssignments) {
+    return user.matchAssignments.some(
+      (assignment) =>
+        assignment.matchId === matchId &&
+        assignment.assignmentStatus === "ACTIVE" &&
+        assignmentRoleAllowsPermission(assignment.roleCode, permission)
+    );
+  }
+
+  return user.assignedMatchIds.includes(matchId);
+}
+
+export function canOperateScore(user: AuthenticatedUser | null, matchId: string) {
+  return canOperateMatchPermission(user, matchId, "match.score.operate");
+}
+
+export function canOperateFoul(user: AuthenticatedUser | null, matchId: string) {
+  return canOperateMatchPermission(user, matchId, "match.foul.operate");
+}
+
+export function canOperateGameClock(user: AuthenticatedUser | null, matchId: string) {
+  return canOperateMatchPermission(user, matchId, "match.clock.game.operate");
+}
+
+export function canOperateShotClock(user: AuthenticatedUser | null, matchId: string) {
+  return canOperateMatchPermission(user, matchId, "match.clock.shot.operate");
+}
+
+export function canOperateTimeout(user: AuthenticatedUser | null, matchId: string) {
+  return canOperateMatchPermission(user, matchId, "match.timeout.operate");
+}
+
+export function canOperateLifecycle(user: AuthenticatedUser | null, matchId: string) {
+  return canOperateMatchPermission(user, matchId, "match.lifecycle.operate");
 }
 
 export function createEmptyOperatorMatchesMessage() {
