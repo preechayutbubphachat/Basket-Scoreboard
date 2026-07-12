@@ -5,7 +5,8 @@ import type { ServerOptions } from "socket.io";
 import {
   matchJoinPayloadSchema,
   reasonCodes,
-  type ProjectionUpdatedPayload,
+  type PublicMatchSnapshotPayload,
+  type PublicProjectionUpdatedPayload,
   type RealtimeErrorPayload,
   type ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
@@ -64,12 +65,12 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
       }
 
       await socket.join(matchRoom(payload.matchId));
-      socket.emit("match:snapshot", {
+      const snapshot: PublicMatchSnapshotPayload = {
         matchId: payload.matchId,
-        lastEventSeq: projection.lastEventSeq ?? projection.currentSeq,
         publicScoreboard: toPublicScoreboardProjection(projection),
         serverTime: new Date().toISOString()
-      });
+      };
+      socket.emit("match:snapshot", snapshot);
     });
 
     socket.on("COMMAND_SUBMIT", () => {
@@ -82,9 +83,8 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
 
   return {
     emitProjectionUpdated(projection) {
-      const payload: ProjectionUpdatedPayload = {
+      const payload: PublicProjectionUpdatedPayload = {
         matchId: projection.matchId,
-        lastEventSeq: projection.lastEventSeq ?? projection.currentSeq,
         updatedAt: projection.updatedAt ?? new Date().toISOString(),
         publicScoreboard: toPublicScoreboardProjection(projection)
       };

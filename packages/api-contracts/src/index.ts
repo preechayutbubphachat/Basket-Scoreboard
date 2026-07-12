@@ -1587,9 +1587,21 @@ export type MatchSnapshotPayload = {
   serverTime: string;
 };
 
+export type PublicMatchSnapshotPayload = {
+  matchId: string;
+  publicScoreboard: PublicScoreboardProjection;
+  serverTime: string;
+};
+
 export type ProjectionUpdatedPayload = {
   matchId: string;
   lastEventSeq: number;
+  updatedAt: string;
+  publicScoreboard: PublicScoreboardProjection;
+};
+
+export type PublicProjectionUpdatedPayload = {
+  matchId: string;
   updatedAt: string;
   publicScoreboard: PublicScoreboardProjection;
 };

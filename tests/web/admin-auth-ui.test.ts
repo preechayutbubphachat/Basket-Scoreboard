@@ -180,8 +180,7 @@ import {
   getPublicPollingIntervalMs,
   getRealtimeConnectionLabel,
   getSocketBaseUrl,
-  parseRealtimeSocketTransports,
-  shouldRefetchAfterRealtimeProjection
+  parseRealtimeSocketTransports
 } from "../../apps/web/src/lib/realtimeProjectionSync";
 import {
   buildPublicScoreboardDisplayLink,
@@ -4603,7 +4602,7 @@ describe("public scoreboard realtime sync policy", () => {
     expect(parseRealtimeSocketTransports(undefined)).toEqual(["polling", "websocket"]);
   });
 
-  test("applies realtime projection updates at the same or newer sequence", () => {
+  test("applies complete public realtime projections without a sequence cursor", () => {
     const incoming: ScoreboardProjection = {
       ...scoreboardProjection,
       homeScore: 12,
@@ -4611,36 +4610,25 @@ describe("public scoreboard realtime sync policy", () => {
       lastEventSeq: 4
     };
 
-    expect(applyRealtimeProjectionUpdate(scoreboardProjection, incoming, 3, 4)).toEqual(incoming);
-    expect(applyRealtimeProjectionUpdate({ ...scoreboardProjection, currentSeq: 4 }, incoming, 4, 4)).toEqual(incoming);
+    expect(applyRealtimeProjectionUpdate(scoreboardProjection, incoming)).toEqual(incoming);
+    expect(applyRealtimeProjectionUpdate(incoming, incoming)).toEqual(incoming);
   });
 
-  test("ignores stale realtime projection updates so polling remains authoritative", () => {
+  test("treats duplicate complete public notifications as idempotent replacement", () => {
     const current: ScoreboardProjection = {
       ...scoreboardProjection,
       homeScore: 12,
       currentSeq: 5,
       lastEventSeq: 5
     };
-    const stale: ScoreboardProjection = {
+    const duplicate: ScoreboardProjection = {
       ...scoreboardProjection,
-      homeScore: 10,
-      currentSeq: 4,
-      lastEventSeq: 4
-    };
-
-    expect(applyRealtimeProjectionUpdate(current, stale, 5, 4)).toBe(current);
-  });
-
-  test("detects realtime sequence gaps so callers can refetch authoritative projection", () => {
-    const current: ScoreboardProjection = {
-      ...scoreboardProjection,
+      homeScore: 12,
       currentSeq: 5,
       lastEventSeq: 5
     };
 
-    expect(shouldRefetchAfterRealtimeProjection(5, 6)).toBe(false);
-    expect(shouldRefetchAfterRealtimeProjection(5, 8)).toBe(true);
+    expect(applyRealtimeProjectionUpdate(current, duplicate)).toEqual(duplicate);
   });
 
   test("derives socket base URL from same-origin and absolute API bases", () => {

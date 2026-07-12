@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { io as createSocketClient, type Socket } from "socket.io-client";
 import { buildApiApp } from "../../apps/api/src/app";
 import { parseRealtimeSocketTransports } from "../../apps/api/src/realtime/projectionRealtime";
-import type { ScoreboardProjection } from "../../packages/api-contracts/src";
+import type {
+  PublicMatchSnapshotPayload,
+  PublicProjectionUpdatedPayload,
+  ScoreboardProjection
+} from "../../packages/api-contracts/src";
 
 const matchId = "11111111-1111-4111-8111-111111111111";
 
@@ -120,6 +124,21 @@ function waitForSocketEvent<T>(socket: Socket, eventName: string, timeoutMs = 30
   });
 }
 
+const forbiddenPublicKeys = new Set([
+  "lastEventSeq", "currentSeq", "expectedSeq", "projectionVersion", "eventSeq", "streamVersion",
+  "actor", "device", "session", "token", "csrf", "commandId", "correlationId", "causationId",
+  "audit", "correction", "permissions", "assignments", "rawEvents"
+]);
+
+function collectForbiddenPublicKeys(value: unknown, found = new Set<string>()) {
+  if (!value || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
+    if (forbiddenPublicKeys.has(key)) found.add(key);
+    collectForbiddenPublicKeys(child, found);
+  }
+  return found;
+}
+
 async function startRealtimeApp(pool: unknown) {
   const app = buildApiApp({ pool: pool as never, realtime: { enabled: true } });
   const address = await app.listen({ port: 0, host: "127.0.0.1" });
@@ -145,20 +164,19 @@ describe("realtime projection sync", () => {
     try {
       await waitForSocketEvent(socket, "connect");
       const snapshotPromise = waitForSocketEvent(socket, "match:snapshot");
-      socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
-      const snapshot = await snapshotPromise;
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
+      const snapshot = await snapshotPromise as PublicMatchSnapshotPayload;
+      expect(Object.keys(snapshot).sort()).toEqual(["matchId", "publicScoreboard", "serverTime"]);
       expect(snapshot).toMatchObject({
         matchId,
-        lastEventSeq: 0,
         publicScoreboard: {
           matchId,
           homeTeamName: "HOME",
           awayTeamName: "AWAY"
         }
       });
-      expect(JSON.stringify((snapshot as { publicScoreboard: unknown }).publicScoreboard)).not.toMatch(
-        /homeTeamId|awayTeamId|playerId|playerFouls|roster|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|projectionVersion/i
-      );
+      expect([...collectForbiddenPublicKeys(snapshot)]).toEqual([]);
+      expect(JSON.stringify(snapshot)).not.toMatch(/homeTeamId|awayTeamId|playerId|playerFouls|roster/i);
     } finally {
       socket.close();
       await app.close();
@@ -174,7 +192,7 @@ describe("realtime projection sync", () => {
     try {
       await waitForSocketEvent(socket, "connect");
       const snapshotPromise = waitForSocketEvent(socket, "match:snapshot");
-      socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
       await expect(snapshotPromise).resolves.toMatchObject({
         matchId,
         publicScoreboard: { matchId }
@@ -205,6 +223,56 @@ describe("realtime projection sync", () => {
     }
   });
 
+  it("denies protected room joins even when a public client forges authority", async () => {
+    const { pool } = createRealtimeFakePool();
+    const { app, address } = await startRealtimeApp(pool);
+    const socket = createSocketClient(address, { transports: ["websocket"], forceNew: true });
+
+    try {
+      await waitForSocketEvent(socket, "connect");
+      const errorPromise = waitForSocketEvent<Record<string, unknown>>(socket, "match:error");
+      socket.emit("match:join", {
+        matchId,
+        view: "OPERATOR",
+        role: "ADMIN",
+        permissions: ["match.score.operate"],
+        assignedMatchIds: [matchId]
+      });
+      const error = await errorPromise;
+      expect(error).toMatchObject({ reasonCode: "FORBIDDEN", matchId });
+      expect(Object.keys(error).sort()).toEqual(["matchId", "message", "reasonCode", "serverTime"]);
+    } finally {
+      socket.close();
+      await app.close();
+    }
+  });
+
+  it("rehydrates a public client after reconnect without a sequence cursor", async () => {
+    const { pool } = createRealtimeFakePool();
+    const { app, address } = await startRealtimeApp(pool);
+    const socket = createSocketClient(address, { transports: ["websocket"], forceNew: true });
+
+    try {
+      await waitForSocketEvent(socket, "connect");
+      const firstSnapshot = waitForSocketEvent<PublicMatchSnapshotPayload>(socket, "match:snapshot");
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
+      expect([...collectForbiddenPublicKeys(await firstSnapshot)]).toEqual([]);
+
+      socket.disconnect();
+      const reconnected = waitForSocketEvent(socket, "connect");
+      socket.connect();
+      await reconnected;
+      const nextSnapshot = waitForSocketEvent<PublicMatchSnapshotPayload>(socket, "match:snapshot");
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
+      const snapshot = await nextSnapshot;
+      expect(Object.keys(snapshot).sort()).toEqual(["matchId", "publicScoreboard", "serverTime"]);
+      expect([...collectForbiddenPublicKeys(snapshot)]).toEqual([]);
+    } finally {
+      socket.close();
+      await app.close();
+    }
+  });
+
   it("emits projection.updated after an accepted score command commits", async () => {
     process.env.AUTH_TEST_DISABLE_CSRF = "true";
     const { pool, events } = createRealtimeFakePool();
@@ -214,7 +282,7 @@ describe("realtime projection sync", () => {
     try {
       await waitForSocketEvent(socket, "connect");
       const snapshotPromise = waitForSocketEvent(socket, "match:snapshot");
-      socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
       await snapshotPromise;
 
       const updatePromise = waitForSocketEvent(socket, "projection.updated");
@@ -241,18 +309,17 @@ describe("realtime projection sync", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      const update = await updatePromise;
+      const update = await updatePromise as PublicProjectionUpdatedPayload;
+      expect(Object.keys(update).sort()).toEqual(["matchId", "publicScoreboard", "updatedAt"]);
       expect(update).toMatchObject({
         matchId,
-        lastEventSeq: 1,
         publicScoreboard: {
           matchId,
           homeScore: 2
         }
       });
-      expect(JSON.stringify((update as { publicScoreboard: unknown }).publicScoreboard)).not.toMatch(
-        /homeTeamId|awayTeamId|playerId|playerFouls|roster|currentSeq|lastEventSeq|seqNo|seq_no|eventSeq|eventSequence|projectionSeq|projectionSequence|last_event_seq|expectedSeq|projectionVersion/i
-      );
+      expect([...collectForbiddenPublicKeys(update)]).toEqual([]);
+      expect(JSON.stringify(update)).not.toMatch(/homeTeamId|awayTeamId|playerId|playerFouls|roster/i);
       expect(events).toHaveLength(1);
     } finally {
       socket.close();
@@ -269,7 +336,7 @@ describe("realtime projection sync", () => {
     try {
       await waitForSocketEvent(socket, "connect");
       const snapshotPromise = waitForSocketEvent(socket, "match:snapshot");
-      socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
       await snapshotPromise;
 
       let emitted = false;
@@ -316,11 +383,14 @@ describe("realtime projection sync", () => {
     try {
       await waitForSocketEvent(socket, "connect");
       const errorPromise = waitForSocketEvent(socket, "match:error");
-      socket.emit("match:join", { matchId, lastSeq: 0, view: "PUBLIC_SCOREBOARD" });
-      await expect(errorPromise).resolves.toMatchObject({
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
+      const error = await errorPromise as Record<string, unknown>;
+      expect(error).toMatchObject({
         reasonCode: "MATCH_NOT_FOUND",
         matchId
       });
+      expect(Object.keys(error).sort()).toEqual(["matchId", "message", "reasonCode", "serverTime"]);
+      expect([...collectForbiddenPublicKeys(error)]).toEqual([]);
     } finally {
       socket.close();
       await app.close();

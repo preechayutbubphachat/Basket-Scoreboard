@@ -1,7 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import type {
-  MatchSnapshotPayload,
-  ProjectionUpdatedPayload,
+  PublicMatchSnapshotPayload,
+  PublicProjectionUpdatedPayload,
   PublicScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
@@ -9,31 +9,18 @@ export type RealtimeSocketTransport = "polling" | "websocket";
 export type RealtimeConnectionState = "CONNECTED" | "RECONNECTING" | "UNAVAILABLE" | "POLLING_FALLBACK";
 
 export type PublicProjectionSocket = Socket<{
-  "match:snapshot": (payload: MatchSnapshotPayload) => void;
-  "projection.updated": (payload: ProjectionUpdatedPayload) => void;
+  "match:snapshot": (payload: PublicMatchSnapshotPayload) => void;
+  "projection.updated": (payload: PublicProjectionUpdatedPayload) => void;
   "match:error": (payload: unknown) => void;
 }, {
-  "match:join": (payload: { matchId: string; lastSeq?: number; view: "PUBLIC_SCOREBOARD" }) => void;
+  "match:join": (payload: { matchId: string; view: "PUBLIC_SCOREBOARD" }) => void;
 }>;
 
 export function applyRealtimeProjectionUpdate<T extends PublicScoreboardProjection>(
-  current: T | null,
-  incoming: T,
-  currentSeq: number,
-  incomingSeq: number
+  _current: T | null,
+  incoming: T
 ) {
-  if (!current) {
-    return incoming;
-  }
-
-  return incomingSeq >= currentSeq ? incoming : current;
-}
-
-export function shouldRefetchAfterRealtimeProjection(
-  currentSeq: number,
-  incomingSeq: number
-) {
-  return currentSeq > 0 && incomingSeq > currentSeq + 1;
+  return incoming;
 }
 
 export function parseRealtimeSocketTransports(rawValue: string | undefined): RealtimeSocketTransport[] {

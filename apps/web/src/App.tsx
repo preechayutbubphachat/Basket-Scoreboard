@@ -285,7 +285,6 @@ import {
   getOperatorPollingIntervalMs,
   getPublicPollingIntervalMs,
   getRealtimeConnectionLabel,
-  shouldRefetchAfterRealtimeProjection,
   type RealtimeConnectionState
 } from "./lib/realtimeProjectionSync";
 
@@ -2903,25 +2902,16 @@ function OperatorMatchesPage() {
 
 function usePublicProjectionRealtime(
   matchId: string,
-  projection: ScoreboardProjection | PublicScoreboardProjection | null,
+  _projection: ScoreboardProjection | PublicScoreboardProjection | null,
   setProjection: React.Dispatch<React.SetStateAction<ScoreboardProjection | null>> | React.Dispatch<React.SetStateAction<PublicScoreboardProjection | null>>,
   onProjectionReceived?: () => void,
   onSequenceGap?: () => void | Promise<void>,
   visibility: "PROTECTED" | "PUBLIC" = "PROTECTED"
 ) {
   const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("POLLING_FALLBACK");
-  const projectionSeqRef = useRef(0);
-  const projectionRef = useRef<ScoreboardProjection | PublicScoreboardProjection | null>(null);
   const onProjectionReceivedRef = useRef(onProjectionReceived);
   const onSequenceGapRef = useRef(onSequenceGap);
   const fallbackTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    projectionRef.current = projection;
-    if (projection && "currentSeq" in projection) {
-      projectionSeqRef.current = projection.lastEventSeq ?? projection.currentSeq;
-    }
-  }, [projection]);
 
   useEffect(() => {
     onProjectionReceivedRef.current = onProjectionReceived;
@@ -2953,31 +2943,18 @@ function usePublicProjectionRealtime(
       setRealtimeState("CONNECTED");
       socket.emit("match:join", {
         matchId,
-        lastSeq: projectionSeqRef.current,
         view: "PUBLIC_SCOREBOARD"
       });
     };
 
-    const applyProjection = (next: PublicScoreboardProjection, incomingSeq: number, authoritative: boolean) => {
-      const currentSeq = projectionSeqRef.current;
-      if (!authoritative && shouldRefetchAfterRealtimeProjection(currentSeq, incomingSeq)) {
-        projectionSeqRef.current = incomingSeq;
-        void onSequenceGapRef.current?.();
-        return;
-      }
-
-      if (!authoritative && projectionRef.current && incomingSeq < currentSeq) {
-        return;
-      }
-
-      projectionSeqRef.current = incomingSeq;
+    const applyProjection = (next: PublicScoreboardProjection) => {
       if (visibility === "PROTECTED") {
         void onSequenceGapRef.current?.();
         return;
       }
 
       const publicSetter = setProjection as React.Dispatch<React.SetStateAction<PublicScoreboardProjection | null>>;
-      publicSetter((current) => applyRealtimeProjectionUpdate(current, next, currentSeq, incomingSeq));
+      publicSetter((current) => applyRealtimeProjectionUpdate(current, next));
       onProjectionReceivedRef.current?.();
     };
 
@@ -2996,12 +2973,12 @@ function usePublicProjectionRealtime(
     });
     socket.on("match:snapshot", (payload) => {
       if (payload.matchId === matchId) {
-        applyProjection(payload.publicScoreboard, payload.lastEventSeq, true);
+        applyProjection(payload.publicScoreboard);
       }
     });
     socket.on("projection.updated", (payload) => {
       if (payload.matchId === matchId) {
-        applyProjection(payload.publicScoreboard, payload.lastEventSeq, false);
+        applyProjection(payload.publicScoreboard);
       }
     });
     socket.on("match:error", () => {
