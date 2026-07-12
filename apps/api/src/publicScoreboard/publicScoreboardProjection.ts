@@ -1,6 +1,8 @@
-import type {
-  PublicScoreboardProjection,
-  ScoreboardProjection
+import {
+  normalizeBrandAssetReference,
+  type PublicDisplayTheme,
+  type PublicScoreboardProjection,
+  type ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
 export function toPublicScoreboardProjection(
@@ -71,6 +73,38 @@ export function toPublicScoreboardProjection(
             : null
         }
       : {}),
-    ...(projection.displayTheme !== undefined ? { displayTheme: projection.displayTheme } : {})
+    ...(projection.displayTheme !== undefined ? { displayTheme: sanitizePublicDisplayTheme(projection.displayTheme) } : {})
+  };
+}
+
+export function sanitizePublicDisplayTheme(theme: PublicDisplayTheme | null): PublicDisplayTheme | null {
+  if (!theme) {
+    return null;
+  }
+
+  return {
+    tournament: {
+      displayName: theme.tournament.displayName,
+      logoUrl: normalizeBrandAssetReference(theme.tournament.logoUrl),
+      showLogo: theme.tournament.showLogo,
+      backgroundStyle: theme.tournament.backgroundStyle,
+      colors: { ...theme.tournament.colors }
+    },
+    home: {
+      displayName: theme.home.displayName,
+      logoUrl: normalizeBrandAssetReference(theme.home.logoUrl),
+      showLogo: theme.home.showLogo,
+      colors: { ...theme.home.colors }
+    },
+    away: {
+      displayName: theme.away.displayName,
+      logoUrl: normalizeBrandAssetReference(theme.away.logoUrl),
+      showLogo: theme.away.showLogo,
+      colors: { ...theme.away.colors }
+    },
+    flags: {
+      textOnlyFallback: theme.flags.textOnlyFallback,
+      neutralHighContrast: theme.flags.neutralHighContrast
+    }
   };
 }

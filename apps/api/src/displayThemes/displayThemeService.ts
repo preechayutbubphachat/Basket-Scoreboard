@@ -1,6 +1,7 @@
 import type { Pool } from "mysql2/promise";
 import {
   reasonCodes,
+  normalizeBrandAssetReference,
   type DisplayColors,
   type MatchDisplayOverrideInput,
   type MatchDisplayOverrideResponse,
@@ -165,25 +166,28 @@ export async function resolvePublicDisplayTheme(pool: Pool, matchId: string): Pr
 
   const textOnlyFallback = override.textOnlyFallback;
   const neutralHighContrast = override.neutralHighContrast;
+  const tournamentLogoUrl = normalizeBrandAssetReference(tournamentTheme?.logoUrl);
+  const homeLogoUrl = normalizeBrandAssetReference(homeProfile?.logoUrl);
+  const awayLogoUrl = normalizeBrandAssetReference(awayProfile?.logoUrl);
 
   return {
     tournament: {
       displayName: tournamentTheme?.active ? tournamentTheme.displayName ?? context.tournament_name : context.tournament_name,
-      logoUrl: tournamentTheme?.active && tournamentTheme.showTournamentLogo ? tournamentTheme.logoUrl : null,
-      showLogo: Boolean(tournamentTheme?.active && tournamentTheme.showTournamentLogo && tournamentTheme.logoUrl && !textOnlyFallback),
+      logoUrl: tournamentTheme?.active && tournamentTheme.showTournamentLogo && !textOnlyFallback ? tournamentLogoUrl : null,
+      showLogo: Boolean(tournamentTheme?.active && tournamentTheme.showTournamentLogo && !textOnlyFallback),
       backgroundStyle: tournamentTheme?.active ? tournamentTheme.backgroundStyle : "DEFAULT_ARENA",
       colors: neutralHighContrast ? defaultColors : pickColors(tournamentTheme ?? null)
     },
     home: {
       displayName: homeProfile?.active ? homeProfile.displayName ?? context.home_team_name ?? "HOME" : context.home_team_name ?? "HOME",
-      logoUrl: homeProfile?.active && homeProfile.showTeamLogo && override.showTeamLogos && !textOnlyFallback ? homeProfile.logoUrl : null,
-      showLogo: Boolean(homeProfile?.active && homeProfile.showTeamLogo && override.showTeamLogos && homeProfile.logoUrl && !textOnlyFallback),
+      logoUrl: homeProfile?.active && homeProfile.showTeamLogo && override.showTeamLogos && !textOnlyFallback ? homeLogoUrl : null,
+      showLogo: Boolean(homeProfile?.active && homeProfile.showTeamLogo && override.showTeamLogos && !textOnlyFallback),
       colors: neutralHighContrast ? highContrastHome : mergeColors(pickColors(homeProfile), override.home)
     },
     away: {
       displayName: awayProfile?.active ? awayProfile.displayName ?? context.away_team_name ?? "AWAY" : context.away_team_name ?? "AWAY",
-      logoUrl: awayProfile?.active && awayProfile.showTeamLogo && override.showTeamLogos && !textOnlyFallback ? awayProfile.logoUrl : null,
-      showLogo: Boolean(awayProfile?.active && awayProfile.showTeamLogo && override.showTeamLogos && awayProfile.logoUrl && !textOnlyFallback),
+      logoUrl: awayProfile?.active && awayProfile.showTeamLogo && override.showTeamLogos && !textOnlyFallback ? awayLogoUrl : null,
+      showLogo: Boolean(awayProfile?.active && awayProfile.showTeamLogo && override.showTeamLogos && !textOnlyFallback),
       colors: neutralHighContrast ? highContrastAway : mergeColors(pickColors(awayProfile), override.away)
     },
     flags: {

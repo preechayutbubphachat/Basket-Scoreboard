@@ -1952,7 +1952,7 @@ describe("web API client", () => {
       displayTheme: {
         tournament: {
           displayName: "Youth Cup Display",
-          logoUrl: "https://cdn.example.com/tournament.png",
+          logoUrl: "/assets/branding/tournaments/tournament.png",
           showLogo: true,
           backgroundStyle: "DARK_GRADIENT",
           colors: {
@@ -1964,7 +1964,7 @@ describe("web API client", () => {
         },
         home: {
           displayName: "Bangkok Tigers",
-          logoUrl: "https://cdn.example.com/tigers.png",
+          logoUrl: "/assets/branding/teams/tigers.png",
           showLogo: true,
           colors: {
             primaryColor: "#cc0000",
@@ -1975,7 +1975,7 @@ describe("web API client", () => {
         },
         away: {
           displayName: "Phuket Sharks",
-          logoUrl: "https://cdn.example.com/sharks.png",
+          logoUrl: "/assets/branding/teams/sharks.png",
           showLogo: true,
           colors: {
             primaryColor: "#0033cc",
@@ -2004,14 +2004,14 @@ describe("web API client", () => {
     });
     expect(display.tournament).toMatchObject({
       displayName: "Youth Cup Display",
-      logoUrl: "https://cdn.example.com/tournament.png",
+      logoUrl: "/assets/branding/tournaments/tournament.png",
       showLogo: true
     });
     expect(display.matchCodeLabel).toBeNull();
     expect(display.statusClassName).toBe("arena-live-badge is-live");
     expect(display.home).toMatchObject({
       teamName: "Bangkok Tigers",
-      logoUrl: "https://cdn.example.com/tigers.png",
+      logoUrl: "/assets/branding/teams/tigers.png",
       showLogo: true,
       style: {
         "--team-primary": "#cc0000",
@@ -2120,20 +2120,20 @@ describe("web API client", () => {
     const themed = buildPublicDisplayThemeView({
       tournament: {
         displayName: "Youth Cup",
-        logoUrl: "https://cdn.example.com/youth.png",
+        logoUrl: "/assets/branding/tournaments/youth.png",
         showLogo: true,
         backgroundStyle: "SOLID",
         colors: { primaryColor: "#111111", secondaryColor: "#222222", accentColor: "#333333", textColor: "#ffffff" }
       },
       home: {
         displayName: "Tigers",
-        logoUrl: "https://cdn.example.com/tigers.png",
+        logoUrl: "/assets/branding/teams/tigers.png",
         showLogo: true,
         colors: { primaryColor: "#ff0000", secondaryColor: null, accentColor: "#ffcc00", textColor: "#ffffff" }
       },
       away: {
         displayName: "Sharks",
-        logoUrl: "https://cdn.example.com/sharks.png",
+        logoUrl: "/assets/branding/teams/sharks.png",
         showLogo: true,
         colors: { primaryColor: "#0000ff", secondaryColor: null, accentColor: "#00ccff", textColor: "#ffffff" }
       },
@@ -2142,20 +2142,20 @@ describe("web API client", () => {
     const textOnly = buildPublicDisplayThemeView({
       tournament: {
         displayName: "Youth Cup",
-        logoUrl: "https://cdn.example.com/youth.png",
+        logoUrl: "/assets/branding/tournaments/youth.png",
         showLogo: true,
         backgroundStyle: "HIGH_CONTRAST",
         colors: { primaryColor: "#111111", secondaryColor: "#222222", accentColor: "#333333", textColor: "#ffffff" }
       },
       home: {
         displayName: "Tigers",
-        logoUrl: "https://cdn.example.com/tigers.png",
+        logoUrl: "/assets/branding/teams/tigers.png",
         showLogo: true,
         colors: { primaryColor: "#bad", secondaryColor: null, accentColor: "#ffcc00", textColor: "#ffffff" }
       },
       away: {
         displayName: "Sharks",
-        logoUrl: "https://cdn.example.com/sharks.png",
+        logoUrl: "/assets/branding/teams/sharks.png",
         showLogo: true,
         colors: { primaryColor: "#0000ff", secondaryColor: null, accentColor: "#00ccff", textColor: "#ffffff" }
       },
@@ -3223,7 +3223,7 @@ describe("tournament schedule UI policy", () => {
     });
 
     expect(validateTournamentDisplayThemeForm({ ...tournamentState, primaryColor: "#12GG00" })).toContain("#RRGGBB");
-    expect(validateTeamDisplayProfileForm({ ...teamState, logoUrl: "javascript:alert(1)" })).toContain("Logo URL");
+    expect(validateTeamDisplayProfileForm({ ...teamState, logoUrl: "javascript:alert(1)" })).toContain("/assets/branding/");
     expect(validateMatchDisplayOverrideForm({ ...matchState, awayAccentColor: "blue" })).toContain("#RRGGBB");
 
     expect(createTournamentDisplayThemePayload({

@@ -942,28 +942,68 @@ const nullableDisplayColorSchema = z.preprocess(
   displayColorSchema.nullable().optional()
 );
 
+const brandAssetRoot = "/assets/branding/";
+const brandAssetExtension = /\.(?:png|jpe?g|webp|avif|svg)$/i;
+
+export function normalizeBrandAssetReference(input: unknown): string | null {
+  if (input === null || input === undefined) {
+    return null;
+  }
+  if (typeof input !== "string") {
+    return null;
+  }
+
+  let value = input.trim();
+  if (!value) {
+    return null;
+  }
+  if (/[\u0000-\u001F\u007F<>\\]/.test(value)) {
+    return null;
+  }
+
+  for (let pass = 0; pass < 5; pass += 1) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(value);
+    } catch {
+      return null;
+    }
+    if (decoded === value) {
+      break;
+    }
+    value = decoded;
+    if (/[\u0000-\u001F\u007F<>\\]/.test(value)) {
+      return null;
+    }
+    if (pass === 4 && /%[0-9a-f]{2}/i.test(value)) {
+      return null;
+    }
+  }
+
+  if (!value.startsWith(brandAssetRoot) || value.includes("?") || value.includes("#")) {
+    return null;
+  }
+
+  const segments = value.split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    return null;
+  }
+
+  const normalized = `/${segments.filter(Boolean).join("/")}`;
+  if (!normalized.startsWith(brandAssetRoot) || !brandAssetExtension.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
 const safeLogoUrlSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? null : value),
   z.string()
     .trim()
     .max(1024)
-    .refine((value) => !/[\u0000-\u001F\u007F<>]/.test(value), "Logo URL contains unsafe characters")
-    .refine((value) => {
-      const lower = value.toLowerCase();
-      return !lower.startsWith("javascript:") && !lower.startsWith("data:");
-    }, "Logo URL scheme is not allowed")
-    .refine((value) => {
-      if (value.startsWith("/assets/")) {
-        return true;
-      }
-
-      try {
-        const parsed = new URL(value);
-        return parsed.protocol === "https:" && parsed.username === "" && parsed.password === "";
-      } catch {
-        return false;
-      }
-    }, "Logo URL must be https or a safe public asset path")
+    .refine((value) => normalizeBrandAssetReference(value) !== null, "Logo must use a first-party branding asset path")
+    .transform((value) => normalizeBrandAssetReference(value) as string)
     .nullable()
     .optional()
 );

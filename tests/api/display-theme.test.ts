@@ -205,7 +205,7 @@ describe("display branding theme foundation", () => {
         headers: { "x-dev-user-role": "ADMIN" },
         payload: {
           displayName: "Youth Championship",
-          logoUrl: "https://cdn.example.com/logo.png",
+          logoUrl: "/assets/branding/tournaments/logo.png",
           primaryColor: "#112233",
           secondaryColor: "#445566",
           accentColor: "#ffaa00",
@@ -223,7 +223,7 @@ describe("display branding theme foundation", () => {
           theme: {
             tournamentId,
             displayName: "Youth Championship",
-            logoUrl: "https://cdn.example.com/logo.png",
+            logoUrl: "/assets/branding/tournaments/logo.png",
             primaryColor: "#112233",
             backgroundStyle: "DARK_GRADIENT"
           }
@@ -311,7 +311,7 @@ describe("display branding theme foundation", () => {
         headers: { "x-dev-user-role": "ADMIN" },
         payload: {
           displayName: "Tigers",
-          logoUrl: "/assets/tigers.png",
+          logoUrl: "/assets/branding/teams/tigers.png",
           primaryColor: "#cc0000",
           showTeamLogo: true
         }
@@ -319,7 +319,7 @@ describe("display branding theme foundation", () => {
       expect(team.statusCode).toBe(200);
       expect(team.json()).toMatchObject({
         ok: true,
-        data: { profile: { teamId: homeTeamId, displayName: "Tigers", logoUrl: "/assets/tigers.png" } }
+        data: { profile: { teamId: homeTeamId, displayName: "Tigers", logoUrl: "/assets/branding/teams/tigers.png" } }
       });
 
       const override = await app.inject({
@@ -418,17 +418,17 @@ describe("display branding theme foundation", () => {
     expect(theme).toMatchObject({
       tournament: {
         displayName: "Youth Cup Display",
-        logoUrl: "https://cdn.example.com/tournament.png",
+        logoUrl: null,
         backgroundStyle: "DARK_GRADIENT"
       },
       home: {
         displayName: "Tigers",
-        logoUrl: "https://cdn.example.com/tigers.png",
+        logoUrl: null,
         colors: { primaryColor: "#ff0000", accentColor: "#ffcc00" }
       },
       away: {
         displayName: "Sharks",
-        logoUrl: "https://cdn.example.com/sharks.png",
+        logoUrl: null,
         colors: { primaryColor: "#0000ff", accentColor: "#00ccff" }
       },
       flags: {
@@ -438,6 +438,7 @@ describe("display branding theme foundation", () => {
     });
 
     const serialized = JSON.stringify(theme);
+    expect(serialized).not.toContain("https://cdn.example.com");
     expect(serialized).not.toContain("Private match-day note");
     expect(serialized).not.toMatch(/created_by_user_id|updated_by_user_id|emergency_reason|commandId|correlationId|causationId|csrf|token|audit|correctionDetails/i);
   });
@@ -476,7 +477,7 @@ describe("display branding theme foundation", () => {
     await pool.query("INSERT INTO tournament_display_themes", [
       tournamentId,
       "Youth Cup Display",
-      "https://cdn.example.com/tournament.png",
+      "/assets/branding/tournaments/tournament.png",
       "#111111",
       "#222222",
       "#333333",
@@ -490,7 +491,7 @@ describe("display branding theme foundation", () => {
     await pool.query("INSERT INTO team_display_profiles", [
       homeTeamId,
       "Tigers",
-      "https://cdn.example.com/tigers.png",
+      "/assets/branding/teams/tigers.png",
       "#cc0000",
       null,
       "#ffcc00",
@@ -534,7 +535,7 @@ describe("display branding theme foundation", () => {
         displayTheme: {
           tournament: {
             displayName: "Youth Cup Display",
-            logoUrl: "https://cdn.example.com/tournament.png",
+            logoUrl: "/assets/branding/tournaments/tournament.png",
             showLogo: true,
             backgroundStyle: "DARK_GRADIENT"
           },

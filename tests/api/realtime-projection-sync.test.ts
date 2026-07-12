@@ -183,6 +183,58 @@ describe("realtime projection sync", () => {
     }
   });
 
+  it("omits unsafe legacy branding from public socket snapshots", async () => {
+    const { pool } = createRealtimeFakePool();
+    const unsafeTheme = {
+      tournament: {
+        displayName: "Youth Cup",
+        logoUrl: "https://cdn.example.com/tournament.png",
+        showLogo: true,
+        backgroundStyle: "DARK_GRADIENT" as const,
+        colors: { primaryColor: null, secondaryColor: null, accentColor: null, textColor: null }
+      },
+      home: {
+        displayName: "HOME",
+        logoUrl: "/assets/branding/teams/home.png",
+        showLogo: true,
+        colors: { primaryColor: null, secondaryColor: null, accentColor: null, textColor: null }
+      },
+      away: {
+        displayName: "AWAY",
+        logoUrl: "/assets/branding/%252e%252e/secret.png",
+        showLogo: true,
+        colors: { primaryColor: null, secondaryColor: null, accentColor: null, textColor: null }
+      },
+      flags: { textOnlyFallback: false, neutralHighContrast: false }
+    };
+    const connection = await (pool as { getConnection: () => Promise<{ query: (sql: string, params?: unknown[]) => Promise<unknown> }> }).getConnection();
+    await connection.query("UPDATE match_projections SET projection_data", [
+      JSON.stringify(baseProjection({ displayTheme: unsafeTheme })),
+      0,
+      matchId
+    ]);
+    const { app, address } = await startRealtimeApp(pool);
+    const socket = createSocketClient(address, { transports: ["websocket"], forceNew: true });
+
+    try {
+      await waitForSocketEvent(socket, "connect");
+      const snapshotPromise = waitForSocketEvent<PublicMatchSnapshotPayload>(socket, "match:snapshot");
+      socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
+      const snapshot = await snapshotPromise;
+      expect(Object.keys(snapshot).sort()).toEqual(["matchId", "publicScoreboard", "serverTime"]);
+      expect(snapshot.publicScoreboard.displayTheme).toMatchObject({
+        tournament: { logoUrl: null, showLogo: true },
+        home: { logoUrl: "/assets/branding/teams/home.png", showLogo: true },
+        away: { logoUrl: null, showLogo: true }
+      });
+      expect(JSON.stringify(snapshot)).not.toContain("cdn.example.com");
+      expect([...collectForbiddenPublicKeys(snapshot)]).toEqual([]);
+    } finally {
+      socket.close();
+      await app.close();
+    }
+  });
+
   it("allows public scoreboard clients to connect with polling transport only", async () => {
     process.env.REALTIME_SOCKET_TRANSPORTS = "polling";
     const { pool } = createRealtimeFakePool();

@@ -1,4 +1,4 @@
-import type { DisplayBackgroundStyle, DisplayColors, PublicDisplayTheme, PublicScoreboardProjection } from "@basket-scoreboard/api-contracts";
+import { normalizeBrandAssetReference, type DisplayBackgroundStyle, type DisplayColors, type PublicDisplayTheme, type PublicScoreboardProjection } from "@basket-scoreboard/api-contracts";
 import { deriveDisplayClockMs, formatClockMs, formatShotClockMs } from "./clockControl";
 import { buildPublicScoreboardLink } from "./operatorMatches";
 import { getRealtimeConnectionLabel, type RealtimeConnectionState } from "./realtimeProjectionSync";
@@ -232,8 +232,7 @@ function cleanDisplayName(value: string | null | undefined) {
 }
 
 function cleanLogoUrl(value: string | null | undefined) {
-  const trimmed = typeof value === "string" ? value.trim() : "";
-  return trimmed || null;
+  return normalizeBrandAssetReference(value);
 }
 
 function buildTeamMonogram(value: string) {

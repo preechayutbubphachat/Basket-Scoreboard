@@ -1,12 +1,13 @@
-import type {
-  DisplayBackgroundStyle,
-  DisplayColors,
-  MatchDisplayOverrideInput,
-  MatchDisplayOverrideResponse,
-  TeamDisplayProfileInput,
-  TeamDisplayProfileResponse,
-  TournamentDisplayThemeInput,
-  TournamentDisplayThemeResponse
+import {
+  normalizeBrandAssetReference,
+  type DisplayBackgroundStyle,
+  type DisplayColors,
+  type MatchDisplayOverrideInput,
+  type MatchDisplayOverrideResponse,
+  type TeamDisplayProfileInput,
+  type TeamDisplayProfileResponse,
+  type TournamentDisplayThemeInput,
+  type TournamentDisplayThemeResponse
 } from "@basket-scoreboard/api-contracts";
 
 export type DisplayColorField =
@@ -271,11 +272,11 @@ export function buildDisplayThemePreviewModel(input: {
   return {
     title: tournament.displayName.trim() || "Display Preview",
     backgroundStyle: tournament.backgroundStyle,
-    tournamentLogoUrl: tournament.logoUrl.trim() || null,
+    tournamentLogoUrl: normalizeBrandAssetReference(tournament.logoUrl),
     showTournamentLogo: tournament.showTournamentLogo,
     home: {
       label: home.displayName.trim() || "HOME",
-      logoUrl: home.logoUrl.trim() || null,
+      logoUrl: normalizeBrandAssetReference(home.logoUrl),
       showLogo: showTeamLogos && !textOnly && home.showTeamLogo,
       colors: neutral ? neutralHomeColors : mergeColors(defaultColors, home, {
         primaryColor: input.match?.homePrimaryColor ?? null,
@@ -286,7 +287,7 @@ export function buildDisplayThemePreviewModel(input: {
     },
     away: {
       label: away.displayName.trim() || "AWAY",
-      logoUrl: away.logoUrl.trim() || null,
+      logoUrl: normalizeBrandAssetReference(away.logoUrl),
       showLogo: showTeamLogos && !textOnly && away.showTeamLogo,
       colors: neutral ? neutralAwayColors : mergeColors(defaultColors, away, {
         primaryColor: input.match?.awayPrimaryColor ?? null,
@@ -343,7 +344,7 @@ function validateSharedDisplayFields(input: {
   }
 
   if (!isSafeLogoUrl(input.logoUrl)) {
-    return "Logo URL must be https:// or a root-relative asset path.";
+    return "Logo must use /assets/branding/ and an approved image extension.";
   }
 
   for (const [field, value] of Object.entries(input.colors)) {
@@ -372,22 +373,7 @@ function isValidColor(value: string | null | undefined) {
 }
 
 function isSafeLogoUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return true;
-  }
-  if (/[\u0000-\u001f<>]/.test(trimmed)) {
-    return false;
-  }
-  if (trimmed.startsWith("/")) {
-    return !trimmed.startsWith("//") && !trimmed.includes("..");
-  }
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === "https:" && !url.username && !url.password;
-  } catch {
-    return false;
-  }
+  return value.trim() === "" || normalizeBrandAssetReference(value) !== null;
 }
 
 function emptyToNull(value: string | null | undefined) {

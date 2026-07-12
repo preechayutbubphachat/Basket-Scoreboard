@@ -1,11 +1,12 @@
 import type { CSSProperties } from "react";
 import type { PublicScoreboardDisplayModel } from "../lib/publicScoreboardDisplay";
+import { PublicBrandAsset } from "./PublicBrandAsset";
 
 export function PublicLiveScoreboard({ display }: { display: PublicScoreboardDisplayModel }) {
   return <>
     <header className="arena-header">
       <div className="arena-brand-lockup">
-        {display.tournament.showLogo && display.tournament.logoUrl ? <img className="arena-tournament-logo" src={display.tournament.logoUrl} alt="" /> : null}
+        {display.tournament.showLogo ? <PublicBrandAsset className="arena-tournament-logo" src={display.tournament.logoUrl} alt={`${display.tournament.displayName ?? "Tournament"} logo`} fallbackLabel="T" /> : null}
         <div className="arena-title-lockup"><span>Live arena scoreboard</span><h1 className="arena-tournament-title">{display.tournament.displayName ?? "Public Scoreboard"}</h1></div>
       </div>
       <div className="arena-header-meta" aria-label="Match display metadata"><span>Period <strong>{display.periodLabel}</strong></span></div>
@@ -31,7 +32,7 @@ function Team({ side, team }: { side: "home" | "away"; team: PublicScoreboardDis
   const dotCount = Math.min(Math.max(0, team.timeouts), 3);
   return <article className={`${team.panelClassName} ${side} ${hasLogo ? "has-team-logo" : "no-team-logo"}`} style={team.style as CSSProperties}>
     <div className="public-display-team-badge"><span>{team.label}</span></div>
-    <div className="public-display-team-watermark" aria-hidden="true">{hasLogo ? <img src={team.logoUrl ?? undefined} alt="" /> : <span>{team.monogram}</span>}</div>
+    <div className="public-display-team-watermark">{hasLogo ? <PublicBrandAsset className="public-display-team-watermark-logo" src={team.logoUrl} alt={`${team.teamName} logo`} fallbackLabel={team.monogram} /> : <span aria-hidden="true">{team.monogram}</span>}</div>
     <h2>{team.teamName}</h2>
     <strong key={`${side}-${team.score}`} className={team.scoreClassName}>{team.score}</strong>
     <dl className="public-display-team-metrics" aria-label={`${team.label} public game metrics`}>

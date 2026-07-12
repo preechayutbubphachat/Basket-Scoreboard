@@ -1372,7 +1372,7 @@ function AdminTournamentDisplayThemePage({ tournamentId }: { tournamentId: strin
         <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
           <h2>Theme settings</h2>
           <TextInput label="Display name" value={form.displayName} maxLength={120} onChange={(value) => setForm((current) => ({ ...current, displayName: value }))} />
-          <TextInput label="Logo URL" value={form.logoUrl} maxLength={500} placeholder="https://example.com/logo.png" onChange={(value) => setForm((current) => ({ ...current, logoUrl: value }))} />
+          <TextInput label="Logo path" value={form.logoUrl} maxLength={500} placeholder="/assets/branding/tournaments/cup.png" onChange={(value) => setForm((current) => ({ ...current, logoUrl: value }))} />
           <ColorInput label="Primary color" value={form.primaryColor} onChange={(value) => setForm((current) => ({ ...current, primaryColor: value }))} />
           <ColorInput label="Secondary color" value={form.secondaryColor} onChange={(value) => setForm((current) => ({ ...current, secondaryColor: value }))} />
           <ColorInput label="Accent color" value={form.accentColor} onChange={(value) => setForm((current) => ({ ...current, accentColor: value }))} />
@@ -1464,7 +1464,7 @@ function AdminTeamDisplayProfilePage({ teamId }: { teamId: string }) {
         <form className="stacked-form display-theme-form" onSubmit={(event) => void handleSave(event)}>
           <h2>Profile settings</h2>
           <TextInput label="Display name" value={form.displayName} maxLength={80} onChange={(value) => setForm((current) => ({ ...current, displayName: value }))} />
-          <TextInput label="Logo URL" value={form.logoUrl} maxLength={500} placeholder="https://example.com/team-logo.png" onChange={(value) => setForm((current) => ({ ...current, logoUrl: value }))} />
+          <TextInput label="Logo path" value={form.logoUrl} maxLength={500} placeholder="/assets/branding/teams/team.png" onChange={(value) => setForm((current) => ({ ...current, logoUrl: value }))} />
           <ColorInput label="Primary color" value={form.primaryColor} onChange={(value) => setForm((current) => ({ ...current, primaryColor: value }))} />
           <ColorInput label="Secondary color" value={form.secondaryColor} onChange={(value) => setForm((current) => ({ ...current, secondaryColor: value }))} />
           <ColorInput label="Accent color" value={form.accentColor} onChange={(value) => setForm((current) => ({ ...current, accentColor: value }))} />
