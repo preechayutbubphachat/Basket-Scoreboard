@@ -18,8 +18,26 @@ describe("public live scoreboard arena visual contract", () => {
   test("uses height-aware layout and reduced-motion rules", () => {
     expect(styles).toContain("--arena-clock-column");
     expect(styles).toMatch(/@media \(max-height: 700px\) and \(min-width: 761px\)/);
+    expect(styles).toMatch(/@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)/);
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(styles).toContain("--arena-score-size: clamp(");
+  });
+
+  test("fits the arena frame to both viewport axes without body-level clipping", () => {
+    expect(styles).toContain("--public-display-inset: 20px");
+    expect(styles).toContain("height: 100dvh");
+    expect(styles).toMatch(/height:\s*min\([\s\S]*100dvh[\s\S]*9 \/ 16/);
+    expect(styles).toMatch(/width:\s*min\([\s\S]*100dvh[\s\S]*16 \/ 9/);
+    expect(styles).toMatch(/\.arena-scoreboard-grid,[\s\S]*\.recent-event-ticker\s*\{[\s\S]*min-height:\s*0/);
+    expect(styles).toMatch(/\.public-display-scene-frame\s*\{\s*grid-template-rows:\s*minmax\(0, 1fr\)/);
+    expect(styles).not.toMatch(/html\s*,?\s*body[\s\S]*overflow:\s*hidden/);
+  });
+
+  test("keeps compact team names bounded to two readable lines", () => {
+    expect(styles).toMatch(/\.public-display-team h2[\s\S]*-webkit-line-clamp:\s*2/);
+    expect(styles).toMatch(/\.public-display-team h2[\s\S]*max-height:\s*2\.04em/);
+    expect(styles).toMatch(/\.public-display-team h2[\s\S]*overflow-wrap:\s*break-word/);
+    expect(styles).toMatch(/\.public-display-team h2[\s\S]*word-break:\s*normal/);
   });
 
   test("uses safe monogram fallback and omits UUID-derived broadcast codes", () => {

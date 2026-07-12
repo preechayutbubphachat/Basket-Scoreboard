@@ -722,6 +722,7 @@ label {
 }
 
 .public-display-shell {
+  --public-display-inset: 20px;
   align-items: center;
   background:
     linear-gradient(115deg, rgba(14, 165, 233, 0.18), transparent 18% 82%, rgba(59, 130, 246, 0.16)),
@@ -729,8 +730,12 @@ label {
     repeating-linear-gradient(90deg, rgba(148, 163, 184, 0.035) 0 1px, transparent 1px 86px);
   color: #f8fafc;
   display: flex;
-  min-height: 100vh;
-  padding: 10px;
+  height: 100vh;
+  height: 100dvh;
+  justify-content: center;
+  min-height: 0;
+  padding: calc(var(--public-display-inset) / 2);
+  width: 100%;
 }
 
 .final-summary-readiness {
@@ -805,12 +810,31 @@ label {
     inset 0 0 0 1px rgba(248, 250, 252, 0.04),
     inset 0 0 70px rgba(15, 23, 42, 0.58);
   color: var(--arena-text);
-  margin: 0 auto;
-  max-height: calc(100vh - 20px);
-  max-width: calc(100vw - 20px);
+  flex: none;
+  height: min(
+    calc(100vh - var(--public-display-inset)),
+    calc((100vw - var(--public-display-inset)) * 9 / 16)
+  );
+  height: min(
+    calc(100dvh - var(--public-display-inset)),
+    calc((100vw - var(--public-display-inset)) * 9 / 16)
+  );
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  min-height: 0;
   overflow: hidden;
   position: relative;
-  width: min(100%, 1800px);
+  width: min(
+    calc(100vw - var(--public-display-inset)),
+    calc((100vh - var(--public-display-inset)) * 16 / 9),
+    1800px
+  );
+  width: min(
+    calc(100vw - var(--public-display-inset)),
+    calc((100dvh - var(--public-display-inset)) * 16 / 9),
+    1800px
+  );
 }
 
 .arena-layout {
@@ -1345,8 +1369,14 @@ label {
 
 .arena-header,
 .arena-scoreboard-grid,
+.public-display-team,
+.central-clock-panel,
+.public-display-game-clock,
+.public-display-shot-clock,
+.public-display-team-metrics,
 .compact-system-strip,
 .recent-event-ticker {
+  min-height: 0;
   min-width: 0;
 }
 
@@ -2495,6 +2525,7 @@ th {
   --arena-reduced-motion-duration: 1ms;
 }
 .arena-layout { grid-template-rows: var(--arena-header-h) minmax(0, 1fr) var(--arena-action-h) var(--arena-system-h); }
+.public-display-scene-frame { grid-template-rows: minmax(0, 1fr); }
 .arena-header {
   align-items: center;
   background: linear-gradient(90deg, rgba(2, 6, 23, 0.2), rgba(8, 17, 31, 0.9) 24% 76%, rgba(2, 6, 23, 0.2));
@@ -2522,7 +2553,7 @@ th {
 .public-display-team-watermark { align-items: center; display: flex; inset: 11% 5% 17%; justify-content: center; opacity: 0.11; pointer-events: none; position: absolute; z-index: 0; }
 .public-display-team-watermark img { height: 88%; max-width: 88%; object-fit: contain; }
 .public-display-team-watermark span { color: var(--team-accent); font-size: clamp(7rem, 19vw, 20rem); font-weight: 1000; line-height: 1; }
-.public-display-team h2 { align-self: end; color: var(--team-text); display: -webkit-box; font-family: "Arial Narrow", "Noto Sans Thai", sans-serif; font-size: var(--arena-team-name-size); font-weight: 900; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.02; margin: 0; min-height: 2.04em; overflow: hidden; overflow-wrap: anywhere; text-transform: uppercase; }
+.public-display-team h2 { align-self: end; color: var(--team-text); display: -webkit-box; font-family: "Arial Narrow", "Noto Sans Thai", sans-serif; font-size: var(--arena-team-name-size); font-weight: 900; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.02; margin: 0; max-height: 2.04em; min-height: 0; overflow: hidden; overflow-wrap: break-word; text-transform: uppercase; word-break: normal; }
 .public-display-score-value { align-self: center; color: var(--arena-score-color); font-size: var(--arena-score-size); font-variant-numeric: tabular-nums; line-height: 0.78; max-width: 100%; text-wrap: nowrap; white-space: nowrap; }
 .public-display-team-metrics { min-height: clamp(48px, 11.6vh, 104px); }
 .public-display-team-metrics div { padding: clamp(4px, 0.9vh, 9px) 4px; }
@@ -2552,6 +2583,47 @@ th {
   .arena-layout { padding: 8px 10px; }
   .public-display-team h2 { --arena-team-name-size: clamp(1.2rem, 3.5vh, 1.75rem); }
   .public-display-team-metrics { min-height: 58px; }
+}
+@media (max-height: 620px) and (min-aspect-ratio: 16 / 10) {
+  .public-display-shell { --public-display-inset: 8px; }
+  .public-display-frame {
+    --arena-action-h: 34px;
+    --arena-header-h: 46px;
+    --arena-system-h: 24px;
+    --arena-team-name-size: clamp(1.15rem, 3.35vh, 1.45rem);
+  }
+  .arena-layout { gap: 4px; padding: 5px 7px; }
+  .public-display-scene-frame { padding: clamp(16px, 3vw, 32px); }
+  .arena-header { padding-inline: 6px 138px; }
+  .arena-title-lockup { gap: 0; }
+  .arena-title-lockup > span,
+  .arena-header-meta span,
+  .public-display-team span,
+  .public-display-game-clock span,
+  .public-display-shot-clock span,
+  .arena-period-chip span,
+  .recent-event-ticker span,
+  .compact-system-strip span { font-size: 0.58rem; }
+  .arena-tournament-title { font-size: clamp(1.35rem, 3.8vh, 1.7rem); }
+  .arena-live-badge { padding: 5px 9px; }
+  .arena-scoreboard-grid { gap: 5px; }
+  .public-display-team { gap: 2px; padding: 5px 7px; }
+  .public-display-team-badge { margin-top: -5px; padding: 4px 15px; }
+  .public-display-team-watermark span { font-size: clamp(5rem, 15vw, 8rem); }
+  .public-display-team h2 { line-height: 1; max-height: 2em; }
+  .public-display-team-metrics { min-height: 46px; }
+  .public-display-team-metrics div { padding: 2px 3px; }
+  .public-display-team-metrics dt { font-size: 0.54rem; }
+  .public-display-team-metrics dd { font-size: 0.9rem; }
+  .central-clock-panel { gap: 3px; padding: 4px; }
+  .arena-period-chip { padding: 2px; }
+  .arena-period-chip strong { font-size: 1.2rem; }
+  .public-display-shot-clock { padding: 4px; }
+  .recent-event-ticker { padding: 3px 7px; }
+  .compact-system-strip { gap: 3px; }
+  .compact-system-strip div { gap: 3px; padding: 2px 4px; }
+  .compact-system-strip dt { height: 16px; line-height: 14px; width: 16px; }
+  .compact-system-strip strong { font-size: 0.66rem; }
 }
 @media (max-width: 1100px) and (min-width: 761px) {
   .public-display-frame { --arena-clock-column: minmax(190px, 0.56fr); --arena-safe-x: 8px; }
