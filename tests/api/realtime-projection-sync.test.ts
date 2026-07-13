@@ -42,7 +42,7 @@ function baseProjection(overrides: Partial<ScoreboardProjection> = {}): Scoreboa
   };
 }
 
-function createRealtimeFakePool(options: { matchFound?: boolean } = {}) {
+function createRealtimeFakePool(options: { matchFound?: boolean; metadata?: Record<string, unknown> } = {}) {
   const matchFound = options.matchFound ?? true;
   let currentSeq = 0;
   let projection = baseProjection();
@@ -100,6 +100,15 @@ function createRealtimeFakePool(options: { matchFound?: boolean } = {}) {
             : [],
           []
         ];
+      }
+
+      if (sql.includes("DATE_FORMAT(scheduled_at")) {
+        return [[options.metadata ?? {
+          match_code: "Round 2",
+          scheduled_at: new Date("2026-07-20T10:00:00.000Z"),
+          venue_name: "Municipal Arena",
+          metadata: JSON.stringify({ courtLabel: "Court A", courtId: "private-court" })
+        }], []];
       }
 
       return [{ affectedRows: 1 }, []];
@@ -172,11 +181,18 @@ describe("realtime projection sync", () => {
         publicScoreboard: {
           matchId,
           homeTeamName: "HOME",
-          awayTeamName: "AWAY"
+          awayTeamName: "AWAY",
+          matchMetadata: {
+            roundLabel: "Round 2",
+            courtLabel: "Court A",
+            venueLabel: "Municipal Arena",
+            scheduledStart: "2026-07-20T10:00:00.000Z"
+          }
         }
       });
       expect([...collectForbiddenPublicKeys(snapshot)]).toEqual([]);
       expect(JSON.stringify(snapshot)).not.toMatch(/homeTeamId|awayTeamId|playerId|playerFouls|roster/i);
+      expect(JSON.stringify(snapshot)).not.toMatch(/courtId|venueId|tournamentId|match_code|scheduled_at|venue_name|rawEvents/i);
     } finally {
       socket.close();
       await app.close();
@@ -367,11 +383,18 @@ describe("realtime projection sync", () => {
         matchId,
         publicScoreboard: {
           matchId,
-          homeScore: 2
+          homeScore: 2,
+          matchMetadata: {
+            roundLabel: "Round 2",
+            courtLabel: "Court A",
+            venueLabel: "Municipal Arena",
+            scheduledStart: "2026-07-20T10:00:00.000Z"
+          }
         }
       });
       expect([...collectForbiddenPublicKeys(update)]).toEqual([]);
       expect(JSON.stringify(update)).not.toMatch(/homeTeamId|awayTeamId|playerId|playerFouls|roster/i);
+      expect(JSON.stringify(update)).not.toMatch(/courtId|venueId|tournamentId|match_code|scheduled_at|venue_name|rawEvents/i);
       expect(events).toHaveLength(1);
     } finally {
       socket.close();

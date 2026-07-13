@@ -12,13 +12,14 @@ import {
 } from "@basket-scoreboard/api-contracts";
 import { getScoreboardProjectionView } from "../matchEventStore/repositories.js";
 import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboardProjection.js";
+import { resolvePublicMatchMetadata } from "../publicScoreboard/publicMatchMetadata.js";
 
 export type ProjectionRealtime = {
-  emitProjectionUpdated: (projection: ScoreboardProjection) => void;
+  emitProjectionUpdated: (projection: ScoreboardProjection) => Promise<void>;
 };
 
 export const noopProjectionRealtime: ProjectionRealtime = {
-  emitProjectionUpdated: () => undefined
+  emitProjectionUpdated: async () => undefined
 };
 
 export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): ProjectionRealtime {
@@ -64,10 +65,11 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
         return;
       }
 
+      const matchMetadata = await resolveMetadataSafely(payload.matchId);
       await socket.join(matchRoom(payload.matchId));
       const snapshot: PublicMatchSnapshotPayload = {
         matchId: payload.matchId,
-        publicScoreboard: toPublicScoreboardProjection(projection),
+        publicScoreboard: toPublicScoreboardProjection(projection, matchMetadata),
         serverTime: new Date().toISOString()
       };
       socket.emit("match:snapshot", snapshot);
@@ -82,16 +84,29 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
   });
 
   return {
-    emitProjectionUpdated(projection) {
+    async emitProjectionUpdated(projection) {
+      const matchMetadata = await resolveMetadataSafely(projection.matchId);
       const payload: PublicProjectionUpdatedPayload = {
         matchId: projection.matchId,
         updatedAt: projection.updatedAt ?? new Date().toISOString(),
-        publicScoreboard: toPublicScoreboardProjection(projection)
+        publicScoreboard: toPublicScoreboardProjection(projection, matchMetadata)
       };
 
       io.to(matchRoom(projection.matchId)).emit("projection.updated", payload);
     }
   };
+
+  async function resolveMetadataSafely(matchId: string) {
+    try {
+      return await resolvePublicMatchMetadata(pool, matchId);
+    } catch (error) {
+      app.log.warn(
+        { err: error, matchId },
+        "Public match metadata could not be resolved; omitting optional metadata"
+      );
+      return undefined;
+    }
+  }
 }
 
 export function matchRoom(matchId: string) {

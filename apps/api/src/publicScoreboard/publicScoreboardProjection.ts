@@ -1,12 +1,14 @@
 import {
   normalizeBrandAssetReference,
   type PublicDisplayTheme,
+  type PublicMatchMetadata,
   type PublicScoreboardProjection,
   type ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
 
 export function toPublicScoreboardProjection(
-  projection: ScoreboardProjection
+  projection: ScoreboardProjection,
+  matchMetadata?: PublicMatchMetadata
 ): PublicScoreboardProjection {
   return {
     matchId: projection.matchId,
@@ -73,7 +75,8 @@ export function toPublicScoreboardProjection(
             : null
         }
       : {}),
-    ...(projection.displayTheme !== undefined ? { displayTheme: sanitizePublicDisplayTheme(projection.displayTheme) } : {})
+    ...(projection.displayTheme !== undefined ? { displayTheme: sanitizePublicDisplayTheme(projection.displayTheme) } : {}),
+    ...(matchMetadata && Object.keys(matchMetadata).length > 0 ? { matchMetadata: { ...matchMetadata } } : {})
   };
 }
 

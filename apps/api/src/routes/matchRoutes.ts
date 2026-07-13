@@ -76,6 +76,7 @@ import {
   saveMatchDisplayOverride
 } from "../displayThemes/displayThemeService.js";
 import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboardProjection.js";
+import { resolvePublicMatchMetadata } from "../publicScoreboard/publicMatchMetadata.js";
 import { matchCommandPermissions } from "../auth/operatorPermissionPolicy.js";
 
 export function registerMatchRoutes(
@@ -318,12 +319,26 @@ export function registerMatchRoutes(
           return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match projection was not found"));
         }
 
+        let matchMetadata;
+        try {
+          matchMetadata = await resolvePublicMatchMetadata(connection, request.params.matchId);
+        } catch (metadataError) {
+          request.log.warn(
+            {
+              err: metadataError,
+              matchId: request.params.matchId,
+              route: "GET /api/v1/public/matches/:matchId/scoreboard"
+            },
+            "Public match metadata could not be resolved; omitting optional metadata"
+          );
+        }
+
         try {
           const displayTheme = await resolvePublicDisplayTheme(pool, request.params.matchId);
           return toPublicScoreboardProjection({
             ...projection,
             displayTheme
-          });
+          }, matchMetadata);
         } catch (themeError) {
           request.log.warn(
             {
@@ -336,7 +351,7 @@ export function registerMatchRoutes(
           return toPublicScoreboardProjection({
             ...projection,
             displayTheme: null
-          });
+          }, matchMetadata);
         }
       } catch (error) {
         request.log.error(
@@ -940,7 +955,7 @@ async function emitProjectionUpdateForAcceptedCommand(
   try {
     const projection = await getScoreboardProjectionView(connection, matchId);
     if (projection) {
-      realtime.emitProjectionUpdated(projection);
+      await realtime.emitProjectionUpdated(projection);
     }
   } finally {
     connection.release();

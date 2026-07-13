@@ -1606,6 +1606,14 @@ export type PublicScoreboardProjection = {
   status: ScoreboardProjection["status"];
   finalScore?: { home: number; away: number } | null;
   displayTheme?: PublicDisplayTheme | null;
+  matchMetadata?: PublicMatchMetadata;
+};
+
+export type PublicMatchMetadata = {
+  roundLabel?: string;
+  courtLabel?: string;
+  venueLabel?: string;
+  scheduledStart?: string;
 };
 
 export type MatchSyncResponse = {
