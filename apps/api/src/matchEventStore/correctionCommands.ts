@@ -421,7 +421,11 @@ export async function applyScoreCorrection(options: {
             reason: options.command.payload.reason
           })
         );
-        projection = applyScoreRemovedByCorrection(projection, originalEvent.payload, seqNo);
+        projection = applyScoreRemovedByCorrection(
+          projection,
+          { ...originalEvent.payload, originalScoreSeq: originalEvent.seqNo },
+          seqNo
+        );
       }
 
       if (options.command.payload.replacement) {
@@ -997,23 +1001,27 @@ function applyAlphaCorrectionProjection(
     case "SCORE_CORRECTED":
       return applyScoreCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
-        points: numberOrDefault(oldValue.points, 0) as 1 | 2 | 3
+        points: numberOrDefault(oldValue.points, 0) as 1 | 2 | 3,
+        correctedEventSeq: numberOrDefault(payload.correctedEventSeq, -1)
       }, seqNo);
     case "TEAM_FOUL_CORRECTED":
       return applyTeamFoulCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
-        periodNumber: numberOrNull(oldValue.periodNumber)
+        periodNumber: numberOrNull(oldValue.periodNumber),
+        correctedEventSeq: numberOrDefault(payload.correctedEventSeq, -1)
       }, seqNo);
     case "PLAYER_FOUL_CORRECTED":
       return applyPlayerFoulCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
         playerId: stringOrNull(oldValue.playerId) ?? "",
-        periodNumber: numberOrNull(oldValue.periodNumber)
+        periodNumber: numberOrNull(oldValue.periodNumber),
+        correctedEventSeq: numberOrDefault(payload.correctedEventSeq, -1)
       }, seqNo);
     case "TIMEOUT_CORRECTED":
       return applyTimeoutCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide),
-        periodNumber: numberOrNull(oldValue.periodNumber)
+        periodNumber: numberOrNull(oldValue.periodNumber),
+        correctedEventSeq: numberOrDefault(payload.correctedEventSeq, -1)
       }, seqNo);
     case "GAME_CLOCK_CORRECTED":
       return applyGameClockCorrected(projection, {

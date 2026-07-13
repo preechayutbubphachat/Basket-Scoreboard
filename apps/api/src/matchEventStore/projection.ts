@@ -6,6 +6,12 @@ import type {
   TimeoutGrantedPayload,
   TimeoutRequestedBy
 } from "@basket-scoreboard/api-contracts";
+import {
+  applyInternalRecentActionEvent,
+  createInternalRecentActionState,
+  normalizeInternalRecentActionState,
+  type InternalRecentActionState
+} from "./recentActionProjection.js";
 
 type TeamFoulCount = { home: number; away: number };
 type TimeoutCount = { used: number; remaining: number };
@@ -68,6 +74,7 @@ export type ScoreboardProjection = {
   status: MatchLifecycleStatus;
   currentSeq: number;
   projectionVersion: "scoreboard-v1";
+  recentActionState: InternalRecentActionState;
 };
 
 export type DerivedFinalOutcome = {
@@ -111,7 +118,8 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     clockUpdatedAt: null,
     status: "READY",
     currentSeq: 0,
-    projectionVersion: "scoreboard-v1"
+    projectionVersion: "scoreboard-v1",
+    recentActionState: createInternalRecentActionState(0)
   };
 }
 
@@ -161,7 +169,11 @@ export function normalizeScoreboardProjection(
     clockUpdatedAt: typeof projection.clockUpdatedAt === "string" ? projection.clockUpdatedAt : null,
     status: normalizeLifecycleStatus(projection.status),
     currentSeq: numberOrDefault(projection.currentSeq, 0),
-    projectionVersion: "scoreboard-v1"
+    projectionVersion: "scoreboard-v1",
+    recentActionState: normalizeInternalRecentActionState(
+      projection.recentActionState,
+      numberOrDefault(projection.currentSeq, 0)
+    )
   };
 
   return recomputeFinalOutcomeIfFinished(normalized);
@@ -189,7 +201,7 @@ export function applyScoreAdded(
     currentSeq: seqNo
   };
 
-  return recomputeFinalOutcomeIfFinished(updatedProjection);
+  return recomputeFinalOutcomeIfFinished(withRecentAction(updatedProjection, "SCORE_ADDED", payload, seqNo));
 }
 
 export function applyGameClockStarted(
@@ -318,7 +330,7 @@ export function applyTeamFoulAdded(
     [sideKey]: currentPeriodFouls[sideKey] + 1
   };
 
-  return {
+  return withRecentAction({
     ...projection,
     teamFouls: nextPeriodFouls,
     teamFoulsByPeriod: {
@@ -328,7 +340,7 @@ export function applyTeamFoulAdded(
     periodNumber: payload.periodNumber,
     status: "LIVE",
     currentSeq: seqNo
-  };
+  }, "TEAM_FOUL_ADDED", payload, seqNo);
 }
 
 export function applyPlayerFoulAdded(
@@ -385,7 +397,7 @@ export function applyTimeoutGranted(
     [sideKey]: timeoutsByHalf[halfKey][sideKey] + 1
   };
 
-  return {
+  return withRecentAction({
     ...projection,
     timeouts: {
       ...timeouts,
@@ -422,7 +434,7 @@ export function applyTimeoutGranted(
     clockUpdatedAt: payload.startedAt,
     status: "LIVE",
     currentSeq: seqNo
-  };
+  }, "TIMEOUT_GRANTED", payload, seqNo);
 }
 
 export function applyTimeoutEnded(
@@ -450,7 +462,7 @@ export function applyMatchStarted(
   },
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  return withRecentAction({
     ...projection,
     status: "LIVE",
     periodNumber: payload.periodNumber,
@@ -468,7 +480,7 @@ export function applyMatchStarted(
     clockUpdatedAt: payload.startedAt,
     activeTimeout: null,
     currentSeq: seqNo
-  };
+  }, "MATCH_STARTED", payload, seqNo);
 }
 
 export function applyPeriodEnded(
@@ -483,7 +495,7 @@ export function applyPeriodEnded(
   },
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  return withRecentAction({
     ...projection,
     status: "PERIOD_BREAK",
     periodNumber: payload.periodNumber,
@@ -496,7 +508,7 @@ export function applyPeriodEnded(
     clockUpdatedAt: payload.endedAt,
     activeTimeout: null,
     currentSeq: seqNo
-  };
+  }, "PERIOD_ENDED", payload, seqNo);
 }
 
 export function applyPeriodStarted(
@@ -511,7 +523,7 @@ export function applyPeriodStarted(
   },
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  return withRecentAction({
     ...projection,
     status: "LIVE",
     periodNumber: payload.periodNumber,
@@ -525,7 +537,7 @@ export function applyPeriodStarted(
     clockUpdatedAt: payload.startedAt,
     activeTimeout: null,
     currentSeq: seqNo
-  };
+  }, "PERIOD_STARTED", payload, seqNo);
 }
 
 export function applyOvertimeStarted(
@@ -540,7 +552,7 @@ export function applyOvertimeStarted(
   },
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  return withRecentAction({
     ...projection,
     status: "OVERTIME",
     periodNumber: payload.periodNumber,
@@ -554,7 +566,7 @@ export function applyOvertimeStarted(
     clockUpdatedAt: payload.startedAt,
     activeTimeout: null,
     currentSeq: seqNo
-  };
+  }, "OVERTIME_STARTED", payload, seqNo);
 }
 
 export function applyMatchFinished(
@@ -570,7 +582,7 @@ export function applyMatchFinished(
 ): ScoreboardProjection {
   const finalOutcome = deriveFinalOutcome(projection.homeScore, projection.awayScore);
 
-  return {
+  return withRecentAction({
     ...projection,
     status: "FINISHED",
     matchFinishedAt: payload.finishedAt,
@@ -582,12 +594,12 @@ export function applyMatchFinished(
     clockUpdatedAt: payload.finishedAt,
     activeTimeout: null,
     currentSeq: seqNo
-  };
+  }, "MATCH_FINISHED", payload, seqNo);
 }
 
 export function applyScoreRemovedByCorrection(
   projection: ScoreboardProjection,
-  payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
+  payload: Pick<ScoreAddedPayload, "teamSide" | "points"> & { originalScoreSeq?: number; correctedEventSeq?: number },
   seqNo: number
 ): ScoreboardProjection {
   const updatedProjection: ScoreboardProjection = {
@@ -599,12 +611,17 @@ export function applyScoreRemovedByCorrection(
     currentSeq: seqNo
   };
 
-  return recomputeFinalOutcomeIfFinished(updatedProjection);
+  return recomputeFinalOutcomeIfFinished(withRecentAction(
+    updatedProjection,
+    payload.correctedEventSeq === undefined ? "SCORE_REMOVED_BY_CORRECTION" : "SCORE_CORRECTED",
+    payload,
+    seqNo
+  ));
 }
 
 export function applyScoreCorrected(
   projection: ScoreboardProjection,
-  payload: Pick<ScoreAddedPayload, "teamSide" | "points">,
+  payload: Pick<ScoreAddedPayload, "teamSide" | "points"> & { correctedEventSeq?: number },
   seqNo: number
 ): ScoreboardProjection {
   return applyScoreRemovedByCorrection(projection, payload, seqNo);
@@ -612,7 +629,7 @@ export function applyScoreCorrected(
 
 export function applyTeamFoulCorrected(
   projection: ScoreboardProjection,
-  payload: { teamSide: "HOME" | "AWAY"; periodNumber?: number | null },
+  payload: { teamSide: "HOME" | "AWAY"; periodNumber?: number | null; correctedEventSeq?: number },
   seqNo: number
 ): ScoreboardProjection {
   const periodKey = String(payload.periodNumber ?? projection.periodNumber);
@@ -623,7 +640,7 @@ export function applyTeamFoulCorrected(
     [sideKey]: Math.max(0, currentPeriodFouls[sideKey] - 1)
   };
 
-  return {
+  return withRecentAction({
     ...projection,
     teamFouls: nextPeriodFouls,
     teamFoulsByPeriod: {
@@ -631,12 +648,12 @@ export function applyTeamFoulCorrected(
       [periodKey]: nextPeriodFouls
     },
     currentSeq: seqNo
-  };
+  }, "TEAM_FOUL_CORRECTED", payload, seqNo);
 }
 
 export function applyPlayerFoulCorrected(
   projection: ScoreboardProjection,
-  payload: { teamSide: "HOME" | "AWAY"; playerId: string; periodNumber?: number | null },
+  payload: { teamSide: "HOME" | "AWAY"; playerId: string; periodNumber?: number | null; correctedEventSeq?: number },
   seqNo: number
 ): ScoreboardProjection {
   const nextProjection = applyTeamFoulCorrected(projection, payload, seqNo);
@@ -653,11 +670,16 @@ export function applyPlayerFoulCorrected(
 
 export function applyTimeoutCorrected(
   projection: ScoreboardProjection,
-  payload: { teamSide?: "HOME" | "AWAY" | null; periodNumber?: number | null },
+  payload: { teamSide?: "HOME" | "AWAY" | null; periodNumber?: number | null; correctedEventSeq?: number },
   seqNo: number
 ): ScoreboardProjection {
   if (!payload.teamSide) {
-    return advanceProjectionSeq({ ...projection, activeTimeout: null }, seqNo);
+    return withRecentAction(
+      advanceProjectionSeq({ ...projection, activeTimeout: null }, seqNo),
+      "TIMEOUT_CORRECTED",
+      payload,
+      seqNo
+    );
   }
 
   const sideKey = payload.teamSide === "HOME" ? "home" : "away";
@@ -670,7 +692,7 @@ export function applyTimeoutCorrected(
     [sideKey]: Math.max(0, timeoutsByHalf[halfKey][sideKey] - 1)
   };
 
-  return {
+  return withRecentAction({
     ...projection,
     timeouts: {
       ...timeouts,
@@ -685,7 +707,7 @@ export function applyTimeoutCorrected(
     },
     activeTimeout: projection.activeTimeout?.teamSide === payload.teamSide ? null : projection.activeTimeout,
     currentSeq: seqNo
-  };
+  }, "TIMEOUT_CORRECTED", payload, seqNo);
 }
 
 export function applyGameClockCorrected(
@@ -775,6 +797,18 @@ function recomputeFinalOutcomeIfFinished(projection: ScoreboardProjection): Scor
   return isFinishedStatus(projection.status)
     ? { ...projection, ...deriveFinalOutcome(projection.homeScore, projection.awayScore) }
     : projection;
+}
+
+function withRecentAction(
+  projection: ScoreboardProjection,
+  eventType: Parameters<typeof applyInternalRecentActionEvent>[1],
+  payload: unknown,
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    recentActionState: applyInternalRecentActionEvent(projection.recentActionState, eventType, payload, seqNo)
+  };
 }
 
 function normalizeFinalScore(value: unknown): ScoreboardProjection["finalScore"] {
