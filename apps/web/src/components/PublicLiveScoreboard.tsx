@@ -12,6 +12,7 @@ export function PublicLiveScoreboard({ display }: { display: PublicScoreboardDis
       <div className="arena-header-meta" aria-label="Match display metadata"><span>Period <strong>{display.periodLabel}</strong></span></div>
       <div className={display.statusClassName}>{display.statusLabel}</div>
     </header>
+    <ArenaMatchMetadata metadata={display.matchMetadata} />
     <div className="arena-scoreboard-grid">
       <Team side="home" team={display.home} />
       <section className="central-clock-panel" aria-label="Game timing">
@@ -25,6 +26,25 @@ export function PublicLiveScoreboard({ display }: { display: PublicScoreboardDis
     <dl className="compact-system-strip" aria-label="Compact system status">{display.systemStatus.map((item) => <div key={item.label}><dt aria-hidden="true">{item.icon}</dt><dd><span>{item.label}</span><strong>{item.value}</strong></dd></div>)}</dl>
     {display.finalLabel ? <div className="public-display-final" role="status">{display.finalLabel}</div> : null}
   </>;
+}
+
+function ArenaMatchMetadata({ metadata }: { metadata: PublicScoreboardDisplayModel["matchMetadata"] }) {
+  const items = [
+    metadata.round ? { label: "Round", value: metadata.round } : null,
+    metadata.court ? { label: "Court", value: metadata.court } : null,
+    metadata.venue ? { label: "Venue", value: metadata.venue } : null
+  ].filter((item): item is { label: string; value: string } => item !== null);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return <dl className="arena-match-metadata" aria-label="Match details">
+    {items.map((item) => <div key={item.label}>
+      <dt>{item.label}</dt>
+      <dd>{item.value}</dd>
+    </div>)}
+  </dl>;
 }
 
 function Team({ side, team }: { side: "home" | "away"; team: PublicScoreboardDisplayModel["home"] }) {

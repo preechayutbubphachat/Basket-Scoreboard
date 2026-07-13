@@ -272,6 +272,7 @@ import {
   type PublicDisplaySceneModel
 } from "./lib/publicDisplayScene";
 import {
+  buildPublicArenaMatchMetadataDisplay,
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardClockState,
   buildPublicScoreboardDisplayModel,
@@ -4958,11 +4959,16 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     }
   }
 
+  const matchMetadata = useMemo(
+    () => buildPublicArenaMatchMetadataDisplay(projection?.matchMetadata),
+    [projection?.matchMetadata]
+  );
   const display = projection
     ? buildPublicScoreboardDisplayModel(projection, {
       nowMs,
       receivedAtMs: projectionReceivedAtMs,
-      realtimeState
+      realtimeState,
+      matchMetadata
     })
     : null;
 

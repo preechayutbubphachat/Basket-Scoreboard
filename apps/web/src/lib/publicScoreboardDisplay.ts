@@ -1,4 +1,4 @@
-import { normalizeBrandAssetReference, type DisplayBackgroundStyle, type DisplayColors, type PublicDisplayTheme, type PublicScoreboardProjection } from "@basket-scoreboard/api-contracts";
+import { normalizeBrandAssetReference, type DisplayBackgroundStyle, type DisplayColors, type PublicDisplayTheme, type PublicMatchMetadata, type PublicScoreboardProjection } from "@basket-scoreboard/api-contracts";
 import { deriveDisplayClockMs, formatClockMs, formatShotClockMs } from "./clockControl";
 import { buildPublicScoreboardLink } from "./operatorMatches";
 import { getRealtimeConnectionLabel, type RealtimeConnectionState } from "./realtimeProjectionSync";
@@ -34,9 +34,11 @@ export function buildPublicScoreboardDisplayModel(
     nowMs: number;
     receivedAtMs: number | null;
     realtimeState: RealtimeConnectionState;
+    matchMetadata?: PublicArenaMatchMetadataDisplay;
   }
 ) {
   const theme = buildPublicDisplayThemeView(projection.displayTheme);
+  const matchMetadata = options.matchMetadata ?? buildPublicArenaMatchMetadataDisplay(projection.matchMetadata);
   const scorePanels = buildScoreControlPanels(projection);
   const [homeScorePanel, awayScorePanel] = scorePanels;
   const clock = buildPublicScoreboardClockState(projection, {
@@ -70,11 +72,13 @@ export function buildPublicScoreboardDisplayModel(
     arenaFrameClassName: [
       "public-display-frame",
       "arena-layout",
+      hasRenderableArenaMatchMetadata(matchMetadata) ? "has-match-metadata" : "",
       `arena-background-${theme.backgroundStyle.toLowerCase().replace(/_/g, "-")}`,
       theme.flags.textOnlyFallback ? "theme-text-only" : "",
       theme.flags.neutralHighContrast ? "theme-neutral-contrast" : ""
     ].filter(Boolean).join(" "),
     arenaFrameStyle: theme.frameStyle,
+    matchMetadata,
     tournament: theme.tournament,
     home: {
       label: homeScorePanel?.label ?? "HOME",
@@ -133,6 +137,40 @@ export function buildPublicScoreboardDisplayModel(
 }
 
 export type PublicScoreboardDisplayModel = ReturnType<typeof buildPublicScoreboardDisplayModel>;
+
+export type PublicArenaMatchMetadataDisplay = {
+  round?: string;
+  court?: string;
+  venue?: string;
+  scheduledStart?: string;
+};
+
+export function buildPublicArenaMatchMetadataDisplay(
+  metadata: PublicMatchMetadata | null | undefined
+): PublicArenaMatchMetadataDisplay {
+  return {
+    ...optionalMetadataField("round", cleanMetadataText(metadata?.roundLabel)),
+    ...optionalMetadataField("court", cleanMetadataText(metadata?.courtLabel)),
+    ...optionalMetadataField("venue", cleanMetadataText(metadata?.venueLabel)),
+    ...optionalMetadataField("scheduledStart", cleanMetadataText(metadata?.scheduledStart))
+  };
+}
+
+function hasRenderableArenaMatchMetadata(metadata: PublicArenaMatchMetadataDisplay) {
+  return Boolean(metadata.round || metadata.court || metadata.venue);
+}
+
+function cleanMetadataText(value: unknown) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || undefined;
+}
+
+function optionalMetadataField<Key extends keyof PublicArenaMatchMetadataDisplay>(
+  key: Key,
+  value: PublicArenaMatchMetadataDisplay[Key]
+) {
+  return value === undefined ? {} : { [key]: value } as Pick<PublicArenaMatchMetadataDisplay, Key>;
+}
 
 export function buildPublicScoreboardClockState(
   projection: PublicScoreboardProjection,
