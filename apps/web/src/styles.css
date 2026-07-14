@@ -1591,12 +1591,22 @@ label {
   transform: translateY(-8px);
 }
 
+.controls-hidden .arena-display-actions:focus-within {
+  opacity: 0.54;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .kiosk-mode .arena-display-actions {
   opacity: 0.42;
 }
 
 .kiosk-mode.controls-hidden .arena-display-actions {
   opacity: 0;
+}
+
+.kiosk-mode.controls-hidden .arena-display-actions:focus-within {
+  opacity: 0.42;
 }
 
 .arena-display-actions a,
@@ -1615,14 +1625,27 @@ label {
   text-transform: uppercase;
 }
 
-.arena-display-actions a:hover,
-.arena-display-actions button:hover,
-.arena-display-actions a:focus-visible,
-.arena-display-actions button:focus-visible {
+.arena-display-actions .public-display-control:hover {
   background: rgba(103, 232, 249, 0.16);
   border-color: rgba(103, 232, 249, 0.36);
   color: #f8fafc;
-  outline: none;
+}
+
+.arena-display-actions .public-display-control:focus-visible {
+  background: rgba(103, 232, 249, 0.16);
+  border-color: #67e8f9;
+  box-shadow: 0 0 0 2px #020617;
+  color: #f8fafc;
+  outline: 3px solid #f8fafc;
+  outline-offset: 3px;
+}
+
+@media (forced-colors: active) {
+  .arena-display-actions .public-display-control:focus-visible {
+    border-color: Highlight;
+    box-shadow: 0 0 0 2px Canvas;
+    outline-color: Highlight;
+  }
 }
 
 .arena-scoreboard-grid {
@@ -2523,6 +2546,10 @@ th {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .arena-display-actions {
+    transition: none;
+  }
+
   .score-pulse,
   .public-display-shot-clock.shot-clock-critical {
     animation: none;

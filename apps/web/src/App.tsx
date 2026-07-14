@@ -4998,6 +4998,7 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
       >
         <nav className="arena-display-actions" aria-label="Public display actions">
           <a
+            className="public-display-control"
             href={buildPublicScoreboardLink(matchId)}
             onClick={(event) => {
               event.preventDefault();
@@ -5006,11 +5007,11 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
           >
             Normal
           </a>
-          <button type="button" onClick={() => void refreshPublicScoreboard()}>
+          <button className="public-display-control" type="button" onClick={() => void refreshPublicScoreboard()}>
             Refresh
           </button>
           {fullscreenSupported ? (
-            <button type="button" onClick={() => void toggleFullscreen()}>
+            <button className="public-display-control" type="button" onClick={() => void toggleFullscreen()}>
               {fullscreenActive ? "Exit" : "Fullscreen"}
             </button>
           ) : null}
