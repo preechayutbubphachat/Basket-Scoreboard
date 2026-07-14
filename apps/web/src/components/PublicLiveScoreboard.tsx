@@ -22,7 +22,7 @@ export function PublicLiveScoreboard({ display }: { display: PublicScoreboardDis
       </section>
       <Team side="away" team={display.away} />
     </div>
-    <div className="recent-event-ticker" aria-label="Recent event ticker"><span>Recent play</span><strong>{display.recentEventTicker}</strong></div>
+    <div className="recent-event-ticker" aria-label="Recent event ticker"><span>Recent play</span><strong role="status" aria-live="polite" aria-atomic="true">{display.recentEventTicker}</strong></div>
     <dl className="compact-system-strip" aria-label="Compact system status">{display.systemStatus.map((item) => <div key={item.label}><dt aria-hidden="true">{item.icon}</dt><dd><span>{item.label}</span><strong>{item.value}</strong></dd></div>)}</dl>
     {display.finalLabel ? <div className="public-display-final" role="status">{display.finalLabel}</div> : null}
   </>;

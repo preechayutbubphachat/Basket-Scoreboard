@@ -12,6 +12,10 @@ type ResolvedDisplayColors = {
   textColor: string;
 };
 
+export type PublicRecentActionDisplay = {
+  text: string;
+};
+
 export function buildPublicScoreboardDisplayLink(matchId: string) {
   return `${buildPublicScoreboardLink(matchId)}/display`;
 }
@@ -35,6 +39,7 @@ export function buildPublicScoreboardDisplayModel(
     receivedAtMs: number | null;
     realtimeState: RealtimeConnectionState;
     matchMetadata?: PublicArenaMatchMetadataDisplay;
+    recentActionDisplay?: PublicRecentActionDisplay | null;
   }
 ) {
   const theme = buildPublicDisplayThemeView(projection.displayTheme);
@@ -47,7 +52,7 @@ export function buildPublicScoreboardDisplayModel(
   });
   const timeoutPanels = buildTimeoutControlPanels(projection);
   const [homeTimeoutPanel, awayTimeoutPanel] = timeoutPanels;
-  const periodType = projection.periodType === "OVERTIME" ? "OT" : "REG";
+  const teamLabels = buildPublicScoreboardTeamLabels(projection, theme);
   const shotClockRemainingMs = deriveDisplayClockMs({
     clock: projection.shotClock,
     fallbackRemainingMs: projection.shotClockRemainingMs ?? 24000,
@@ -82,7 +87,7 @@ export function buildPublicScoreboardDisplayModel(
     tournament: theme.tournament,
     home: {
       label: homeScorePanel?.label ?? "HOME",
-      teamName: theme.home.displayName ?? homeScorePanel?.teamName ?? projection.homeTeamName ?? "HOME",
+      teamName: teamLabels.homeTeamLabel,
       score: homeScorePanel?.score ?? projection.homeScore,
       fouls: projection.teamFouls.home,
       timeouts: homeTimeoutPanel?.remaining ?? projection.timeouts?.home.remaining ?? 0,
@@ -91,11 +96,11 @@ export function buildPublicScoreboardDisplayModel(
       style: theme.home.style,
       logoUrl: theme.home.logoUrl,
       showLogo: theme.home.showLogo,
-      monogram: buildTeamMonogram(theme.home.displayName ?? projection.homeTeamName ?? "HOME")
+      monogram: buildTeamMonogram(teamLabels.homeTeamLabel)
     },
     away: {
       label: awayScorePanel?.label ?? "AWAY",
-      teamName: theme.away.displayName ?? awayScorePanel?.teamName ?? projection.awayTeamName ?? "AWAY",
+      teamName: teamLabels.awayTeamLabel,
       score: awayScorePanel?.score ?? projection.awayScore,
       fouls: projection.teamFouls.away,
       timeouts: awayTimeoutPanel?.remaining ?? projection.timeouts?.away.remaining ?? 0,
@@ -104,7 +109,7 @@ export function buildPublicScoreboardDisplayModel(
       style: theme.away.style,
       logoUrl: theme.away.logoUrl,
       showLogo: theme.away.showLogo,
-      monogram: buildTeamMonogram(theme.away.displayName ?? projection.awayTeamName ?? "AWAY")
+      monogram: buildTeamMonogram(teamLabels.awayTeamLabel)
     },
     gameClock: {
       label: clock.gameClockLabel,
@@ -118,7 +123,7 @@ export function buildPublicScoreboardDisplayModel(
       seconds: shotClockSeconds,
       className: shotClockClassName
     },
-    periodLabel: `${periodType} P${projection.periodNumber}`,
+    periodLabel: formatArenaPeriodLabel(projection.periodType, projection.periodNumber) ?? "REG P1",
     statusLabel: projection.status,
     statusClassName: projection.status === "LIVE" ? "arena-live-badge is-live" : "arena-live-badge",
     activeTimeoutLabel: getActiveTimeoutLabel(projection),
@@ -129,11 +134,74 @@ export function buildPublicScoreboardDisplayModel(
       { icon: "WF", label: "Connection", value: syncShortLabel },
       { icon: "LS", label: "Last sync", value: receivedAt }
     ],
-    recentEventTicker: "No public play updates available.",
+    recentEventTicker: options.recentActionDisplay?.text ?? "No public play updates available.",
     finalLabel: projection.status === "FINISHED" || projection.status === "FINAL"
       ? `Final ${projection.finalScore?.home ?? projection.homeScore} - ${projection.finalScore?.away ?? projection.awayScore}`
       : null
   };
+}
+
+export function buildPublicScoreboardTeamLabels(
+  projection: PublicScoreboardProjection,
+  resolvedTheme = buildPublicDisplayThemeView(projection.displayTheme)
+) {
+  const [homeScorePanel, awayScorePanel] = buildScoreControlPanels(projection);
+  return {
+    homeTeamLabel: resolvedTheme.home.displayName ?? homeScorePanel?.teamName ?? projection.homeTeamName ?? "HOME",
+    awayTeamLabel: resolvedTheme.away.displayName ?? awayScorePanel?.teamName ?? projection.awayTeamName ?? "AWAY"
+  };
+}
+
+export function formatArenaPeriodLabel(periodType: unknown, periodNumber: unknown) {
+  if (!Number.isInteger(periodNumber) || (periodNumber as number) < 1) return null;
+  return `${periodType === "OVERTIME" ? "OT" : "REG"} P${periodNumber}`;
+}
+
+export function toPublicRecentActionDisplay(
+  recentActions: unknown,
+  context: { homeTeamLabel: string; awayTeamLabel: string }
+): PublicRecentActionDisplay | null {
+  if (!Array.isArray(recentActions) || recentActions.length === 0) return null;
+  const action = recentActions[0];
+  if (!action || typeof action !== "object" || Array.isArray(action)) return null;
+  const record = action as Record<string, unknown>;
+
+  switch (record.kind) {
+    case "SCORE": {
+      const teamLabel = resolveRecentActionTeamLabel(record.teamSide, context);
+      if (!teamLabel || (record.points !== 1 && record.points !== 2 && record.points !== 3)) return null;
+      return { text: `${teamLabel} +${record.points}` };
+    }
+    case "TEAM_FOUL": {
+      const teamLabel = resolveRecentActionTeamLabel(record.teamSide, context);
+      return teamLabel ? { text: `${teamLabel} team foul` } : null;
+    }
+    case "TIMEOUT": {
+      const teamLabel = resolveRecentActionTeamLabel(record.teamSide, context);
+      return teamLabel ? { text: `${teamLabel} timeout` } : null;
+    }
+    case "PERIOD": {
+      if (record.phase !== "STARTED" && record.phase !== "ENDED") return null;
+      if (record.periodType !== "REGULATION" && record.periodType !== "OVERTIME") return null;
+      const periodLabel = formatArenaPeriodLabel(record.periodType, record.periodNumber);
+      return periodLabel ? { text: `${periodLabel} ${record.phase === "STARTED" ? "started" : "ended"}` } : null;
+    }
+    case "GAME_STATUS":
+      if (record.status === "STARTED") return { text: "Game started" };
+      if (record.status === "FINAL") return { text: "Final" };
+      return null;
+    default:
+      return null;
+  }
+}
+
+function resolveRecentActionTeamLabel(
+  teamSide: unknown,
+  context: { homeTeamLabel: string; awayTeamLabel: string }
+) {
+  if (teamSide === "HOME") return context.homeTeamLabel;
+  if (teamSide === "AWAY") return context.awayTeamLabel;
+  return null;
 }
 
 export type PublicScoreboardDisplayModel = ReturnType<typeof buildPublicScoreboardDisplayModel>;

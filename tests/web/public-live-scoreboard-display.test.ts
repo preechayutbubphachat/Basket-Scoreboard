@@ -50,7 +50,7 @@ describe("public live scoreboard arena visual contract", () => {
   test("does not derive bonus or fabricate recent activity", () => {
     expect(componentSource).toContain('className="arena-neutral-value">--');
     expect(componentSource).not.toMatch(/fouls\s*[><=]+\s*\d+/);
-    expect(displayModelSource).toContain('recentEventTicker: "No public play updates available."');
+    expect(displayModelSource).toContain('recentEventTicker: options.recentActionDisplay?.text ?? "No public play updates available."');
     expect(componentSource).not.toMatch(/SCORE_ADDED|FOUL_ADDED|TIMEOUT_GRANTED|POSSESSION/);
   });
 

@@ -273,11 +273,13 @@ import {
 } from "./lib/publicDisplayScene";
 import {
   buildPublicArenaMatchMetadataDisplay,
+  buildPublicScoreboardTeamLabels,
   buildPublicScoreboardDisplayLink,
   buildPublicScoreboardClockState,
   buildPublicScoreboardDisplayModel,
   getPublicDisplayControlsClassName,
-  isPublicDisplayKioskMode
+  isPublicDisplayKioskMode,
+  toPublicRecentActionDisplay
 } from "./lib/publicScoreboardDisplay";
 import { buildSummaryPlayerLabels, getSummaryTeamTotals } from "./lib/summaryControl";
 import {
@@ -4963,12 +4965,21 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     () => buildPublicArenaMatchMetadataDisplay(projection?.matchMetadata),
     [projection?.matchMetadata]
   );
+  const teamLabels = useMemo(
+    () => projection ? buildPublicScoreboardTeamLabels(projection) : null,
+    [projection?.displayTheme, projection?.homeTeamName, projection?.awayTeamName]
+  );
+  const recentActionDisplay = useMemo(
+    () => teamLabels ? toPublicRecentActionDisplay(projection?.recentActions, teamLabels) : null,
+    [projection?.recentActions, teamLabels]
+  );
   const display = projection
     ? buildPublicScoreboardDisplayModel(projection, {
       nowMs,
       receivedAtMs: projectionReceivedAtMs,
       realtimeState,
-      matchMetadata
+      matchMetadata,
+      recentActionDisplay
     })
     : null;
 

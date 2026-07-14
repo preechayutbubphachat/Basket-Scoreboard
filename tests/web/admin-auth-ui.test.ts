@@ -3936,7 +3936,7 @@ describe("tournament schedule UI policy", () => {
       appSource.indexOf("function PublicDisplayScenePage")
     );
     expect(publicScoreboardSource).not.toMatch(/<dt>Seq<\/dt>|icon:\s*"SQ"|label:\s*"Seq"|seqLabel/);
-    expect(displaySource).toContain('recentEventTicker: "No public play updates available."');
+    expect(displaySource).toContain('recentEventTicker: options.recentActionDisplay?.text ?? "No public play updates available."');
     expect(appSource).not.toMatch(/fake|demo schedule|sample final|sample ticker/i);
   });
 
