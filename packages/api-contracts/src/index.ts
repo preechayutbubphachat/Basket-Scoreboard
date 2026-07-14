@@ -1570,6 +1570,31 @@ export type ScoreboardProjection = {
   displayTheme?: PublicDisplayTheme | null;
 };
 
+export type PublicRecentAction =
+  | {
+      kind: "SCORE";
+      teamSide: "HOME" | "AWAY";
+      points: 1 | 2 | 3;
+    }
+  | {
+      kind: "TEAM_FOUL";
+      teamSide: "HOME" | "AWAY";
+    }
+  | {
+      kind: "TIMEOUT";
+      teamSide: "HOME" | "AWAY";
+    }
+  | {
+      kind: "PERIOD";
+      phase: "STARTED" | "ENDED";
+      periodType: "REGULATION" | "OVERTIME";
+      periodNumber: number;
+    }
+  | {
+      kind: "GAME_STATUS";
+      status: "STARTED" | "FINAL";
+    };
+
 export type PublicScoreboardProjection = {
   matchId: string;
   homeTeamName?: string | null;
@@ -1604,6 +1629,7 @@ export type PublicScoreboardProjection = {
   };
   serverTime?: string;
   status: ScoreboardProjection["status"];
+  recentActions: PublicRecentAction[];
   finalScore?: { home: number; away: number } | null;
   displayTheme?: PublicDisplayTheme | null;
   matchMetadata?: PublicMatchMetadata;

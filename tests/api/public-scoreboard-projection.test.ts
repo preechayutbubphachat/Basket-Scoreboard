@@ -18,6 +18,7 @@ const publicScoreboardKeys = [
   "matchId",
   "periodNumber",
   "periodType",
+  "recentActions",
   "serverTime",
   "shotClock",
   "shotClockRemainingMs",
@@ -78,8 +79,23 @@ describe("public scoreboard projection boundary", () => {
       currentSeq: 124,
       lastEventSeq: 124,
       projectionVersion: "scoreboard-v1",
+      recentActionState: {
+        version: 1,
+        initializedAtSeq: 120,
+        items: [{
+          sourceEventSeq: 124,
+          kind: "SCORE",
+          teamSide: "HOME",
+          points: 2,
+          playerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          actor: "private"
+        }]
+      },
       nestedDebug: { publicLabel: "must not leak" }
-    } as ScoreboardProjection & { nestedDebug: Record<string, unknown> };
+    } as ScoreboardProjection & {
+      recentActionState: unknown;
+      nestedDebug: Record<string, unknown>;
+    };
 
     const publicProjection = toPublicScoreboardProjection(protectedProjection);
 
@@ -91,11 +107,12 @@ describe("public scoreboard projection boundary", () => {
       homeScore: 12,
       awayScore: 9,
       teamFouls: { home: 2, away: 1 },
+      recentActions: [{ kind: "SCORE", teamSide: "HOME", points: 2 }],
       activeTimeout: { teamSide: "HOME", remainingMs: 42000 }
     });
     expect(publicProjection.activeTimeout).toEqual({ teamSide: "HOME", remainingMs: 42000 });
     expect(JSON.stringify(publicProjection)).not.toMatch(
-      /homeTeamId|awayTeamId|playerId|playerFouls|roster|teamFoulsByPeriod|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq|projectionVersion|nestedDebug|requestedBy|durationMs/i
+      /homeTeamId|awayTeamId|playerId|playerFouls|roster|teamFoulsByPeriod|recentActionState|sourceEventSeq|initializedAtSeq|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq|projectionVersion|nestedDebug|requestedBy|durationMs|actor/i
     );
     expect(protectedProjection).toMatchObject({ currentSeq: 124, lastEventSeq: 124 });
     expect(protectedProjection.playerFouls).toHaveLength(1);
@@ -128,6 +145,7 @@ describe("public scoreboard projection boundary", () => {
     } as ScoreboardProjection & { futureInternalProjectionField: string };
 
     const publicProjection = toPublicScoreboardProjection(projection);
+    expect(publicProjection.recentActions).toEqual([]);
     expect(publicProjection).not.toHaveProperty("futureInternalProjectionField");
     expect(JSON.stringify(publicProjection)).not.toMatch(/internalBreakdown|privateAllocation|clockAudit/);
   });

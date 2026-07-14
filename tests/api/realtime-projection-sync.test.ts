@@ -136,7 +136,8 @@ function waitForSocketEvent<T>(socket: Socket, eventName: string, timeoutMs = 30
 const forbiddenPublicKeys = new Set([
   "lastEventSeq", "currentSeq", "expectedSeq", "projectionVersion", "eventSeq", "streamVersion",
   "actor", "device", "session", "token", "csrf", "commandId", "correlationId", "causationId",
-  "audit", "correction", "permissions", "assignments", "rawEvents"
+  "audit", "correction", "permissions", "assignments", "rawEvents", "sourceEventSeq",
+  "initializedAtSeq", "recentActionState", "playerName", "jerseyNumber"
 ]);
 
 function collectForbiddenPublicKeys(value: unknown, found = new Set<string>()) {
@@ -182,6 +183,7 @@ describe("realtime projection sync", () => {
           matchId,
           homeTeamName: "HOME",
           awayTeamName: "AWAY",
+          recentActions: [],
           matchMetadata: {
             roundLabel: "Round 2",
             courtLabel: "Court A",
@@ -334,6 +336,7 @@ describe("realtime projection sync", () => {
       socket.emit("match:join", { matchId, view: "PUBLIC_SCOREBOARD" });
       const snapshot = await nextSnapshot;
       expect(Object.keys(snapshot).sort()).toEqual(["matchId", "publicScoreboard", "serverTime"]);
+      expect(snapshot.publicScoreboard.recentActions).toEqual([]);
       expect([...collectForbiddenPublicKeys(snapshot)]).toEqual([]);
     } finally {
       socket.close();
@@ -379,6 +382,9 @@ describe("realtime projection sync", () => {
       expect(response.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
       const update = await updatePromise as PublicProjectionUpdatedPayload;
       expect(Object.keys(update).sort()).toEqual(["matchId", "publicScoreboard", "updatedAt"]);
+      expect(update.publicScoreboard.recentActions).toEqual([
+        { kind: "SCORE", teamSide: "HOME", points: 2 }
+      ]);
       expect(update).toMatchObject({
         matchId,
         publicScoreboard: {
