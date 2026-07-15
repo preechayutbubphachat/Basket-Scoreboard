@@ -82,7 +82,7 @@ Use only these status values:
 | ID | Milestone | Status |
 |---|---|---|
 | RM-00 | Accessibility Integration Baseline | `INTEGRATED` |
-| RM-01 | Shared Design System & Application Shell | `CURRENT` |
+| RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
 | RM-02 | Public Scoreboard Visual Parity Closure | `PENDING` |
 | RM-03 | Unified LiveMatchShell Foundation | `PENDING` |
 | RM-04 | Clock & Shot Clock Dashboard | `PENDING` |
@@ -113,9 +113,9 @@ RM-01-P3 = INTEGRATED
 RM-01-P3-I = INTEGRATED
 RM-01-P4 = INTEGRATED
 RM-01-P4-I = INTEGRATED
-RM-01-P5 = PENDING
-RM-01 top-level = CURRENT
-Next safe step: RM-01-P5 - Visual Regression and Integration Closure
+RM-01-P5 = INTEGRATED
+RM-01 top-level = INTEGRATED
+Next safe step: RM-02 - Public Scoreboard Visual Parity Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -184,7 +184,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, RM-01-P3-I, RM-01-P4, and RM-01-P4-I are `INTEGRATED`; RM-01-P5 remains `PENDING`. Next safe step: RM-01-P5 - Visual Regression and Integration Closure.
+- Current implementation state: `INTEGRATED`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, RM-01-P3-I, RM-01-P4, RM-01-P4-I, and RM-01-P5 are `INTEGRATED`. Next safe step: RM-02 - Public Scoreboard Visual Parity Closure.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -633,11 +633,11 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P4 integration:
+Current roadmap state after RM-01-P5 closure:
 
 ```text
 RM-00 = INTEGRATED
-RM-01 = CURRENT
+RM-01 = INTEGRATED
 RM-01-D1 = DISCOVERY COMPLETE
 RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
@@ -647,7 +647,7 @@ RM-01-P3 = INTEGRATED
 RM-01-P3-I = INTEGRATED
 RM-01-P4 = INTEGRATED
 RM-01-P4-I = INTEGRATED
-RM-01-P5 = PENDING
+RM-01-P5 = INTEGRATED
 RM-02 through RM-18 = PENDING
 ```
 
@@ -740,10 +740,29 @@ RM-01-P4-I integration evidence:
 - Known limitations: database-backed tests requiring a disposable configured database remained skipped; forced-colors browser emulation remained unavailable.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-01-P5 closure evidence:
+
+- RM-01 baseline final commit: `b2d13621f69b9cc7149a9361af4dc9bbac9fed59`.
+- Visual targets: all 16 local `UI-design` targets were reviewed with Gridgeist. The shared dark operational canvas, surface and border hierarchy, cyan/red operational accents, off-white dominant values, restrained team accents, semantic headers/navigation/context bars, status and command presentation, dense tables, warning panels, secondary rails, strong focus treatment, and public/authenticated layout separation are supported by the RM-01 foundation. Screen-specific parity remains assigned to RM-02 through RM-18.
+- Foundation closure: semantic design tokens; `UiPanel`; `UiBadge`; `UiButton`; `UiStatusIndicator`; `UiConnectionStatus`; `UiCommandStatus`; `UiCommandSafetyPanel`; `UiDataTable`; `UiEmptyState`; `PublicDisplayShell`; and `AuthenticatedDashboardShell` passed responsibility, semantic HTML, responsive, accessibility, public/private, network, socket, and domain-ownership review. No RM-01 source correction was required.
+- Public browser matrix: Chromium passed LIVE at 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576. The exact 1024x576 viewport had no document overflow; scores, game clock, shot clock, ticker, status rail, lower frame, and unclipped 3px focus treatment remained visible. LIVE -> BLANK -> SCHEDULE -> LIVE produced no stale scene content. A local FINAL_SUMMARY unavailable fixture rendered the public-safe unavailable state.
+- Authenticated browser matrix: Chromium passed `/admin` at 1920x1080, 1600x900, 1536x1024, and 1366x768 with one labelled main landmark, named navigation, semantic header, no document horizontal overflow, reachable navigation, visible unclipped focus, readable secondary rail, safe long Thai/English account context, and no layout overlap.
+- Accessibility closure: native control semantics, text-backed statuses, deliberate live regions, semantic caption/header table contracts, local table overflow, 3px focus-visible treatment, runtime forced-colors emulation, and runtime reduced-motion emulation passed. Native fullscreen entry and exit also passed in local Chromium.
+- Public/private and lifecycle closure: public fixture payloads and rendered DOM exposed no actor, role, device, session, token, CSRF, command/correlation/causation IDs, audit/correction metadata, or internal/projection sequence. Public auth requests and protected writes remained zero. RM-01 shells/primitives own no authentication, domain mutation, socket, reconnect, polling, timer, expected-sequence, idempotency, or server-authorization behavior.
+- Browser resources: console errors `0`; console warnings `0`; page errors `0`; failed normal-load resources `0`. Navigation-aborted Socket.IO polling cleanup was observed separately during scene navigation and is not a normal-load resource failure.
+- Focused validation: `PASS`; 12 frontend files and 156 tests passed across tokens, primitives, focus/keyboard, public shell, authenticated shell, status/command/table, public scoreboard, metadata, recent action, auth boundary, final summary, and brand-asset suites.
+- Full validation: lint `PASS`; 540 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-xvHp0H58.js` 530.76 kB (139.03 kB gzip) and `index-D_HkOqz-.css` 70.10 kB (13.72 kB gzip). The existing Vite chunk-size warning remains recorded; code splitting is deferred outside RM-01-P5.
+- Known limitation: 23 database-dependent tests requiring a disposable configured database remained skipped.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`.
+- Timezone formatter: `FOLLOW-UP`.
+- CSP: `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-01-P5 - Visual Regression and Integration Closure
+RM-02 - Public Scoreboard Visual Parity Closure
 ```
 
-Do not begin RM-01-P5 until it is separately approved.
+Do not begin RM-02 until it is separately approved.
