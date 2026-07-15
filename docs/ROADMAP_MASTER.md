@@ -107,10 +107,11 @@ Current milestone slice state:
 RM-01-D1 = DISCOVERY COMPLETE
 RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
-RM-01-P2 = IMPLEMENTATION COMPLETE
+RM-01-P2 = INTEGRATED
+RM-01-P2-I = INTEGRATED
 RM-01-P3/P4/P5 = PENDING
 RM-01 top-level = CURRENT
-Next safe step: RM-01-P2-I - PublicDisplayShell integration gate
+Next safe step: RM-01-P3 - AuthenticatedDashboardShell Foundation
 ```
 
 ## 6. Straight-Line Diagram
@@ -179,7 +180,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1 and RM-01-P1-I are `INTEGRATED`; RM-01-P2 is `IMPLEMENTATION COMPLETE`; RM-01-P3/P4/P5 remain `PENDING`. Next safe step: RM-01-P2-I integration gate.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, and RM-01-P2-I are `INTEGRATED`; RM-01-P3/P4/P5 remain `PENDING`. Next safe step: RM-01-P3 - AuthenticatedDashboardShell Foundation.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -187,7 +188,7 @@ There is no parallel top-level path.
 - Acceptance: token primitives reduce duplication without changing routes, commands, projections, or authorization.
 - Tests: token/component contracts, auth-boundary regressions, responsive and focus verification.
 - Production gate: integrate all RM-01 slices, complete local browser matrix, then owner-approved deployment gate.
-- Known blockers: RM-01-P2 integration evidence and the remaining product decisions listed in RM-01-D1.
+- Known blockers: the remaining product decisions listed in RM-01-D1.
 - Source requirements: existing design targets and WCAG; no new rule logic.
 - Next milestone: RM-02.
 
@@ -628,7 +629,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P2 implementation:
+Current roadmap state after RM-01-P2 integration:
 
 ```text
 RM-00 = INTEGRATED
@@ -636,7 +637,8 @@ RM-01 = CURRENT
 RM-01-D1 = DISCOVERY COMPLETE
 RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
-RM-01-P2 = IMPLEMENTATION COMPLETE
+RM-01-P2 = INTEGRATED
+RM-01-P2-I = INTEGRATED
 RM-01-P3/P4/P5 = PENDING
 RM-02 through RM-18 = PENDING
 ```
@@ -659,6 +661,7 @@ RM-01-P1 integration evidence:
 RM-01-P2 implementation evidence:
 
 - Branch: `feature/rm01-p2-public-display-shell`.
+- Implementation commit: `c716eace47bf22ecf9165f3e17f2e592bf7e237f`.
 - Parent baseline: `50c0c3223aed9d43bd12f439af570dbe337a70a0`.
 - Scope: extracted `PublicDisplayShell` as a presentation-only boundary for the existing public frame, utility controls, fullscreen boundary, accessibility landmark, and scene content slot; scene models, public API mapping, polling, socket lifecycle, score/clock logic, and scene renderers remain outside the shell.
 - Focused tests: PASS. The six public display, focus, live, recent-action, final-summary, and auth-boundary files passed 54 tests; the final shell/focus rerun passed 9 tests.
@@ -669,10 +672,20 @@ RM-01-P2 implementation evidence:
 - Known limitations: database-backed tests requiring a disposable configured database remained skipped; exact deterministic score-text pixel comparison is not claimed because the existing score-pulse animation changes capture-time bounds; native fullscreen itself was not entered in headless Chromium, but target/API behavior was verified.
 - Production status: `NOT DEPLOYED`; current main is not claimed as deployed and last proven production remains unchanged.
 
+RM-01-P2-I integration evidence:
+
+- Integration method: fast-forward merge of `feature/rm01-p2-public-display-shell` into `main`; no merge commit, rebase, amend, squash, cherry-pick, reset, or force push.
+- Integrated implementation commit: `c716eace47bf22ecf9165f3e17f2e592bf7e237f`.
+- Implementation parent: `50c0c3223aed9d43bd12f439af570dbe337a70a0`.
+- Focused validation: PASS. `npm test -- tests/web/public-display-shell.test.ts tests/web/public-display-focus-keyboard.test.ts` passed 2 files and 9 tests.
+- Full implementation validation: 511 passed; 23 database-dependent skipped; lint PASS; build PASS; build:single PASS.
+- Scope: Roadmap closure only after integration; no implementation source edit was made during integration closure.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-01-P2-I - PublicDisplayShell integration gate
+RM-01-P3 - AuthenticatedDashboardShell Foundation
 ```
 
-Do not begin RM-01-P2-I until it is separately approved.
+Do not begin RM-01-P3 until it is separately approved.
