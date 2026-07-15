@@ -105,7 +105,9 @@ Current milestone slice state:
 
 ```text
 RM-01-D1 = DISCOVERY COMPLETE
-RM-01-P1 = NEXT
+RM-01-P1 = IMPLEMENTATION COMPLETE
+RM-01-P1-I = NEXT
+RM-01-P2 = PENDING
 RM-01 top-level = CURRENT
 ```
 
@@ -175,7 +177,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1 is `NEXT`.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1 is `IMPLEMENTATION COMPLETE`; RM-01-P1-I is `NEXT`; RM-01-P2 is `PENDING`.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -624,20 +626,36 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Final roadmap state for this bootstrap:
+Current roadmap state after local RM-01-P1 implementation:
 
 ```text
 RM-00 = INTEGRATED
 RM-01 = CURRENT
 RM-01-D1 = DISCOVERY COMPLETE
-RM-01-P1 = NEXT
+RM-01-P1 = IMPLEMENTATION COMPLETE
+RM-01-P1-I = NEXT
+RM-01-P2 = PENDING
 RM-02 through RM-18 = PENDING
 ```
+
+RM-01-P1 local evidence:
+
+- Branch: `feature/rm01-p1-design-tokens-primitives`.
+- Commit: pending local implementation commit; the final hash is reported externally without amending this evidence.
+- Scope: dedicated semantic token and primitive CSS layers; `UiPanel`, `UiBadge`, `UiButton`, and `UiStatusIndicator`; focused component/token/public regression tests; token-equivalent public focus and scoreboard aliases.
+- Production adoption: deferred to RM-01-P1-I because no current production component could be migrated without unnecessary visual risk; primitives were exercised through an external browser fixture and repository tests only.
+- Focused tests: 89 passed across token, primitive, public display, and public auth-boundary suites.
+- Full validation: lint passed; 507 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: Chromium public scoreboard checks passed at 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576; primitive fixture checks passed at those sizes plus 1536x1024. No document overflow, console warning/error, failed resource, or public auth bootstrap request was observed.
+- Visual regression: Arena frame, scoreboard grid, game-clock rectangle, and shot-clock rectangle were unchanged at 1920x1080, 1366x768, and 1024x576. Score bounding-box measurements varied only while the existing score-pulse animation was active; score CSS geometry was not changed and visual inspection remained equivalent.
+- Accessibility: native button activation, disabled/busy states, heading association, visible status labels, focus-visible geometry, forced-colors fallback, and reduced-motion behavior passed.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; exact deterministic score-pixel comparison is not claimed because the existing score-pulse animation changes capture-time bounds.
+- Production status: `NOT DEPLOYED`; last proven production remains unchanged.
 
 Next safe step:
 
 ```text
-RM-01-P1 - Design Tokens and Primitive Components
+RM-01-P1-I - Integrate the approved local token/primitive commit through the guarded RM-01 integration gate
 ```
 
-Do not begin RM-01-P1 as part of RM-BOOTSTRAP.
+Do not begin RM-01-P2 until RM-01-P1-I is complete and separately approved.

@@ -25,9 +25,9 @@ describe("public display utility control accessibility", () => {
   });
 
   test("uses one non-color-only focus-visible treatment for links and buttons", () => {
-    expect(styles).toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*outline:\s*3px solid #f8fafc/);
-    expect(styles).toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*outline-offset:\s*3px/);
-    expect(styles).toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*box-shadow:\s*0 0 0 2px #020617/);
+    expect(styles).toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*outline:\s*var\(--focus-outline-width, 3px\) solid var\(--color-focus, #f8fafc\)/);
+    expect(styles).toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*outline-offset:\s*var\(--focus-outline-offset, 3px\)/);
+    expect(styles).toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*box-shadow:\s*var\(--focus-separation-halo, 0 0 0 2px #020617\)/);
     expect(styles).not.toMatch(/\.arena-display-actions \.public-display-control:focus-visible\s*\{[\s\S]*outline:\s*none/);
   });
 

@@ -1633,11 +1633,11 @@ label {
 
 .arena-display-actions .public-display-control:focus-visible {
   background: rgba(103, 232, 249, 0.16);
-  border-color: #67e8f9;
-  box-shadow: 0 0 0 2px #020617;
+  border-color: var(--color-clock-game, #67e8f9);
+  box-shadow: var(--focus-separation-halo, 0 0 0 2px #020617);
   color: #f8fafc;
-  outline: 3px solid #f8fafc;
-  outline-offset: 3px;
+  outline: var(--focus-outline-width, 3px) solid var(--color-focus, #f8fafc);
+  outline-offset: var(--focus-outline-offset, 3px);
 }
 
 @media (forced-colors: active) {
@@ -2570,9 +2570,9 @@ th {
   --arena-metric-label-size: clamp(0.58rem, 1.35vh, 0.82rem);
   --arena-action-h: clamp(38px, 8.8vh, 82px);
   --arena-system-h: clamp(26px, 5.4vh, 50px);
-  --arena-score-color: #f8fafc;
-  --arena-clock-color: #67e8f9;
-  --arena-warning-color: #ef4444;
+  --arena-score-color: var(--color-score, #f8fafc);
+  --arena-clock-color: var(--color-clock-game, #67e8f9);
+  --arena-warning-color: var(--color-clock-shot, #ef4444);
   --arena-frame-color: rgba(103, 232, 249, 0.24);
   --arena-reduced-motion-duration: 1ms;
 }

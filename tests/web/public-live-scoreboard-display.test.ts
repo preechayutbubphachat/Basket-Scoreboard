@@ -7,9 +7,9 @@ const styles = readFileSync("apps/web/src/styles.css", "utf8");
 
 describe("public live scoreboard arena visual contract", () => {
   test("keeps score and clock colors fixed and broadcast safe", () => {
-    expect(styles).toContain("--arena-score-color: #f8fafc");
-    expect(styles).toContain("--arena-clock-color: #67e8f9");
-    expect(styles).toContain("--arena-warning-color: #ef4444");
+    expect(styles).toContain("--arena-score-color: var(--color-score, #f8fafc)");
+    expect(styles).toContain("--arena-clock-color: var(--color-clock-game, #67e8f9)");
+    expect(styles).toContain("--arena-warning-color: var(--color-clock-shot, #ef4444)");
     expect(styles).toMatch(/\.public-display-score-value[\s\S]*font-variant-numeric:\s*tabular-nums/);
     expect(styles).toMatch(/\.public-display-score-value[\s\S]*white-space:\s*nowrap/);
     expect(styles).toMatch(/\.public-display-team h2[\s\S]*-webkit-line-clamp:\s*2/);
