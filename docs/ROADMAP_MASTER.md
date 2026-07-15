@@ -109,11 +109,12 @@ RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
 RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
-RM-01-P3 = IMPLEMENTATION COMPLETE
-RM-01-P3-I = PENDING
-RM-01-P4/P5 = PENDING
+RM-01-P3 = INTEGRATED
+RM-01-P3-I = INTEGRATED
+RM-01-P4 = PENDING
+RM-01-P5 = PENDING
 RM-01 top-level = CURRENT
-Next safe step: RM-01-P3-I - AuthenticatedDashboardShell integration gate
+Next safe step: RM-01-P4 - Shared Status, Command and Table Primitives
 ```
 
 ## 6. Straight-Line Diagram
@@ -182,7 +183,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, and RM-01-P2-I are `INTEGRATED`; RM-01-P3 is `IMPLEMENTATION COMPLETE`; RM-01-P3-I, RM-01-P4, and RM-01-P5 remain `PENDING`. Next safe step: RM-01-P3-I - AuthenticatedDashboardShell integration gate.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, and RM-01-P3-I are `INTEGRATED`; RM-01-P4 and RM-01-P5 remain `PENDING`. Next safe step: RM-01-P4 - Shared Status, Command and Table Primitives.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -631,7 +632,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P3 implementation:
+Current roadmap state after RM-01-P3 integration:
 
 ```text
 RM-00 = INTEGRATED
@@ -641,9 +642,10 @@ RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
 RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
-RM-01-P3 = IMPLEMENTATION COMPLETE
-RM-01-P3-I = PENDING
-RM-01-P4/P5 = PENDING
+RM-01-P3 = INTEGRATED
+RM-01-P3-I = INTEGRATED
+RM-01-P4 = PENDING
+RM-01-P5 = PENDING
 RM-02 through RM-18 = PENDING
 ```
 
@@ -700,10 +702,20 @@ RM-01-P3 implementation evidence:
 - Known limitations: database-backed tests requiring a disposable configured database remained skipped; no authenticated command/socket-heavy route was adopted in this foundation slice.
 - Production status: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-01-P3-I integration evidence:
+
+- Integration method: fast-forward merge of `feature/rm01-p3-authenticated-dashboard-shell` into `main`; no merge commit, rebase, amend, squash, cherry-pick, reset, or force push.
+- Implementation commit: `590aa4b380d015bd1fc3d55b4c670d90d7df9126`.
+- Implementation parent: `53358bcb8c529761a6eefa5138f471d557cc816a`.
+- Focused validation: `PASS`.
+- Full validation: 517 passed; 23 DB-dependent skipped; lint `PASS`; build `PASS`; build:single `PASS`.
+- Scope: Roadmap closure only after integration; no implementation source edit was made during integration closure.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-01-P3-I - AuthenticatedDashboardShell integration gate
+RM-01-P4 - Shared Status, Command and Table Primitives
 ```
 
-Do not begin RM-01-P3-I until it is separately approved.
+Do not begin RM-01-P4 until it is separately approved.
