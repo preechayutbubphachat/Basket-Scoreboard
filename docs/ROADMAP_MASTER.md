@@ -107,8 +107,10 @@ Current milestone slice state:
 RM-01-D1 = DISCOVERY COMPLETE
 RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
-RM-01-P2 = NEXT
+RM-01-P2 = IMPLEMENTATION COMPLETE
+RM-01-P3/P4/P5 = PENDING
 RM-01 top-level = CURRENT
+Next safe step: RM-01-P2-I - PublicDisplayShell integration gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -177,7 +179,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1 is `INTEGRATED`; RM-01-P1-I is `INTEGRATED`; RM-01-P2 is `NEXT`; RM-01-P3/P4/P5 remain `PENDING`.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1 and RM-01-P1-I are `INTEGRATED`; RM-01-P2 is `IMPLEMENTATION COMPLETE`; RM-01-P3/P4/P5 remain `PENDING`. Next safe step: RM-01-P2-I integration gate.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -185,7 +187,7 @@ There is no parallel top-level path.
 - Acceptance: token primitives reduce duplication without changing routes, commands, projections, or authorization.
 - Tests: token/component contracts, auth-boundary regressions, responsive and focus verification.
 - Production gate: integrate all RM-01 slices, complete local browser matrix, then owner-approved deployment gate.
-- Known blockers: component extraction risk from monolithic `App.tsx`; product decisions listed in RM-01-D1.
+- Known blockers: RM-01-P2 integration evidence and the remaining product decisions listed in RM-01-D1.
 - Source requirements: existing design targets and WCAG; no new rule logic.
 - Next milestone: RM-02.
 
@@ -626,7 +628,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P1 integration:
+Current roadmap state after RM-01-P2 implementation:
 
 ```text
 RM-00 = INTEGRATED
@@ -634,7 +636,7 @@ RM-01 = CURRENT
 RM-01-D1 = DISCOVERY COMPLETE
 RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
-RM-01-P2 = NEXT
+RM-01-P2 = IMPLEMENTATION COMPLETE
 RM-01-P3/P4/P5 = PENDING
 RM-02 through RM-18 = PENDING
 ```
@@ -654,10 +656,23 @@ RM-01-P1 integration evidence:
 - Known limitations: database-backed tests requiring a disposable configured database remained skipped; exact deterministic score-pixel comparison is not claimed because the existing score-pulse animation changes capture-time bounds.
 - Production status: `NOT DEPLOYED`; last proven production remains unchanged.
 
+RM-01-P2 implementation evidence:
+
+- Branch: `feature/rm01-p2-public-display-shell`.
+- Parent baseline: `50c0c3223aed9d43bd12f439af570dbe337a70a0`.
+- Scope: extracted `PublicDisplayShell` as a presentation-only boundary for the existing public frame, utility controls, fullscreen boundary, accessibility landmark, and scene content slot; scene models, public API mapping, polling, socket lifecycle, score/clock logic, and scene renderers remain outside the shell.
+- Focused tests: PASS. The six public display, focus, live, recent-action, final-summary, and auth-boundary files passed 54 tests; the final shell/focus rerun passed 9 tests.
+- Full validation: lint passed; 511 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: clean unauthenticated Chromium checks passed for LIVE, BLANK, SCHEDULE, and FINAL_SUMMARY. The LIVE -> BLANK -> SCHEDULE -> LIVE transition replaced scene content without stale ticker, metadata, or score DOM. No console warning/error, failed resource, public auth bootstrap request, or protected write request was observed.
+- Geometry evidence: outer frame, header, scoreboard grid, team panels, central clock panel, game-clock and shot-clock rectangles, ticker, utility controls, and status rail matched the pre-extraction baseline at 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576. Existing score-pulse animation caused capture-time text-box variance only; score containers and all structural geometry were unchanged.
+- Interaction and accessibility: utility tab order and native semantics are unchanged; refresh produced one public scoreboard request; fullscreen still targets `document.documentElement`; the single polite atomic ticker live region appears only for LIVE; focus-visible, forced-colors, and reduced-motion rules remain unchanged.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; exact deterministic score-text pixel comparison is not claimed because the existing score-pulse animation changes capture-time bounds; native fullscreen itself was not entered in headless Chromium, but target/API behavior was verified.
+- Production status: `NOT DEPLOYED`; current main is not claimed as deployed and last proven production remains unchanged.
+
 Next safe step:
 
 ```text
-RM-01-P2 - PublicDisplayShell extraction
+RM-01-P2-I - PublicDisplayShell integration gate
 ```
 
-Do not begin RM-01-P2 until it is separately approved.
+Do not begin RM-01-P2-I until it is separately approved.

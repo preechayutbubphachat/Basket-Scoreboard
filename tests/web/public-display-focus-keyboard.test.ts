@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 
 const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
+const shellSource = readFileSync("apps/web/src/components/PublicDisplayShell.tsx", "utf8");
 const styles = readFileSync("apps/web/src/styles.css", "utf8");
 const displayPageSource = appSource.slice(
   appSource.indexOf("function PublicScoreboardDisplayPage"),
@@ -10,18 +11,18 @@ const displayPageSource = appSource.slice(
 
 describe("public display utility control accessibility", () => {
   test("keeps native semantics, accessible names, and logical DOM order", () => {
-    const normalIndex = displayPageSource.indexOf("Normal");
-    const refreshIndex = displayPageSource.indexOf("Refresh");
-    const fullscreenIndex = displayPageSource.indexOf('{fullscreenActive ? "Exit" : "Fullscreen"}');
+    const normalIndex = shellSource.indexOf("Normal");
+    const refreshIndex = shellSource.indexOf("Refresh");
+    const fullscreenIndex = shellSource.indexOf('{controls.fullscreenActive ? "Exit" : "Fullscreen"}');
 
-    expect(displayPageSource).toContain('<nav className="arena-display-actions" aria-label="Public display actions">');
-    expect(displayPageSource).toMatch(/<a[\s\S]*className="public-display-control"[\s\S]*href=\{buildPublicScoreboardLink\(matchId\)\}/);
-    expect(displayPageSource).toMatch(/<button className="public-display-control" type="button"[^>]*>[\s\S]*Refresh/);
-    expect(displayPageSource).toMatch(/<button className="public-display-control" type="button"[^>]*>[\s\S]*Fullscreen/);
+    expect(shellSource).toContain('<nav className="arena-display-actions" aria-label="Public display actions">');
+    expect(shellSource).toMatch(/<a[\s\S]*className="public-display-control"[\s\S]*href=\{controls\.normalHref\}/);
+    expect(shellSource).toMatch(/<button className="public-display-control" type="button"[^>]*>[\s\S]*Refresh/);
+    expect(shellSource).toMatch(/<button className="public-display-control" type="button"[^>]*>[\s\S]*Fullscreen/);
     expect(normalIndex).toBeGreaterThan(-1);
     expect(refreshIndex).toBeGreaterThan(normalIndex);
     expect(fullscreenIndex).toBeGreaterThan(refreshIndex);
-    expect(displayPageSource).not.toMatch(/tabIndex|onKeyDown|role="button"/);
+    expect(shellSource).not.toMatch(/tabIndex|onKeyDown|role="button"/);
   });
 
   test("uses one non-color-only focus-visible treatment for links and buttons", () => {
@@ -44,8 +45,10 @@ describe("public display utility control accessibility", () => {
   });
 
   test("does not add commands, auth bootstrap, or extra public tab stops", () => {
-    expect(displayPageSource.match(/className="public-display-control"/g)).toHaveLength(3);
-    expect(displayPageSource).not.toMatch(/\/api\/v1\/auth\/me|commandId|correlationId|csrf|session|operator/i);
-    expect(displayPageSource).not.toMatch(/<input|<select|<textarea/);
+    expect(shellSource.match(/className="public-display-control"/g)).toHaveLength(3);
+    expect(shellSource).not.toMatch(/\/api\/v1\/auth\/me|commandId|correlationId|csrf|session|operator/i);
+    expect(shellSource).not.toMatch(/<input|<select|<textarea/);
+    expect(displayPageSource).toContain("document.documentElement.requestFullscreen");
+    expect(displayPageSource).toContain("document.exitFullscreen");
   });
 });

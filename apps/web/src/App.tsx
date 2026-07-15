@@ -36,6 +36,7 @@ import type {
   VenueSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
+import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
@@ -4984,44 +4985,25 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     : null;
 
   return (
-    <main
+    <PublicDisplayShell
       className={getPublicDisplayControlsClassName({ kioskMode, controlsVisible })}
-      onClick={() => setControlsVisible(true)}
-      onFocus={() => setControlsVisible(true)}
-      onMouseMove={() => setControlsVisible(true)}
-      onPointerDown={() => setControlsVisible(true)}
+      frameClassName={display?.arenaFrameClassName ?? "public-display-frame arena-layout"}
+      frameStyle={display?.arenaFrameStyle as CSSProperties | undefined}
+      frameLabel="16:9 public scoreboard display"
+      onRevealControls={() => setControlsVisible(true)}
+      controls={{
+        normalHref: buildPublicScoreboardLink(matchId),
+        onNormal: () => navigate(buildPublicScoreboardLink(matchId)),
+        onRefresh: () => void refreshPublicScoreboard(),
+        fullscreenSupported,
+        fullscreenActive,
+        onToggleFullscreen: () => void toggleFullscreen()
+      }}
     >
-      <section
-        className={display?.arenaFrameClassName ?? "public-display-frame arena-layout"}
-        style={display?.arenaFrameStyle as CSSProperties | undefined}
-        aria-label="16:9 public scoreboard display"
-      >
-        <nav className="arena-display-actions" aria-label="Public display actions">
-          <a
-            className="public-display-control"
-            href={buildPublicScoreboardLink(matchId)}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate(buildPublicScoreboardLink(matchId));
-            }}
-          >
-            Normal
-          </a>
-          <button className="public-display-control" type="button" onClick={() => void refreshPublicScoreboard()}>
-            Refresh
-          </button>
-          {fullscreenSupported ? (
-            <button className="public-display-control" type="button" onClick={() => void toggleFullscreen()}>
-              {fullscreenActive ? "Exit" : "Fullscreen"}
-            </button>
-          ) : null}
-        </nav>
-
-        {message ? <Notice {...message} /> : null}
-        {!display ? <p className="public-display-loading">Loading scoreboard...</p> : null}
-        {display ? <PublicLiveScoreboard display={display} /> : null}
-      </section>
-    </main>
+      {message ? <Notice {...message} /> : null}
+      {!display ? <p className="public-display-loading">Loading scoreboard...</p> : null}
+      {display ? <PublicLiveScoreboard display={display} /> : null}
+    </PublicDisplayShell>
   );
 }
 
@@ -5073,11 +5055,13 @@ function PublicDisplayScenePage({ screenSlug }: { screenSlug: string }) {
   }
 
   return (
-    <main className="public-display-shell kiosk-mode controls-hidden">
-      <section className="public-display-frame arena-layout public-display-scene-frame" aria-label="Public display scene">
-        <PublicDisplaySceneCard model={sceneModel} fallbackSlug={screenSlug} />
-      </section>
-    </main>
+    <PublicDisplayShell
+      className="public-display-shell kiosk-mode controls-hidden"
+      frameClassName="public-display-frame arena-layout public-display-scene-frame"
+      frameLabel="Public display scene"
+    >
+      <PublicDisplaySceneCard model={sceneModel} fallbackSlug={screenSlug} />
+    </PublicDisplayShell>
   );
 }
 
