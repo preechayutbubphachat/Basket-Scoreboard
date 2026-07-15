@@ -2,6 +2,14 @@
 
 Production-grade basketball scoreboard and tournament management web application.
 
+## Implementation Start Here
+
+Start here for implementation work: [docs/ROADMAP_MASTER.md](docs/ROADMAP_MASTER.md)
+
+Repository agent protocol: [AGENTS.md](AGENTS.md)
+
+Canonical visual-target inventory: [docs/ui/UI_DESIGN_INVENTORY.md](docs/ui/UI_DESIGN_INVENTORY.md)
+
 ## Architecture Rules
 
 - Match events are the source of truth.
