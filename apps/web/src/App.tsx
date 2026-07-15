@@ -40,6 +40,7 @@ import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem 
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
+import { UiCommandSafetyPanel, UiConnectionStatus } from "./components/ui";
 import "./styles/authenticated-dashboard.css";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
@@ -746,17 +747,23 @@ function AdminDashboardHome() {
       }}
       contextLabel="Tournament operations"
       navigationItems={navigationItems}
-      statusContent={<span className="authenticated-dashboard-status-item">Authenticated</span>}
+      statusContent={<UiConnectionStatus label="Authenticated session" state="connected" />}
       subtitle="Assignments, tournaments, and public display operations"
       title="Admin Dashboard"
       userContent={<><strong>{displayName}</strong><span>{roleSummary}</span></>}
       secondaryRail={(
         <>
-          <h2>Workspace status</h2>
-          <dl>
-            <div><dt>Access</dt><dd>{roleSummary}</dd></div>
-            <div><dt>Surface</dt><dd>Administration</dd></div>
-          </dl>
+          <UiCommandSafetyPanel
+            confirmationMessage="Sensitive actions require explicit confirmation when provided by their protected workflow."
+            readOnlyMessage="This overview does not submit match commands."
+          />
+          <section aria-labelledby="admin-workspace-status-heading" className="authenticated-dashboard-workspace-summary">
+            <h2 id="admin-workspace-status-heading">Workspace status</h2>
+            <dl>
+              <div><dt>Access</dt><dd>{roleSummary}</dd></div>
+              <div><dt>Surface</dt><dd>Administration</dd></div>
+            </dl>
+          </section>
         </>
       )}
     >

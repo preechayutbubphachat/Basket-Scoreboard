@@ -111,10 +111,11 @@ RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
 RM-01-P3 = INTEGRATED
 RM-01-P3-I = INTEGRATED
-RM-01-P4 = PENDING
+RM-01-P4 = IMPLEMENTATION COMPLETE
+RM-01-P4-I = PENDING
 RM-01-P5 = PENDING
 RM-01 top-level = CURRENT
-Next safe step: RM-01-P4 - Shared Status, Command and Table Primitives
+Next safe step: RM-01-P4-I - Shared Status, Command and Table Primitives integration gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -183,7 +184,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, and RM-01-P3-I are `INTEGRATED`; RM-01-P4 and RM-01-P5 remain `PENDING`. Next safe step: RM-01-P4 - Shared Status, Command and Table Primitives.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, and RM-01-P3-I are `INTEGRATED`; RM-01-P4 is `IMPLEMENTATION COMPLETE`; RM-01-P4-I and RM-01-P5 remain `PENDING`. Next safe step: RM-01-P4-I - Shared Status, Command and Table Primitives integration gate.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -632,7 +633,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P3 integration:
+Current roadmap state after RM-01-P4 implementation:
 
 ```text
 RM-00 = INTEGRATED
@@ -644,7 +645,8 @@ RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
 RM-01-P3 = INTEGRATED
 RM-01-P3-I = INTEGRATED
-RM-01-P4 = PENDING
+RM-01-P4 = IMPLEMENTATION COMPLETE
+RM-01-P4-I = PENDING
 RM-01-P5 = PENDING
 RM-02 through RM-18 = PENDING
 ```
@@ -712,10 +714,25 @@ RM-01-P3-I integration evidence:
 - Scope: Roadmap closure only after integration; no implementation source edit was made during integration closure.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-01-P4 implementation evidence:
+
+- Branch: `feature/rm01-p4-status-command-table-primitives`.
+- Parent baseline: `aecdda868589d92f7fe420509c9da9eb98bdab39`.
+- Scope: added presentation-only connection status, command status, command safety panel, data table, and empty-state primitives. Network, socket, authentication, command execution, official rules, and domain calculations remain consumer- or server-owned.
+- Production adoption: limited to the existing read-only `/admin` landing route for authenticated connection context and command-safety guidance. Public routes and command-heavy operator routes were not migrated.
+- Focused validation: `PASS`. Status/command/table primitives, shared primitives, authenticated shell, public shell/focus, and public auth-boundary suites passed 6 files and 79 tests.
+- Full validation: lint passed; 540 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: authenticated Chromium checks passed at 1920x1080, 1600x900, 1536x1024, and 1366x768 with no document overflow, one main landmark, one navigation landmark, visible safety guidance, and unclipped keyboard focus. The public LIVE fixture passed at 1024x576 with no authenticated primitive DOM, no forbidden metadata, no document overflow, and no console warning or error.
+- Public visual regression: score digits remained off-white and non-wrapping; the game clock remained cyan; the shot clock remained red; secondary telemetry and the exact safe ticker empty state remained intact.
+- Accessibility: visible text accompanies semantic status color, live-region behavior is opt-in, loading states expose busy semantics, the table uses native caption/header structure and local keyboard-scroll overflow, focus-visible styling is present, and forced-colors/reduced-motion contracts are covered by focused tests and CSS.
+- Bundle evidence: `index-xvHp0H58.js` 530.76 kB (139.03 kB gzip) and `index-D_HkOqz-.css` 70.10 kB (13.72 kB gzip). The existing Vite chunk-size warning remains.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; forced-colors behavior was verified by CSS contract rather than browser emulation; the local public realtime fixture did not implement Socket.IO and therefore exercised the existing offline polling fallback.
+- Production status: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-01-P4 - Shared Status, Command and Table Primitives
+RM-01-P4-I - Shared Status, Command and Table Primitives integration gate
 ```
 
-Do not begin RM-01-P4 until it is separately approved.
+Do not begin RM-01-P4-I until it is separately approved.
