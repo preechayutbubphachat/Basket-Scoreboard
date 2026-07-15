@@ -36,9 +36,11 @@ import type {
   VenueSummary
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
+import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem } from "./components/AuthenticatedDashboardShell";
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
+import "./styles/authenticated-dashboard.css";
 import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
 import {
@@ -679,7 +681,7 @@ function AdminHome() {
 
   return (
     <section className="panel">
-      <h1>Admin</h1>
+      <h2>Match administration</h2>
       <p>Manage match official assignments through the production API.</p>
       <p>
         <a href="/admin/matches" onClick={(event) => { event.preventDefault(); navigate("/admin/matches"); }}>
@@ -704,6 +706,62 @@ function AdminHome() {
         <button type="submit">Open officials</button>
       </form>
     </section>
+  );
+}
+
+function AdminDashboardHome() {
+  const { currentUser, roleSummary, logout } = useCurrentUser();
+  const navigationItems: AuthenticatedDashboardNavigationItem[] = [
+    { href: "/admin", label: "Admin", current: true },
+    { href: "/admin/tournaments", label: "Tournaments" },
+    { href: "/public/tournaments", label: "Public Schedule" },
+    ...(currentUser && canAccessOperatorMatches(currentUser)
+      ? [{ href: "/operator/matches", label: "Operator Matches" }]
+      : [])
+  ].map((item) => ({
+    ...item,
+    onClick: (event) => {
+      event.preventDefault();
+      navigate(item.href);
+    }
+  }));
+  const displayName = currentUser?.displayName ?? currentUser?.email ?? currentUser?.userId ?? "Authenticated user";
+
+  async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    await logout();
+    navigate("/login");
+  }
+
+  return (
+    <AuthenticatedDashboardShell
+      actions={<a href="/login" onClick={onLogout}>Logout</a>}
+      brand={{
+        href: "/",
+        label: "Basketball Scoreboard",
+        onClick: (event) => {
+          event.preventDefault();
+          navigate("/");
+        }
+      }}
+      contextLabel="Tournament operations"
+      navigationItems={navigationItems}
+      statusContent={<span className="authenticated-dashboard-status-item">Authenticated</span>}
+      subtitle="Assignments, tournaments, and public display operations"
+      title="Admin Dashboard"
+      userContent={<><strong>{displayName}</strong><span>{roleSummary}</span></>}
+      secondaryRail={(
+        <>
+          <h2>Workspace status</h2>
+          <dl>
+            <div><dt>Access</dt><dd>{roleSummary}</dd></div>
+            <div><dt>Surface</dt><dd>Administration</dd></div>
+          </dl>
+        </>
+      )}
+    >
+      <AdminHome />
+    </AuthenticatedDashboardShell>
   );
 }
 
@@ -6173,7 +6231,7 @@ function RoutedApp({ route }: { route: Route }) {
       case "admin":
         return (
           <ProtectedRoute requireAdmin>
-            <AdminHome />
+            <AdminDashboardHome />
           </ProtectedRoute>
         );
       case "admin-matches":
@@ -6375,7 +6433,7 @@ function RoutedApp({ route }: { route: Route }) {
     }
   }, [route]);
 
-  if (route.name === "public-scoreboard-display" || route.name === "public-display-scene") {
+  if (route.name === "admin" || route.name === "public-scoreboard-display" || route.name === "public-display-scene") {
     return content;
   }
 

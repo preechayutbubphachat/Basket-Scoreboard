@@ -109,9 +109,11 @@ RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
 RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
-RM-01-P3/P4/P5 = PENDING
+RM-01-P3 = IMPLEMENTATION COMPLETE
+RM-01-P3-I = PENDING
+RM-01-P4/P5 = PENDING
 RM-01 top-level = CURRENT
-Next safe step: RM-01-P3 - AuthenticatedDashboardShell Foundation
+Next safe step: RM-01-P3-I - AuthenticatedDashboardShell integration gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -180,7 +182,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, and RM-01-P2-I are `INTEGRATED`; RM-01-P3/P4/P5 remain `PENDING`. Next safe step: RM-01-P3 - AuthenticatedDashboardShell Foundation.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, and RM-01-P2-I are `INTEGRATED`; RM-01-P3 is `IMPLEMENTATION COMPLETE`; RM-01-P3-I, RM-01-P4, and RM-01-P5 remain `PENDING`. Next safe step: RM-01-P3-I - AuthenticatedDashboardShell integration gate.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -629,7 +631,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P2 integration:
+Current roadmap state after RM-01-P3 implementation:
 
 ```text
 RM-00 = INTEGRATED
@@ -639,7 +641,9 @@ RM-01-P1 = INTEGRATED
 RM-01-P1-I = INTEGRATED
 RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
-RM-01-P3/P4/P5 = PENDING
+RM-01-P3 = IMPLEMENTATION COMPLETE
+RM-01-P3-I = PENDING
+RM-01-P4/P5 = PENDING
 RM-02 through RM-18 = PENDING
 ```
 
@@ -682,10 +686,24 @@ RM-01-P2-I integration evidence:
 - Scope: Roadmap closure only after integration; no implementation source edit was made during integration closure.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-01-P3 implementation evidence:
+
+- Branch: `feature/rm01-p3-authenticated-dashboard-shell`.
+- Parent baseline: `53358bcb8c529761a6eefa5138f471d557cc816a`.
+- Scope: added a presentation-only `AuthenticatedDashboardShell` with semantic header, named native-link navigation, labelled main content, display-only status/user/action slots, content density modes, and an optional secondary rail. Authentication, route guards, REST/socket authorization, CSRF, logout state, realtime ownership, command logic, and domain data remain outside the shell.
+- Production adoption: limited to the existing read-only `/admin` landing route. Command and socket-heavy operator routes were not migrated; no route path or backend behavior changed.
+- Focused validation: PASS. Authenticated shell, public auth isolation, public shell, and public focus suites passed 4 files and 33 tests.
+- Full validation: lint passed; 517 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: authenticated Chromium checks passed at 1920x1080, 1600x900, 1536x1024, and 1366x768 with one main landmark, no document overflow, no header/content overlap, visible unclipped keyboard focus, and an available secondary rail. The authenticated route retained the existing two `/api/v1/auth/me` requests under React StrictMode. Forced-colors and reduced-motion emulation passed.
+- Public regression: clean public Chromium checks passed for BLANK, SCHEDULE, and LIVE at 1024x576. Public pages rendered only `PublicDisplayShell`, made zero `/api/v1/auth/me` requests, remained overflow-free, kept the safe empty schedule/ticker states, and produced no console warning or error.
+- Bundle evidence: `index-p10hDsOJ.js` 528.06 kB (138.24 kB gzip) and `index-CZPp_Dbb.css` 65.20 kB (13.00 kB gzip). The existing Vite chunk-size warning remains.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; no authenticated command/socket-heavy route was adopted in this foundation slice.
+- Production status: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-01-P3 - AuthenticatedDashboardShell Foundation
+RM-01-P3-I - AuthenticatedDashboardShell integration gate
 ```
 
-Do not begin RM-01-P3 until it is separately approved.
+Do not begin RM-01-P3-I until it is separately approved.
