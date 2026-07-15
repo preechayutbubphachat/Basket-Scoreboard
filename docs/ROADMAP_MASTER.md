@@ -111,11 +111,11 @@ RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
 RM-01-P3 = INTEGRATED
 RM-01-P3-I = INTEGRATED
-RM-01-P4 = IMPLEMENTATION COMPLETE
-RM-01-P4-I = PENDING
+RM-01-P4 = INTEGRATED
+RM-01-P4-I = INTEGRATED
 RM-01-P5 = PENDING
 RM-01 top-level = CURRENT
-Next safe step: RM-01-P4-I - Shared Status, Command and Table Primitives integration gate
+Next safe step: RM-01-P5 - Visual Regression and Integration Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -184,7 +184,7 @@ There is no parallel top-level path.
 - Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
 - Visual target: common language across all files in `UI-design`.
 - Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
-- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, and RM-01-P3-I are `INTEGRATED`; RM-01-P4 is `IMPLEMENTATION COMPLETE`; RM-01-P4-I and RM-01-P5 remain `PENDING`. Next safe step: RM-01-P4-I - Shared Status, Command and Table Primitives integration gate.
+- Current implementation state: `CURRENT`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, RM-01-P3-I, RM-01-P4, and RM-01-P4-I are `INTEGRATED`; RM-01-P5 remains `PENDING`. Next safe step: RM-01-P5 - Visual Regression and Integration Closure.
 - Domain dependencies: none; presentation only in the first slices.
 - API/socket dependencies: preserve current clients and contracts; no transport redesign.
 - Database dependencies: none.
@@ -633,7 +633,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P4 implementation:
+Current roadmap state after RM-01-P4 integration:
 
 ```text
 RM-00 = INTEGRATED
@@ -645,8 +645,8 @@ RM-01-P2 = INTEGRATED
 RM-01-P2-I = INTEGRATED
 RM-01-P3 = INTEGRATED
 RM-01-P3-I = INTEGRATED
-RM-01-P4 = IMPLEMENTATION COMPLETE
-RM-01-P4-I = PENDING
+RM-01-P4 = INTEGRATED
+RM-01-P4-I = INTEGRATED
 RM-01-P5 = PENDING
 RM-02 through RM-18 = PENDING
 ```
@@ -729,10 +729,21 @@ RM-01-P4 implementation evidence:
 - Known limitations: database-backed tests requiring a disposable configured database remained skipped; forced-colors behavior was verified by CSS contract rather than browser emulation; the local public realtime fixture did not implement Socket.IO and therefore exercised the existing offline polling fallback.
 - Production status: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-01-P4-I integration evidence:
+
+- Implementation commit: `de8c8bad75e0ea35550410b32677f3ac6bae9433`.
+- Implementation parent: `aecdda868589d92f7fe420509c9da9eb98bdab39`.
+- Integration method: fast-forward merge to `main`; no merge commit, rebase, squash, amend, cherry-pick, reset, or force push.
+- Scope: approved implementation integrated unchanged, followed by this Roadmap-only closure commit.
+- Focused validation: `PASS`; `npx vitest run tests/web/status-command-table-primitives.test.ts tests/web/authenticated-dashboard-shell.test.ts tests/web/public-display-shell.test.ts tests/web/public-display-focus-keyboard.test.ts` passed 4 files and 38 tests.
+- Full implementation validation: 540 passed; 23 database-dependent tests skipped; lint `PASS`; build `PASS`; build:single `PASS`.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; forced-colors browser emulation remained unavailable.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-01-P4-I - Shared Status, Command and Table Primitives integration gate
+RM-01-P5 - Visual Regression and Integration Closure
 ```
 
-Do not begin RM-01-P4-I until it is separately approved.
+Do not begin RM-01-P5 until it is separately approved.
