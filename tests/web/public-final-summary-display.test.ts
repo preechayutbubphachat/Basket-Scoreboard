@@ -1,5 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PublicFinalSummaryDisplayScene } from "../../apps/web/src/components/PublicFinalSummaryDisplayScene";
 import { buildPublicDisplaySceneModel } from "../../apps/web/src/lib/publicDisplayScene";
@@ -23,6 +25,34 @@ function render(publicData: Record<string, unknown>) {
 }
 
 describe("public final summary DOM", () => {
+  it("renders the approved finalized 88-84 browser fixture contract", () => {
+    const html = render({
+      matchId: "final-summary-fixture",
+      status: "FINAL",
+      homeTeamName: "Bangkok Thunder",
+      awayTeamName: "Chiang Mai Falcons",
+      homeScore: 88,
+      awayScore: 84,
+      winnerSide: "HOME",
+      winnerDisplayName: "Bangkok Thunder",
+      tournamentLabel: "National Invitational",
+      roundLabel: "Semi Final",
+      venueLabel: "Main Arena",
+      courtLabel: "Court 1",
+      completedAt: "2026-07-16T12:00:00.000Z"
+    });
+
+    expect(html).toContain("Bangkok Thunder");
+    expect(html).toContain("Chiang Mai Falcons");
+    expect(html).toContain('class="public-display-final-score">88');
+    expect(html).toContain('class="public-display-final-score">84');
+    expect(html).toContain("Bangkok Thunder wins");
+    expect(html).toContain("National Invitational / Semi Final");
+    expect(html).toContain("Main Arena / Court 1");
+    expect(html).toContain('<time dateTime="2026-07-16T12:00:00.000Z">');
+    expect(html).not.toContain("2026-07-16T12:00:00.000Z</time>");
+  });
+
   it("renders real final data without private or fabricated detail", () => {
     const html = render({
       matchId,
@@ -114,6 +144,29 @@ describe("public final summary DOM", () => {
     expect(html).not.toMatch(/Unknown|Venue TBD|Time TBD/);
   });
 
+  it("handles nullable winner, metadata, and completion time without fabrication", () => {
+    const html = render({
+      matchId,
+      status: "FINAL",
+      homeTeamName: "Bangkok Home",
+      awayTeamName: "Chiang Mai Away",
+      homeScore: 88,
+      awayScore: 88,
+      winnerSide: null,
+      winnerDisplayName: null,
+      tournamentLabel: null,
+      roundLabel: null,
+      venueLabel: null,
+      courtLabel: null,
+      completedAt: null
+    });
+
+    expect(html).toContain("Tied game");
+    expect(html).not.toMatch(/null|undefined| wins|Venue TBD|Time TBD/);
+    expect(html).not.toContain("public-display-final-meta");
+    expect(html).not.toContain("<time");
+  });
+
   it("renders only the safe unavailable state for a non-final match", () => {
     const html = render({
       matchId,
@@ -130,5 +183,17 @@ describe("public final summary DOM", () => {
     expect(html).not.toContain("76");
     expect(html).not.toContain("public-display-final-score");
     expect(html).not.toMatch(/winner| wins|Tied game/i);
+  });
+
+  it("keeps browser fixtures test-only with no production fixture route or lifecycle owner", () => {
+    const appSource = readFileSync(resolve("apps/web/src/App.tsx"), "utf8");
+    const apiSource = readFileSync(resolve("apps/web/src/lib/apiClient.ts"), "utf8");
+    const rendererSource = readFileSync(resolve("apps/web/src/components/PublicFinalSummaryDisplayScene.tsx"), "utf8");
+    const browserFixtureSource = readFileSync(resolve("tests/browser/public-final-summary-browser.cjs"), "utf8");
+
+    expect(`${appSource}\n${apiSource}`).not.toMatch(/final-summary-fixture|\/test-final|\/debug-final|fixture(?:Mode|Query|Flag)/i);
+    expect(browserFixtureSource).toContain('context.route("**/api/v1/public/display/**"');
+    expect(browserFixtureSource).toContain("route.fulfill");
+    expect(rendererSource).not.toMatch(/fetch\(|socket\.emit|io\(|new Socket|setInterval|setTimeout|localStorage|sessionStorage/);
   });
 });

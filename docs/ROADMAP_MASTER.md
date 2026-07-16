@@ -111,11 +111,11 @@ RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = IMPLEMENTATION COMPLETE
-RM-02-P4 = PENDING
+RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5 = PENDING
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
-Next safe step: RM-02-P4 - FINAL_SUMMARY Browser Fixture Closure
+Next safe step: RM-02-P5 - Public Scoreboard Pre-Integration Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -201,7 +201,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P3 are `IMPLEMENTATION COMPLETE`; RM-02-P4, RM-02-P5, and RM-02-I remain `PENDING`.
+- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P4 are `IMPLEMENTATION COMPLETE`; RM-02-P5 and RM-02-I remain `PENDING`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -209,7 +209,7 @@ There is no parallel top-level path.
 - Acceptance: accessible zoom fallback, broadcast rail polish, local FINAL_SUMMARY browser fixture, and production closure.
 - Tests: public DOM/metadata/ticker/auth-boundary/final-summary tests plus five public broadcast viewports.
 - Production gate: owner deployment and read-only route/DOM/console verification.
-- Known blockers: remaining historical `24G.3D-P2/P3/P4` work.
+- Known blockers: RM-02-P5 closure and RM-02-I integration remain pending.
 - Source requirements: no new basketball automation.
 - Next milestone: RM-03.
 
@@ -633,7 +633,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-02-P3 implementation:
+Current roadmap state after RM-02-P4 implementation:
 
 ```text
 RM-00 = INTEGRATED
@@ -643,7 +643,7 @@ RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = IMPLEMENTATION COMPLETE
-RM-02-P4 = PENDING
+RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5 = PENDING
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
@@ -816,10 +816,27 @@ RM-02-P3 implementation evidence:
 - Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-02-P4 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `1a1ab21f18e3385858d53514e0d072a841be2131`; implementation commit: this commit (`test(display): add final summary browser fixtures`).
+- Scope: test-only FINAL_SUMMARY public-display fixture coverage plus this Roadmap evidence. No application source, API/socket contract, public mapper, route, package, migration, event, timer, authentication, or production-data behavior changed.
+- Fixture mechanism: Playwright request interception supplies deterministic public `GET /api/v1/public/display/:screenSlug` responses to the existing generic public route. No test/debug query parameter, production fixture path, serialized initial state, or source-side fixture branch was added.
+- Contract evidence: the authoritative finalized fixture rendered match `final-summary-fixture`, FINAL status, Bangkok Thunder 88, Chiang Mai Falcons 84, HOME winner, authoritative winner display name, tournament/round/location labels, and completion time. Nullable winner and optional metadata rendered without `null`, invented winner/location/time copy, or frontend winner calculation. The unavailable fixture rendered only `FINAL RESULT`, `RESULT NOT AVAILABLE`, and `Final summary is not available.` with no score, winner, or internal reason.
+- Browser matrix: Chromium `149.0.7827.55` passed finalized and unavailable states at 1920x1080, 1600x900, 1366x768, 1280x720, 1024x576, and 960x540. Long English and Thai fixtures passed at 960x540 with bounded two-line clipping, visible off-white non-wrapping scores, and content contained inside the 16:9 frame. Nullable, forced-colors, and reduced-motion checks also passed.
+- Lifecycle and public safety: FINAL_SUMMARY retained exactly one scene-refresh interval, created zero public socket connections, made zero auth requests and zero protected writes, exposed no authenticated-shell DOM or focus targets, and rendered no LIVE scoreboard, ticker, or metadata DOM. Fixture payloads and rendered DOM exposed no role, device, session, token, CSRF, command/correlation/causation IDs, audit/correction details, or projection/event sequence internals.
+- LIVE regression: 1672x941, 1024x576, and 960x540 retained scores 88/84 in fixed off-white, cyan game clock, red shot clock, round/court/venue metadata, NORMAL/REFRESH/FULLSCREEN controls, focus rule, and `No public play updates available.`. No FINAL_SUMMARY change was made to LIVE, BLANK, or SCHEDULE behavior.
+- Browser quality: console warnings/errors `0`; page errors `0`; FINAL_SUMMARY failed resources `0`. Three expected `net::ERR_ABORTED` Socket.IO long-poll requests occurred only when the LIVE regression fixture navigated between viewports; they are explicit fixture navigation teardown, not normal-load resource failures.
+- Focused validation: `PASS`; seven public display, FINAL_SUMMARY, LIVE, metadata, recent-action, focus, shell, and auth-boundary files passed 74 tests. The FINAL_SUMMARY file passed 8 tests.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests because no disposable `DATABASE_*` environment was available (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS`; finalized, unavailable, compact, long-English, and long-Thai captures preserved scoreboard/result hierarchy, off-white score dominance, safe spacing, bounded text, contrast, broadcast composition, and kiosk readability without production CSS changes.
+- Product decision: the recent-action rail remains one atomic sanitized item; a multi-item public feed remains deferred pending explicit product approval. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup is `NOT APPLICABLE` while RM-02 remains current; timezone formatting and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-02-P5 and RM-02-I were not started.
+
 Next safe step:
 
 ```text
-RM-02-P4 - FINAL_SUMMARY Browser Fixture Closure
+RM-02-P5 - Public Scoreboard Pre-Integration Closure
 ```
 
-Do not begin RM-02-P4 until it is separately approved.
+Do not begin RM-02-P5 until it is separately approved.
