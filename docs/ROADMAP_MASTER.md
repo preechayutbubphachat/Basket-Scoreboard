@@ -112,11 +112,11 @@ RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = IMPLEMENTATION COMPLETE
-RM-02-P5 = PENDING
 RM-02-P5-F1 = IMPLEMENTATION COMPLETE
+RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
-Next safe step: RM-02-P5 - rerun Public Scoreboard Local Closure
+Next safe step: RM-02-I - Public Scoreboard Visual Parity Integration Gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -202,7 +202,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P4 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-P5 and RM-02-I remain `PENDING`.
+- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P5 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-I remains `PENDING`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -210,7 +210,7 @@ There is no parallel top-level path.
 - Acceptance: accessible zoom fallback, broadcast rail polish, local FINAL_SUMMARY browser fixture, and production closure.
 - Tests: public DOM/metadata/ticker/auth-boundary/final-summary tests plus five public broadcast viewports.
 - Production gate: owner deployment and read-only route/DOM/console verification.
-- Known blockers: RM-02-P5 closure and RM-02-I integration remain pending.
+- Known blockers: RM-02-I integration remains pending.
 - Source requirements: no new basketball automation.
 - Next milestone: RM-03.
 
@@ -634,7 +634,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-02-P4 implementation:
+Current roadmap state after RM-02-P5 local closure:
 
 ```text
 RM-00 = INTEGRATED
@@ -645,8 +645,8 @@ RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = IMPLEMENTATION COMPLETE
-RM-02-P5 = PENDING
 RM-02-P5-F1 = IMPLEMENTATION COMPLETE
+RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
 ```
@@ -850,10 +850,29 @@ RM-02-P5-F1 implementation evidence:
 - Gridgeist: `PASS`; the P1-P3 responsive smoke retained arena hierarchy, score dominance, clock contrast, ticker treatment, controls, and kiosk containment without production UI changes.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-02-P5 and RM-02-I remain pending. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup is `NOT APPLICABLE`; timezone formatting and CSP remain `FOLLOW-UP`.
 
+RM-02-P5 local closure evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `afbc5dd06e8541006706fdfc5ee72f25802914a8`; closure commit: this commit (`docs(roadmap): record rm02 local scoreboard closure`). The fresh closure matrix passed P1 `407106d052d70355b9a3dca67c93d564de5b1fe2`, P2 `dc4b2626f6b149d1601205f4a1b29204107446b6`, P3 `1a1ab21f18e3385858d53514e0d072a841be2131`, P4 `6611869169693a94a993aecbbeb051e7df09e42c`, and P5-F1 `afbc5dd06e8541006706fdfc5ee72f25802914a8`.
+- Gridgeist parity: `PASS WITH LIMITATION`. At 1672x941 the header, integrated metadata, 597/364/597px column balance, 585.64px panel height, team-name hierarchy, off-white score dominance, cyan game clock, red shot-clock block, metrics, single ticker, tertiary status rail, hidden utilities, safe margins, and distant readability remained coherent against `PublicScoreBoard.png`. Remaining differences are `DATA-DEPENDENT` for optional logos/labels, `INTENTIONAL PRODUCT EVOLUTION` for the sanitized atomic ticker and secondary telemetry, `FUTURE PRODUCT DECISION` for a multi-item public feed, and `[NEEDS SOURCE]` for possession and bonus semantics; no `RM-02 DEFECT` remained.
+- Viewport matrix: fresh isolated-page Chromium checks passed 1672x941, 1920x1080, 1600x900, 1536x864, 1366x768, 1280x720, 1024x576, and 960x540. At every size `clientWidth` equaled `scrollWidth`; frame, header, metadata, grid, three panels, both scores, game clock, shot clock, ticker, status rail, and utilities stayed inside the document.
+- Zoom-equivalent matrix: 1920x1080, 1536x864, 1280x720, and 960x540 represented 100%, 125%, 150%, and 200% viewport equivalents with zero horizontal overflow and reachable scores, clocks, ticker, status rail, controls, and visible focus. This is viewport equivalence, not native browser zoom automation.
+- Stress matrix: scores 0, 9, 27, 99, and 100; game clocks 10:00, 4:13, 0:09, and 0:00; shot clocks 24, 14, 9, and 0; short English, long English, real long Thai, and mixed Thai/English names and metadata; and REGULATION/OVERTIME labels all passed at 960x540 with zero horizontal overflow, contained values, aligned score tracks, and safe wrapping/clamping.
+- Color policy: computed score color remained `rgb(248, 250, 252)` with tabular non-wrapping digits; game clock remained `rgb(103, 232, 249)`; shot clock remained `rgb(239, 68, 68)`. Team colors remained accents, borders, glows, and background tints only.
+- P1 closure: NORMAL, REFRESH, FULLSCREEN order and native semantics passed; Refresh issued one public scoreboard GET; mouse reveal, four-second auto-hide after focus leaves the rail, focus-within retention, compact containment, 3px focus, forced-colors, reduced-motion, and 960x540 overflow checks passed. Native fullscreen entry was not exercised in headless Chromium.
+- P2/P3 closure: integrated metadata omitted no-data rails, long English/Thai values stayed bounded, grid placement remained near the target top, columns stayed symmetric, panel height and score/clock hierarchy remained target-like, metrics stayed visible, REG/OT formatting passed, and the public ticker remained one polite atomic sanitized item. Possession remains excluded and bonus semantics remain `[NEEDS SOURCE]`.
+- P4/P5-F1 closure: three consecutive FINAL_SUMMARY browser runs passed the 12-case finalized/unavailable matrix, nullable FINAL, long English, long Thai, forced-colors, reduced-motion, and `LIVE -> BLANK -> SCHEDULE -> LIVE_RETURN -> FINAL_SUMMARY -> UNAVAILABLE` isolation. Unexpected normal-load failures, console warnings/errors, page errors, auth requests, and protected writes were all `0` in every run. Narrow expected public scoreboard HTTP navigation teardowns were `1`, `0`, and `0`; Socket.IO navigation teardowns were `5` per run; static/resource failures were `0`.
+- Public safety and realtime: public HTTP fixtures, public socket mapper contracts, rendered DOM, and fixture DOM remained clean for actor/role/device/session/token/CSRF, command/correlation/causation IDs, reasons, audit/correction details, and internal/projection sequence fields. The branch added zero socket, subscription, reconnect, polling, or timer-tick ownership; protected realtime and server-authoritative behavior remain unchanged.
+- Accessibility: one semantic main, ordered headings and team labels, visible 3px focus, forced-colors fallback, reduced-motion behavior, one `role=status` / `aria-live=polite` / `aria-atomic=true` ticker, non-live clocks, text-backed status, unclipped compact focus, and meaningful FINAL/UNAVAILABLE text passed. Native fullscreen and native zoom automation remain documented limitations.
+- Focused validation: `PASS`; eight public display, LIVE, FINAL_SUMMARY, metadata, recent-action, focus, shell, brand, and auth-boundary files passed 77 tests.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests because no disposable `DATABASE_*` environment was available (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Guard result: the working tree was clean before this Roadmap-only write. The RM-02 branch delta contains no production fixture route, new public endpoint, broad failure suppression, fetch mutation, socket emission/ownership, private sequence exposure, historical `match_events` mutation, mutable scoreboard-state table, timer-tick event, dependency, or production-data change.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. Recent action remains one atomic sanitized item and a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains `NOT APPLICABLE` until integration; timezone formatting and CSP remain `FOLLOW-UP`.
+
 Next safe step:
 
 ```text
-RM-02-P5 - rerun Public Scoreboard Local Closure
+RM-02-I - Public Scoreboard Visual Parity Integration Gate
 ```
 
-Do not begin the RM-02-P5 rerun until it is separately approved.
+Do not begin RM-02-I until it is separately approved.
