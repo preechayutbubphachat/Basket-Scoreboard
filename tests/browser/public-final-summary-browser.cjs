@@ -121,6 +121,54 @@ const privateKeys = new Set([
 ]);
 
 function displayResponse(slug) {
+  if (slug === "lifecycle-blank") {
+    return {
+      ok: true,
+      data: {
+        screen: { screenSlug: slug, displayName: "Arena Standby" },
+        activeScene: { sceneType: "BLANK", publicData: { message: "Standby" }, refreshAfterMs: 30000 },
+        serverTime: "2026-07-16T12:01:00.000Z"
+      }
+    };
+  }
+  if (slug === "lifecycle-schedule") {
+    return {
+      ok: true,
+      data: {
+        screen: { screenSlug: slug, displayName: "Arena Schedule" },
+        activeScene: {
+          sceneType: "SCHEDULE",
+          publicData: {
+            tournamentLabel: "National Invitational",
+            rows: [],
+            emptyMessage: "No public schedule entries available."
+          },
+          refreshAfterMs: 30000
+        },
+        serverTime: "2026-07-16T12:01:00.000Z"
+      }
+    };
+  }
+  if (slug === "lifecycle-live") {
+    return {
+      ok: true,
+      data: {
+        screen: { screenSlug: slug, displayName: "National Invitational" },
+        activeScene: { sceneType: "LIVE_SCOREBOARD", publicData: { matchId: liveProjection.matchId }, refreshAfterMs: 30000 },
+        serverTime: "2026-07-16T12:01:00.000Z"
+      }
+    };
+  }
+  if (slug === "lifecycle-unavailable") {
+    return {
+      ok: true,
+      data: {
+        screen: { screenSlug: slug, displayName: "Arena Final" },
+        activeScene: { sceneType: "FINAL_SUMMARY", publicData: fixtures.unavailable, refreshAfterMs: 30000 },
+        serverTime: "2026-07-16T12:01:00.000Z"
+      }
+    };
+  }
   const publicData = fixtures[slug] || finalized;
   return {
     ok: true,
@@ -130,6 +178,25 @@ function displayResponse(slug) {
       serverTime: "2026-07-16T12:01:00.000Z"
     }
   };
+}
+
+const liveScoreboardPath = `/api/v1/public/matches/${liveProjection.matchId}/scoreboard`;
+
+function isLiveDisplayPath(pathname) {
+  return pathname === "/public/display/live-regression" || pathname === "/public/display/lifecycle-live";
+}
+
+function isExpectedLiveNavigationAbort(entry, expectedPath, expectedResourceType) {
+  if (!entry.navigation?.fromLiveAssertionsComplete) return false;
+  const requestUrl = new URL(entry.url);
+  const fromUrl = new URL(entry.navigation.fromUrl);
+  const toUrl = new URL(entry.navigation.toUrl);
+  return entry.method === "GET"
+    && requestUrl.pathname === expectedPath
+    && entry.resourceType === expectedResourceType
+    && entry.failure === "net::ERR_ABORTED"
+    && isLiveDisplayPath(fromUrl.pathname)
+    && (isLiveDisplayPath(toUrl.pathname) || toUrl.pathname.includes("finalized") || toUrl.pathname.includes("blank"));
 }
 
 function assertPublicPayload(value, path = "payload") {
@@ -321,12 +388,48 @@ async function main() {
     const consoleMessages = [];
     const pageErrors = [];
     const failedRequests = [];
+    let currentNavigation = null;
+    let liveAssertionsComplete = false;
     page.on("request", (request) => requests.push({ method: request.method(), url: request.url() }));
     page.on("console", (message) => {
       if (message.type() === "warning" || message.type() === "error") consoleMessages.push(`${message.type()}: ${message.text()}`);
     });
     page.on("pageerror", (error) => pageErrors.push(error.message));
-    page.on("requestfailed", (request) => failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText || "failed"}`));
+    page.on("requestfailed", (request) => failedRequests.push({
+      method: request.method(),
+      url: request.url(),
+      resourceType: request.resourceType(),
+      failure: request.failure()?.errorText || "failed",
+      pageUrl: page.url(),
+      navigation: currentNavigation ? { ...currentNavigation } : null
+    }));
+
+    async function navigateFixture(url, options, { waitForScoreboard = false } = {}) {
+      const fromUrl = page.url();
+      currentNavigation = {
+        fromUrl,
+        toUrl: url,
+        fromLiveAssertionsComplete: liveAssertionsComplete && isLiveDisplayPath(new URL(fromUrl).pathname)
+      };
+      liveAssertionsComplete = false;
+      const scoreboardResponsePromise = waitForScoreboard
+        ? page.waitForResponse((response) => {
+            const responseUrl = new URL(response.url());
+            return response.request().method() === "GET"
+              && responseUrl.pathname === liveScoreboardPath
+              && response.status() === 200;
+          })
+        : Promise.resolve(null);
+      try {
+        const [, scoreboardResponse] = await Promise.all([
+          page.goto(url, options),
+          scoreboardResponsePromise
+        ]);
+        if (scoreboardResponse) await scoreboardResponse.finished();
+      } finally {
+        currentNavigation = null;
+      }
+    }
 
     const matrix = [];
     for (const viewport of viewports) {
@@ -412,7 +515,7 @@ async function main() {
       { width: 960, height: 540 }
     ]) {
       await page.setViewportSize(viewport);
-      await page.goto(`${baseUrl}/public/display/live-regression`, { waitUntil: "domcontentloaded" });
+      await navigateFixture(`${baseUrl}/public/display/live-regression`, { waitUntil: "domcontentloaded" }, { waitForScoreboard: true });
       await page.waitForSelector(".arena-scoreboard-grid");
       const measurement = await page.evaluate(() => ({
         viewport: [innerWidth, innerHeight],
@@ -443,9 +546,10 @@ async function main() {
       assert.deepEqual(measurement.utilityLabels, ["Normal", "Refresh", "Fullscreen"]);
       assert.equal(measurement.focusRulePresent, true);
       liveRegression.push(measurement);
+      liveAssertionsComplete = true;
     }
 
-    await page.goto(`${baseUrl}/public/display/finalized`, { waitUntil: "networkidle" });
+    await navigateFixture(`${baseUrl}/public/display/finalized`, { waitUntil: "networkidle" });
     await page.waitForSelector(".public-display-final-card");
     assert.equal(await page.locator(".recent-event-ticker").count(), 0);
     assert.equal(await page.locator(".arena-scoreboard-grid").count(), 0);
@@ -458,6 +562,53 @@ async function main() {
     assert.equal(await page.locator(".public-display-final-score").count(), 0);
     assert.equal(await page.getByText("Bangkok Thunder wins").count(), 0);
     assert.equal(await page.locator(".public-display-final-meta").count(), 0);
+
+    const sceneLifecycle = [];
+    async function recordScene(label, expectedSelector) {
+      await page.waitForSelector(expectedSelector);
+      const state = await page.evaluate((sceneLabel) => ({
+        label: sceneLabel,
+        bodyText: document.body.innerText.replace(/\s+/g, " ").trim(),
+        scoreboardCount: document.querySelectorAll(".arena-scoreboard-grid").length,
+        tickerCount: document.querySelectorAll(".recent-event-ticker").length,
+        metadataCount: document.querySelectorAll(".arena-match-metadata").length,
+        finalScoreCount: document.querySelectorAll(".public-display-final-score").length,
+        winnerCount: document.querySelectorAll(".final-winner").length
+      }), label);
+      sceneLifecycle.push(state);
+      return state;
+    }
+
+    await navigateFixture(`${baseUrl}/public/display/lifecycle-live`, { waitUntil: "domcontentloaded" }, { waitForScoreboard: true });
+    const lifecycleLiveOne = await recordScene("LIVE", ".arena-scoreboard-grid");
+    assert.equal(lifecycleLiveOne.scoreboardCount, 1);
+    liveAssertionsComplete = true;
+
+    await navigateFixture(`${baseUrl}/public/display/lifecycle-blank`, { waitUntil: "networkidle" });
+    const lifecycleBlank = await recordScene("BLANK", ".scene-blank");
+    assert.match(lifecycleBlank.bodyText, /Standby/);
+    assert.equal(lifecycleBlank.scoreboardCount + lifecycleBlank.tickerCount + lifecycleBlank.metadataCount + lifecycleBlank.finalScoreCount, 0);
+
+    await navigateFixture(`${baseUrl}/public/display/lifecycle-schedule`, { waitUntil: "networkidle" });
+    const lifecycleSchedule = await recordScene("SCHEDULE", ".public-display-schedule-card");
+    assert.match(lifecycleSchedule.bodyText, /No public schedule entries available\./);
+    assert.equal(lifecycleSchedule.scoreboardCount + lifecycleSchedule.tickerCount + lifecycleSchedule.metadataCount + lifecycleSchedule.finalScoreCount, 0);
+
+    await navigateFixture(`${baseUrl}/public/display/lifecycle-live`, { waitUntil: "domcontentloaded" }, { waitForScoreboard: true });
+    const lifecycleLiveTwo = await recordScene("LIVE_RETURN", ".arena-scoreboard-grid");
+    assert.equal(lifecycleLiveTwo.scoreboardCount, 1);
+    liveAssertionsComplete = true;
+
+    await navigateFixture(`${baseUrl}/public/display/lifecycle-finalized`, { waitUntil: "networkidle" });
+    const lifecycleFinalized = await recordScene("FINAL_SUMMARY", ".public-display-final-card");
+    assert.equal(lifecycleFinalized.scoreboardCount + lifecycleFinalized.tickerCount + lifecycleFinalized.metadataCount, 0);
+    assert.equal(lifecycleFinalized.finalScoreCount, 2);
+    assert.match(lifecycleFinalized.bodyText, /Bangkok Thunder wins/);
+
+    await navigateFixture(`${baseUrl}/public/display/lifecycle-unavailable`, { waitUntil: "networkidle" });
+    const lifecycleUnavailable = await recordScene("UNAVAILABLE", ".public-display-final-unavailable");
+    assert.equal(lifecycleUnavailable.scoreboardCount + lifecycleUnavailable.tickerCount + lifecycleUnavailable.metadataCount + lifecycleUnavailable.finalScoreCount + lifecycleUnavailable.winnerCount, 0);
+    assert(!/Bangkok Thunder wins|88|84|internal reason/i.test(lifecycleUnavailable.bodyText));
 
     mockedPayloads.forEach((payload) => assertPublicPayload(payload));
     const authRequests = requests.filter((request) => new URL(request.url).pathname.includes("/api/v1/auth/"));
@@ -473,10 +624,23 @@ async function main() {
     assert.equal(consoleMessages.length, 0, `Console warnings/errors: ${consoleMessages.join(" | ")}`);
     assert.equal(pageErrors.length, 0, `Page errors: ${pageErrors.join(" | ")}`);
     assert.equal(failedRequestsBeforeLiveRegression, 0, "FINAL_SUMMARY had a failed resource");
-    const unexpectedFailedRequests = failedRequests.filter(
-      (entry) => !entry.includes("/socket.io/") || !entry.includes("net::ERR_ABORTED")
+    const expectedLiveHttpNavigationAborts = failedRequests.filter((entry) =>
+      isExpectedLiveNavigationAbort(entry, liveScoreboardPath, "fetch")
     );
-    assert.equal(unexpectedFailedRequests.length, 0, `Unexpected failed resources: ${unexpectedFailedRequests.join(" | ")}`);
+    const expectedLiveSocketNavigationAborts = failedRequests.filter((entry) =>
+      isExpectedLiveNavigationAbort(entry, "/socket.io/", "xhr")
+    );
+    const expectedNavigationAborts = new Set([
+      ...expectedLiveHttpNavigationAborts,
+      ...expectedLiveSocketNavigationAborts
+    ]);
+    const unexpectedFailedRequests = failedRequests.filter((entry) => !expectedNavigationAborts.has(entry));
+    const formatFailedRequest = (entry) => `${entry.method} ${entry.url} ${entry.resourceType} ${entry.failure}`;
+    assert.equal(
+      unexpectedFailedRequests.length,
+      0,
+      `Unexpected failed resources: ${unexpectedFailedRequests.map(formatFailedRequest).join(" | ")}`
+    );
 
     const result = {
       browserVersion: browser.version(),
@@ -487,6 +651,7 @@ async function main() {
       forcedColors: { finalized: forcedColorsFinalized, unavailable: forcedColorsUnavailable },
       reducedMotion: { finalized: reducedMotionFinalized, unavailable: reducedMotionUnavailable },
       liveRegression,
+      sceneLifecycle,
       mockedPayloadCount: mockedPayloads.length,
       authRequests: authRequests.length,
       protectedWrites: protectedWrites.length,
@@ -494,7 +659,9 @@ async function main() {
       consoleMessages,
       pageErrors,
       failedRequests,
-      expectedLiveSocketNavigationAborts: failedRequests.length - unexpectedFailedRequests.length,
+      unexpectedFailedRequests,
+      expectedLiveHttpNavigationAborts,
+      expectedLiveSocketNavigationAborts,
       requestCount: requests.length
     };
     writeFileSync(resolve(outputDirectory, "rm02-p4-final-summary-browser.json"), JSON.stringify(result, null, 2));

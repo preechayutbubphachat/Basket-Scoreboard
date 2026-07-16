@@ -113,9 +113,10 @@ RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5 = PENDING
+RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
-Next safe step: RM-02-P5 - Public Scoreboard Pre-Integration Closure
+Next safe step: RM-02-P5 - rerun Public Scoreboard Local Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -201,7 +202,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P4 are `IMPLEMENTATION COMPLETE`; RM-02-P5 and RM-02-I remain `PENDING`.
+- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P4 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-P5 and RM-02-I remain `PENDING`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -645,6 +646,7 @@ RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5 = PENDING
+RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
 ```
@@ -833,10 +835,25 @@ RM-02-P4 implementation evidence:
 - Product decision: the recent-action rail remains one atomic sanitized item; a multi-item public feed remains deferred pending explicit product approval. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup is `NOT APPLICABLE` while RM-02 remains current; timezone formatting and CSP remain `FOLLOW-UP`.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-02-P5 and RM-02-I were not started.
 
+RM-02-P5-F1 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `6611869169693a94a993aecbbeb051e7df09e42c`; implementation commit: this commit (`test(display): stabilize final summary browser lifecycle`).
+- Classification: `EXPECTED NAVIGATION TEARDOWN`. Detailed request tracing reproduced an old LIVE scoreboard polling `GET` ending as `net::ERR_ABORTED` only after the fixture intentionally began navigation to the next public scene. The application did not abort a steady-state public request.
+- Harness fix: fixture navigation now waits for the exact public scoreboard `200` response and response completion before LIVE assertions. Expected teardown accounting is narrowly allowlisted by completed LIVE assertions, exact GET path, exact `fetch` or Socket.IO `xhr` resource type, exact `net::ERR_ABORTED`, and a known scene-navigation transition. Other request failures remain test failures; no broad suppression or arbitrary timeout was added.
+- Scene lifecycle: deterministic `LIVE -> BLANK -> SCHEDULE -> LIVE_RETURN -> FINAL_SUMMARY -> UNAVAILABLE` navigation passed with stale scoreboard, ticker, metadata, final-score, and winner DOM excluded from subsequent scenes. FINAL_SUMMARY authoritative, nullable, and unavailable behavior remained intact.
+- Repeat evidence: three consecutive browser runs passed all six lifecycle scenes with auth requests `0`, protected writes `0`, console warnings/errors `0`, page errors `0`, and unexpected failed requests `0`. Expected LIVE HTTP navigation teardowns ranged from `0` to `2`; expected Socket.IO navigation teardowns were `5` per run.
+- LIVE regression: 1672x941, 1024x576, and 960x540 retained scores 88/84 in fixed off-white, cyan game clock, red shot clock, public metadata, controls, ticker empty state, and zero horizontal overflow. P1-P3 browser geometry and visual contracts remained intact.
+- Focused validation: `PASS`; eight public display, FINAL_SUMMARY, LIVE, metadata, recent-action, shell, focus, and auth-boundary files passed 77 tests.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests because no disposable `DATABASE_*` environment was available (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Scope: browser fixture lifecycle and Roadmap evidence only. No application source, API/socket contract, public mapper, route, dependency, migration, event-store, timer, authentication, production data, or public metadata behavior changed.
+- Gridgeist: `PASS`; the P1-P3 responsive smoke retained arena hierarchy, score dominance, clock contrast, ticker treatment, controls, and kiosk containment without production UI changes.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-02-P5 and RM-02-I remain pending. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup is `NOT APPLICABLE`; timezone formatting and CSP remain `FOLLOW-UP`.
+
 Next safe step:
 
 ```text
-RM-02-P5 - Public Scoreboard Pre-Integration Closure
+RM-02-P5 - rerun Public Scoreboard Local Closure
 ```
 
-Do not begin RM-02-P5 until it is separately approved.
+Do not begin the RM-02-P5 rerun until it is separately approved.
