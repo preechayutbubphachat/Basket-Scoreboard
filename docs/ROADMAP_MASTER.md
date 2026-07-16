@@ -126,9 +126,15 @@ RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = INTEGRATED
 RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
-RM-03-D1 = PENDING
+RM-03-D1 = DISCOVERY COMPLETE
+RM-03-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P2 = PENDING
+RM-03-P3 = PENDING
+RM-03-P4 = PENDING
+RM-03-P5 = PENDING
+RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-D1 - Unified LiveMatchShell discovery and contract/visual gap audit
+Next safe step: RM-03-P1 - LiveMatchShell Contract and Presentation Component
 ```
 
 ## 6. Straight-Line Diagram
@@ -231,7 +237,7 @@ There is no parallel top-level path.
 - Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
 - Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
 - Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
-- Current implementation state: `CURRENT`; RM-03-D1 is `PENDING`; separate pages and duplicated shell/state regions exist, and the unified shell is not implemented.
+- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 is `PENDING` and authorized as the next safe step. Separate pages and duplicated shell/state regions exist, and the unified shell is not implemented.
 - Domain dependencies: existing live projections and command-state models.
 - API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
 - Database dependencies: active `match_officials` assignment and existing projections/event stream.
@@ -239,7 +245,7 @@ There is no parallel top-level path.
 - Acceptance: shared hydration, stale/offline/permission states, navigation, and role-aware command surfaces without client-trusted permission.
 - Tests: cross-role route, reconnect, assignment revocation, command denial, and shell rendering.
 - Production gate: DB-backed authorization verification before deployment.
-- Known blockers: historical `24H.2B` requirements and role-specific UX decisions.
+- Known blockers: DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure. This does not block presentation-only RM-03-P1.
 - Source requirements: none for shell mechanics.
 - Next milestone: RM-04.
 
@@ -662,7 +668,13 @@ RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = INTEGRATED
 RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
-RM-03-D1 = PENDING
+RM-03-D1 = DISCOVERY COMPLETE
+RM-03-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P2 = PENDING
+RM-03-P3 = PENDING
+RM-03-P4 = PENDING
+RM-03-P5 = PENDING
+RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
 ```
 
@@ -923,3 +935,16 @@ RM-02-P production closure evidence:
 - Decision: `PRODUCTION VERIFIED WITH LIMITATION`; canonical Roadmap state is `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION`. Disposable DB coverage unavailable, native fullscreen not automated, native zoom represented by equivalent viewports, and no naturally available production FINAL_SUMMARY are accepted non-safety-critical observation limitations.
 - Deferred policy: the recent-action rail remains one atomic sanitized item and a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup was not run and remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`. Possession remains excluded pending the missing FIBA alternating-possession/possession-arrow governing source.
 - Roadmap transition: RM-02 is production complete with the observations above. RM-03 is now `CURRENT`, but no RM-03 work began in this task. The exact next safe gate is RM-03-D1 discovery and contract/visual gap audit.
+
+RM-03-D1 discovery closure evidence:
+
+- Decision: `READY WITH ARCHITECTURE DECISIONS`; the read-only discovery audited all 16 visual targets, authenticated/operator routes, shell primitives, RBAC, realtime, command, event/projection, responsive, accessibility, and public/private ownership boundaries without changing source, tests, configuration, Git history, or production.
+- Composition: `LiveMatchShell` is a specialized authenticated live-match composition inside `AuthenticatedDashboardShell`; the authenticated dashboard shell remains the top-level shell and the final composition retains one semantic `main` landmark.
+- Ownership: RM-03-P1 is presentation-only and introduces no realtime provider. Fetching, socket creation, room subscription, polling, reconnect, resync, clock interpolation, command execution, and authoritative domain state remain route, consumer, provider, or backend owned.
+- Authorization: the server remains authoritative. Client roles are presentation hints only, and future role-aware navigation must derive from server-returned effective permissions and active assignments rather than client role assumptions.
+- Integration gate: DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remain required before RM-03 integration or deployment closure; this evidence does not block presentation-only RM-03-P1.
+- Scope boundary: RM-04 through RM-18 remain `PENDING`; RM-03-P1 must not adopt production routes or implement clock, score, foul, timeout, lineup, pairing, court, or later milestone behavior.
+- Deferred policy remains unchanged: the recent-action multi-item feed is `DEFERRED`; controlled historical rebuild is `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
+- Rule boundary remains unchanged: `[NEEDS SOURCE] Missing governing document: FIBA alternating-possession/possession-arrow operational semantics.` No possession, bonus, standings, or tiebreak behavior may be inferred from visual targets.
+- Authorization: RM-03-P1 is `PENDING (AUTHORIZED TO BEGIN)`.
+- Next safe step: `RM-03-P1 - LiveMatchShell Contract and Presentation Component`.
