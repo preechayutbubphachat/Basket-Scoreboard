@@ -44,6 +44,21 @@ describe("public display utility control accessibility", () => {
     expect(focusRule).not.toMatch(/animation|transition/);
   });
 
+  test("compacts the utility rail inside the short arena header without changing control semantics", () => {
+    expect(styles).toMatch(
+      /@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)[\s\S]*\.arena-display-actions\s*\{[\s\S]*gap:\s*3px[\s\S]*padding:\s*2px[\s\S]*right:\s*9px[\s\S]*top:\s*8px/
+    );
+    expect(styles).toMatch(
+      /@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)[\s\S]*\.arena-display-actions (?:a|\.public-display-control),[\s\S]*\.arena-display-actions (?:button|\.public-display-control)\s*\{[\s\S]*align-items:\s*center[\s\S]*display:\s*inline-flex[\s\S]*min-height:\s*30px[\s\S]*padding:\s*5px 7px/
+    );
+    expect(styles).toMatch(
+      /@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)[\s\S]*\.arena-header\s*\{\s*padding-inline:\s*6px 232px/
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 1100px\) and \(min-width: 761px\) and \(max-height: 620px\)[\s\S]*\.arena-header\s*\{\s*padding-right:\s*232px/
+    );
+  });
+
   test("does not add commands, auth bootstrap, or extra public tab stops", () => {
     expect(shellSource.match(/className="public-display-control"/g)).toHaveLength(3);
     expect(shellSource).not.toMatch(/\/api\/v1\/auth\/me|commandId|correlationId|csrf|session|operator/i);

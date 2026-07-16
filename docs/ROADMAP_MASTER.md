@@ -4,7 +4,7 @@
 
 Status: authoritative delivery roadmap
 
-Baseline recorded: 2026-07-15
+Baseline recorded: 2026-07-16
 
 Fresh-session entrypoint: this file
 
@@ -39,15 +39,15 @@ Then read milestone-specific architecture, rule, API/socket, database, UI, quali
 
 ```text
 Repository main:
-4811444d11bfa2458dc2cd1c3266b716efe29a1a
+84c1b92f4a333f3a76636bc6bca84f5ce721395e
 
 origin/main:
-4811444d11bfa2458dc2cd1c3266b716efe29a1a
+84c1b92f4a333f3a76636bc6bca84f5ce721395e
 
 Last proven production:
 50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8
 
-Production deployment status of 4811444d:
+Production deployment status of 84c1b92f:
 NOT DEPLOYED / NOT PROVEN
 ```
 
@@ -83,7 +83,7 @@ Use only these status values:
 |---|---|---|
 | RM-00 | Accessibility Integration Baseline | `INTEGRATED` |
 | RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
-| RM-02 | Public Scoreboard Visual Parity Closure | `PENDING` |
+| RM-02 | Public Scoreboard Visual Parity Closure | `CURRENT` |
 | RM-03 | Unified LiveMatchShell Foundation | `PENDING` |
 | RM-04 | Clock & Shot Clock Dashboard | `PENDING` |
 | RM-05 | Score Control Dashboard | `PENDING` |
@@ -104,18 +104,18 @@ Use only these status values:
 Current milestone slice state:
 
 ```text
-RM-01-D1 = DISCOVERY COMPLETE
-RM-01-P1 = INTEGRATED
-RM-01-P1-I = INTEGRATED
-RM-01-P2 = INTEGRATED
-RM-01-P2-I = INTEGRATED
-RM-01-P3 = INTEGRATED
-RM-01-P3-I = INTEGRATED
-RM-01-P4 = INTEGRATED
-RM-01-P4-I = INTEGRATED
-RM-01-P5 = INTEGRATED
-RM-01 top-level = INTEGRATED
-Next safe step: RM-02 - Public Scoreboard Visual Parity Closure
+RM-00 = INTEGRATED
+RM-01 = INTEGRATED
+RM-02 = CURRENT
+RM-02-D1 = DISCOVERY COMPLETE
+RM-02-P1 = IMPLEMENTATION COMPLETE
+RM-02-P2 = PENDING
+RM-02-P3 = PENDING
+RM-02-P4 = PENDING
+RM-02-P5 = PENDING
+RM-02-I = PENDING
+RM-03 through RM-18 = PENDING
+Next safe step: RM-02-P2 - Broadcast Hierarchy and Rail Polish
 ```
 
 ## 6. Straight-Line Diagram
@@ -201,7 +201,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: substantial baseline exists in `PublicLiveScoreboard`, public scene routing, public contract mappers, and arena CSS; remaining work is pending.
+- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`, RM-02-P1 is `IMPLEMENTATION COMPLETE`, and RM-02-P2 through RM-02-P5 plus RM-02-I remain `PENDING`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -633,22 +633,20 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-01-P5 closure:
+Current roadmap state after RM-02-P1 implementation:
 
 ```text
 RM-00 = INTEGRATED
 RM-01 = INTEGRATED
-RM-01-D1 = DISCOVERY COMPLETE
-RM-01-P1 = INTEGRATED
-RM-01-P1-I = INTEGRATED
-RM-01-P2 = INTEGRATED
-RM-01-P2-I = INTEGRATED
-RM-01-P3 = INTEGRATED
-RM-01-P3-I = INTEGRATED
-RM-01-P4 = INTEGRATED
-RM-01-P4-I = INTEGRATED
-RM-01-P5 = INTEGRATED
-RM-02 through RM-18 = PENDING
+RM-02 = CURRENT
+RM-02-D1 = DISCOVERY COMPLETE
+RM-02-P1 = IMPLEMENTATION COMPLETE
+RM-02-P2 = PENDING
+RM-02-P3 = PENDING
+RM-02-P4 = PENDING
+RM-02-P5 = PENDING
+RM-02-I = PENDING
+RM-03 through RM-18 = PENDING
 ```
 
 RM-01-P1 integration evidence:
@@ -759,10 +757,30 @@ RM-01-P5 closure evidence:
 - CSP: `FOLLOW-UP`.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-02-P1 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `84c1b92f4a333f3a76636bc6bca84f5ce721395e`.
+- Strategy: RM-02 uses stacked linear implementation commits on `feature/rm02-public-scoreboard-parity`; integration into `main` occurs only at RM-02-I.
+- Scope: compact-height public-display utility rail positioning and header reservation only. Public API/socket contracts, projection mapping, polling/socket ownership, score/clock typography, normal scoreboard geometry, and scene data remain unchanged.
+- D1 root cause: the three-column grid and document width already shrank without horizontal overflow; the defect was the absolute utility rail extending below the compact header into match metadata.
+- Browser geometry: Chromium passed 1920x1080, 1600x900, 1536x864, 1366x768, 1280x720, 1024x576, and 960x540. Frame, header, metadata, grid, team panels, score containers, game clock, shot clock, ticker, and status rail remained unchanged or subpixel-equivalent at the required normal viewports. At 960x540, `clientWidth` and `scrollWidth` were both 960.
+- Compact controls: the rail fits inside the 46px compact header, does not intersect header title/metadata/badge, scores, game clock, or shot clock, and retains native NORMAL, REFRESH, FULLSCREEN order, four-second auto-hide, focus-within recovery, and an unclipped 3px focus treatment.
+- Accessibility: runtime forced-colors and reduced-motion emulation passed. Unsupported fullscreen omitted only FULLSCREEN while preserving NORMAL and REFRESH. Native browser zoom and fullscreen entry were not automated; the approved equivalent viewport matrix and target/API behavior were verified.
+- Scene and lifecycle evidence: LIVE -> BLANK -> SCHEDULE -> LIVE removed stale LIVE/ticker/metadata content and restored only the correct LIVE scene. The route retained one scene refresh interval and one public-scoreboard polling interval while LIVE, one public socket subscription per LIVE mount, zero public auth requests, and zero protected writes.
+- Public safety: no contract or rendered-model change; public sequence remains hidden, possession remains deferred `[NEEDS SOURCE]`, and the recent-action rail remains one polite atomic sanitized item with no fabricated feed.
+- Focused validation: `PASS`; `tests/web/public-display-focus-keyboard.test.ts` and `tests/web/public-live-scoreboard-display.test.ts` passed 13 tests.
+- Full validation: lint `PASS`; 541 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-DJ2riwX9.js` 530.76 kB (139.03 kB gzip) and `index-Fau7lclG.css` 70.44 kB (13.77 kB gzip). The existing Vite chunk-size warning remains.
+- Browser quality: console errors `0`; console warnings `0`; page errors `0`; failed normal-load resources `0`; public auth requests `0`; protected writes `0`.
+- Gridgeist: `PASS`; the compact rail remains visually secondary, uses safe margins, preserves broadcast readability and spacing rhythm, and introduces no score/clock typography shrink or additional visual noise.
+- Product decision: the recent-action rail remains one atomic sanitized item through RM-02-P1; a multi-item public feed remains deferred pending explicit product approval.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-02 - Public Scoreboard Visual Parity Closure
+RM-02-P2 - Broadcast Hierarchy and Rail Polish
 ```
 
-Do not begin RM-02 until it is separately approved.
+Do not begin RM-02-P2 until it is separately approved.
