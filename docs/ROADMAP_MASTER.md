@@ -127,14 +127,14 @@ RM-02-I = INTEGRATED
 RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
 RM-03-D1 = DISCOVERY COMPLETE
-RM-03-P1 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P2 = PENDING
+RM-03-P1 = IMPLEMENTATION COMPLETE
+RM-03-P2 = PENDING (AUTHORIZED TO BEGIN)
 RM-03-P3 = PENDING
 RM-03-P4 = PENDING
 RM-03-P5 = PENDING
 RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P1 - LiveMatchShell Contract and Presentation Component
+Next safe step: RM-03-P2 - Shared Live Match Hydration and Realtime Ownership
 ```
 
 ## 6. Straight-Line Diagram
@@ -237,7 +237,7 @@ There is no parallel top-level path.
 - Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
 - Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
 - Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
-- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 is `PENDING` and authorized as the next safe step. Separate pages and duplicated shell/state regions exist, and the unified shell is not implemented.
+- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING` and authorized as the next safe step. The presentation-only shell foundation exists, but production routes have not adopted it and shared realtime ownership is not implemented.
 - Domain dependencies: existing live projections and command-state models.
 - API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
 - Database dependencies: active `match_officials` assignment and existing projections/event stream.
@@ -669,8 +669,8 @@ RM-02-I = INTEGRATED
 RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
 RM-03-D1 = DISCOVERY COMPLETE
-RM-03-P1 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P2 = PENDING
+RM-03-P1 = IMPLEMENTATION COMPLETE
+RM-03-P2 = PENDING (AUTHORIZED TO BEGIN)
 RM-03-P3 = PENDING
 RM-03-P4 = PENDING
 RM-03-P5 = PENDING
@@ -948,3 +948,17 @@ RM-03-D1 discovery closure evidence:
 - Rule boundary remains unchanged: `[NEEDS SOURCE] Missing governing document: FIBA alternating-possession/possession-arrow operational semantics.` No possession, bonus, standings, or tiebreak behavior may be inferred from visual targets.
 - Authorization: RM-03-P1 is `PENDING (AUTHORIZED TO BEGIN)`.
 - Next safe step: `RM-03-P1 - LiveMatchShell Contract and Presentation Component`.
+
+RM-03-P1 implementation evidence:
+
+- Branch: `feature/rm03-live-match-shell`; parent baseline: `1f763d896c6bf39111338264be61cd06b9d38c46`.
+- Scope: added a presentation-only `LiveMatchShell` contract and component for match context, local navigation, canonical connection/command status, safety guidance, primary content, optional secondary rail, and explicit ready/degraded/offline/read-only presentation states. No production route adopted the shell.
+- Ownership boundary: fetching, protected REST, socket creation, room subscription, polling, reconnect, resync, clock interpolation, command execution, authorization, and authoritative domain state remain outside the component. Public display composition and contracts are unchanged.
+- Focused validation: `PASS`; six shell, primitive, authenticated-shell, public-shell, and auth-boundary files passed 91 tests, including 17 focused LiveMatchShell tests.
+- Full validation: lint passed; 566 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` exited successfully with 2 source-guard tests passed and 18 database-dependent tests skipped because a disposable database environment was unavailable.
+- Browser and responsive evidence: Chromium passed 30 state/viewport combinations covering ready, degraded, offline, read-only, long English/Thai names, rail/no-rail, and 1920x1080, 1600x900, 1536x1024, 1366x768, 1280x720, and 1024x768. There was no horizontal overflow, console/page error, or failed request; one main landmark, named navigation, 44px targets, 3px focus, forced-colors, reduced-motion, and safe rail stacking passed.
+- Guard evidence: source-only ownership scans found no fetch, API client, socket, room subscription, polling/timer, command sequencing, timer-tick event, public route, or public display adoption. Repository event-store guards found no mutable scoreboard/display-state table or historical `match_events` mutation pattern.
+- Visual review: Gridgeist `PASS`; dense match context, stable hierarchy, bounded multilingual team names, explicit status hierarchy, responsive rail placement, and compact navigation containment meet the accepted RM-03-D1 presentation contract.
+- Known limitation: DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remains unavailable and mandatory before RM-03 integration or deployment closure. This presentation-only P1 is not deployed or production-proven.
+- Roadmap transition: RM-03-P1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING (AUTHORIZED TO BEGIN)`. RM-03 remains `CURRENT`; RM-03-I and RM-04 through RM-18 remain unchanged.
+- Next safe step: `RM-03-P2 - Shared Live Match Hydration and Realtime Ownership`.
