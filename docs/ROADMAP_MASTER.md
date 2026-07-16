@@ -50,11 +50,11 @@ this RM-02 integration governance commit (`docs(roadmap): record rm02 integratio
 Previous proven production before RM-02:
 50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8
 
-Current proven production:
+Attempted RM-02 production target:
 5d2553aa1fc4a81e68feab4b847e1e97647a7644
 
 Production deployment status of 5d2553aa:
-PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+BLOCKED / NOT PROVEN - mixed frontend asset set
 ```
 
 Canonical visual-target directory (local evidence only; assets are not committed):
@@ -89,8 +89,8 @@ Use only these status values:
 |---|---|---|
 | RM-00 | Accessibility Integration Baseline | `INTEGRATED` |
 | RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
-| RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
-| RM-03 | Unified LiveMatchShell Foundation | `CURRENT` |
+| RM-02 | Public Scoreboard Visual Parity Closure | `BLOCKED` |
+| RM-03 | Unified LiveMatchShell Foundation | `PENDING` |
 | RM-04 | Clock & Shot Clock Dashboard | `PENDING` |
 | RM-05 | Score Control Dashboard | `PENDING` |
 | RM-06 | Foul Control Dashboard | `PENDING` |
@@ -112,7 +112,7 @@ Current milestone slice state:
 ```text
 RM-00 = INTEGRATED
 RM-01 = INTEGRATED
-RM-02 = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+RM-02 = BLOCKED
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
@@ -121,11 +121,9 @@ RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = INTEGRATED
-RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
-RM-03 = CURRENT
-RM-03-D1 = PENDING
-RM-04 through RM-18 = PENDING
-Next safe step: RM-03-D1 - Unified LiveMatchShell discovery and contract/visual gap audit
+RM-02-P = BLOCKED
+RM-03 through RM-18 = PENDING
+Next safe step: RM-02-P corrective owner redeployment of one coherent frontend build, then repeat read-only production verification
 ```
 
 ## 6. Straight-Line Diagram
@@ -211,7 +209,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P5 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-I is `INTEGRATED`; RM-02-P passed with the documented non-safety-critical observations.
+- Current implementation state: `BLOCKED`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P5 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-I is `INTEGRATED`; RM-02-P failed because production serves a mixed frontend asset set.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -219,7 +217,7 @@ There is no parallel top-level path.
 - Acceptance: accessible zoom fallback, broadcast rail polish, local FINAL_SUMMARY browser fixture, and production closure.
 - Tests: public DOM/metadata/ticker/auth-boundary/final-summary tests plus five public broadcast viewports.
 - Production gate: owner deployment and read-only route/DOM/console verification.
-- Known blockers: none for RM-02 closure. Native fullscreen automation, native zoom automation, disposable database coverage, and a naturally available production FINAL_SUMMARY remain documented observation limitations.
+- Known blockers: production HTML serves the integrated JS/CSS but references the prior favicon asset while the integrated favicon URL returns 404. The owner must redeploy one coherent build and restart before read-only verification can be repeated. Native fullscreen automation, native zoom automation, disposable database coverage, and a naturally available production FINAL_SUMMARY remain observation limitations only.
 - Source requirements: no new basketball automation.
 - Next milestone: RM-03.
 
@@ -228,7 +226,7 @@ There is no parallel top-level path.
 - Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
 - Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
 - Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
-- Current implementation state: `CURRENT`; RM-03-D1 is `PENDING`; separate pages and duplicated shell/state regions exist, and the unified shell is not implemented.
+- Current implementation state: `PENDING`; separate pages and duplicated shell/state regions exist, and the unified shell is not implemented. RM-03 remains unauthorized while RM-02-P is blocked.
 - Domain dependencies: existing live projections and command-state models.
 - API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
 - Database dependencies: active `match_officials` assignment and existing projections/event stream.
@@ -643,12 +641,12 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-02 production verification closure:
+Current roadmap state after the blocked RM-02 production verification:
 
 ```text
 RM-00 = INTEGRATED
 RM-01 = INTEGRATED
-RM-02 = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+RM-02 = BLOCKED
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
@@ -657,10 +655,8 @@ RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = INTEGRATED
-RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
-RM-03 = CURRENT
-RM-03-D1 = PENDING
-RM-04 through RM-18 = PENDING
+RM-02-P = BLOCKED
+RM-03 through RM-18 = PENDING
 ```
 
 RM-01-P1 integration evidence:
@@ -884,7 +880,7 @@ RM-02-P5 local closure evidence:
 Next safe step:
 
 ```text
-RM-03-D1 - Unified LiveMatchShell discovery and contract/visual gap audit
+RM-02-P corrective owner redeployment of one coherent frontend build, then repeat read-only production verification
 ```
 
 RM-02-I integration evidence:
@@ -903,10 +899,10 @@ RM-02-I integration evidence:
 - Integration method: approved fast-forward only; no squash, rebase, cherry-pick, merge commit, reset, or force push. Branch cleanup was not run and remains an owner follow-up after integration.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-03 remains `PENDING` until the RM-02 owner deployment and read-only production verification gate is completed.
 
-RM-02-P production closure evidence:
+RM-02-P blocked production verification evidence:
 
 - Owner checkpoint: the owner-operated deployment/restart checkpoint was completed before this read-only verification resumed. Codex performed no deployment, restart, production authentication, migration, historical rebuild, scene mutation, scoreboard command, correction, or production-data mutation.
-- Deployed-build evidence: production changed from the pre-deployment assets `index-xvHp0H58.js` and `index-D_HkOqz-.css` to the integrated local-build assets `index-CwWsRoZM.js` and `index-D6Sb-nSC.css`. Root, health, public display shell, and public display API returned HTTP 200. Evidence classification: `DEPLOYED BUILD BEHAVIOR VERIFIED`; asset names alone are not treated as independent commit provenance.
+- Deployed-build evidence: production changed from the pre-deployment JS/CSS `index-xvHp0H58.js` and `index-D_HkOqz-.css` to `index-CwWsRoZM.js` and `index-D6Sb-nSC.css`. Root, health, public display shell, and public display API returned HTTP 200, and LIVE behavior matched the integrated build. However, production HTML still references prior favicon `scoreboard-favicon-BUI4TAzY.svg`; the integrated local build references `scoreboard-favicon-CIGaN-da.svg`, and that integrated production URL returns HTTP 404. This is a mixed deployment, so `DEPLOYED BUILD BEHAVIOR VERIFIED` is insufficient for production closure.
 - Public scene: `court-1-main` remained naturally `LIVE_SCOREBOARD` for public-safe match `93bd90bd-040d-48f5-bb9c-1354d6e80077`. No production scene was changed and no fixture/debug route or query parameter was used.
 - Browser matrix: isolated Chromium checks passed 1920x1080, 1366x768, 1024x576, and 960x540. At every viewport document client width equaled scroll width and client height equaled scroll height; frame, scores, game clock, shot clock, ticker, metadata, compact status rail, and utility controls remained visible and contained.
 - Visual policy: both scores remained fixed off-white `rgb(248, 250, 252)` with non-wrapping digits; the game clock remained cyan `rgb(103, 232, 249)`; the shot clock remained red `rgb(239, 68, 68)`; team colors remained panel borders, gradients, and tints only. The recent-action rail remained exactly one polite atomic sanitized item with `No public play updates available.`, no marquee, and no rotation animation.
@@ -915,6 +911,6 @@ RM-02-P production closure evidence:
 - Browser quality: console warnings/errors, page errors, failed steady-state requests, auth requests, and protected writes were all `0` at all four viewports. No navigation teardown was needed for the isolated checks.
 - Accessibility: NORMAL, REFRESH, FULLSCREEN retained native focus order; each received a visible solid 3px focus outline; focus-within revealed the utility rail; metadata, scores, clocks, ticker, and text-backed system status remained readable. Native fullscreen was not exercised, and native zoom remains represented by the accepted equivalent viewport evidence.
 - Scene scope: production naturally exposed LIVE only. FINAL_SUMMARY production behavior was not manufactured and remains covered by the accepted local P4 finalized/unavailable browser matrix.
-- Decision: `PRODUCTION VERIFIED WITH LIMITATION`; canonical Roadmap state is `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION`. Limitations are disposable DB coverage unavailable, native fullscreen not automated, native zoom represented by equivalent viewports, and no naturally available production FINAL_SUMMARY. None is a public-safety or release-blocking regression.
+- Decision: `PRODUCTION FAILED`; canonical Roadmap state is `BLOCKED`. The mixed favicon/JS/CSS asset set is a release-coherence blocker even though LIVE behavior and public-safety checks passed. Disposable DB coverage unavailable, native fullscreen not automated, native zoom represented by equivalent viewports, and no naturally available production FINAL_SUMMARY remain separate accepted observation limitations.
 - Deferred policy: the recent-action rail remains one atomic sanitized item and a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup was not run and remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`. Possession remains excluded pending the missing FIBA alternating-possession/possession-arrow governing source.
-- Roadmap transition: RM-02 is production complete with the observations above. RM-03 is now `CURRENT`, but no RM-03 work began in this task. The exact next safe gate is RM-03-D1 discovery and contract/visual gap audit.
+- Roadmap transition: RM-02-P remains blocked and RM-03 remains `PENDING`. The exact next safe gate is owner corrective redeployment of one coherent frontend build from `5d2553aa1fc4a81e68feab4b847e1e97647a7644`, followed by repeat read-only RM-02 production verification. No RM-03 work began in this task.
