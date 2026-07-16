@@ -3,16 +3,18 @@ import type { PublicScoreboardDisplayModel } from "../lib/publicScoreboardDispla
 import { PublicBrandAsset } from "./PublicBrandAsset";
 
 export function PublicLiveScoreboard({ display }: { display: PublicScoreboardDisplayModel }) {
+  const hasMatchMetadata = Boolean(display.matchMetadata.round || display.matchMetadata.court || display.matchMetadata.venue);
+
   return <>
-    <header className="arena-header">
+    <header className={`arena-header${hasMatchMetadata ? " has-match-metadata" : ""}`}>
       <div className="arena-brand-lockup">
         {display.tournament.showLogo ? <PublicBrandAsset className="arena-tournament-logo" src={display.tournament.logoUrl} alt={`${display.tournament.displayName ?? "Tournament"} logo`} fallbackLabel="T" /> : null}
         <div className="arena-title-lockup"><span>Live arena scoreboard</span><h1 className="arena-tournament-title">{display.tournament.displayName ?? "Public Scoreboard"}</h1></div>
       </div>
       <div className="arena-header-meta" aria-label="Match display metadata"><span>Period <strong>{display.periodLabel}</strong></span></div>
       <div className={display.statusClassName}>{display.statusLabel}</div>
+      <ArenaMatchMetadata metadata={display.matchMetadata} />
     </header>
-    <ArenaMatchMetadata metadata={display.matchMetadata} />
     <div className="arena-scoreboard-grid">
       <Team side="home" team={display.home} />
       <section className="central-clock-panel" aria-label="Game timing">

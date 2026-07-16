@@ -55,8 +55,23 @@ describe("public live scoreboard match metadata", () => {
     expect(html).not.toContain(baseProjection.matchId);
   });
 
+  it("integrates match details into the broadcast header instead of adding a layout rail", () => {
+    const html = renderMetadata({ roundLabel: "Round 2", courtLabel: "Court 1", venueLabel: "Main Arena" });
+    const headerStart = html.indexOf('<header class="arena-header has-match-metadata">');
+    const metadataStart = html.indexOf('<dl class="arena-match-metadata"');
+    const headerEnd = html.indexOf("</header>");
+
+    expect(headerStart).toBeGreaterThan(-1);
+    expect(metadataStart).toBeGreaterThan(headerStart);
+    expect(metadataStart).toBeLessThan(headerEnd);
+    expect(html.slice(headerEnd + "</header>".length)).not.toContain("arena-match-metadata");
+  });
+
   it("omits the rail for no metadata or scheduledStart-only metadata until timezone policy is explicit", () => {
-    expect(renderMetadata()).not.toContain("arena-match-metadata");
+    const noMetadata = renderMetadata();
+    expect(noMetadata).not.toContain("arena-match-metadata");
+    expect(noMetadata).toContain('<header class="arena-header">');
+    expect(noMetadata).not.toContain("arena-header has-match-metadata");
     const scheduledStartOnly = renderMetadata({ scheduledStart: "2026-07-20T10:00:00.000Z" });
     expect(scheduledStartOnly).not.toContain("arena-match-metadata");
     expect(scheduledStartOnly).not.toContain("2026-07-20");

@@ -109,13 +109,13 @@ RM-01 = INTEGRATED
 RM-02 = CURRENT
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
-RM-02-P2 = PENDING
+RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = PENDING
 RM-02-P4 = PENDING
 RM-02-P5 = PENDING
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
-Next safe step: RM-02-P2 - Broadcast Hierarchy and Rail Polish
+Next safe step: RM-02-P3 - Scoreboard Geometry and Typography Parity
 ```
 
 ## 6. Straight-Line Diagram
@@ -201,7 +201,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`, RM-02-P1 is `IMPLEMENTATION COMPLETE`, and RM-02-P2 through RM-02-P5 plus RM-02-I remain `PENDING`.
+- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 and RM-02-P2 are `IMPLEMENTATION COMPLETE`; RM-02-P3 through RM-02-P5 plus RM-02-I remain `PENDING`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -633,7 +633,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-02-P1 implementation:
+Current roadmap state after RM-02-P2 implementation:
 
 ```text
 RM-00 = INTEGRATED
@@ -641,7 +641,7 @@ RM-01 = INTEGRATED
 RM-02 = CURRENT
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
-RM-02-P2 = PENDING
+RM-02-P2 = IMPLEMENTATION COMPLETE
 RM-02-P3 = PENDING
 RM-02-P4 = PENDING
 RM-02-P5 = PENDING
@@ -777,10 +777,29 @@ RM-02-P1 implementation evidence:
 - Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-02-P2 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `407106d052d70355b9a3dca67c93d564de5b1fe2`.
+- Strategy: RM-02 continues as stacked linear implementation commits on `feature/rm02-public-scoreboard-parity`; integration into `main` occurs only at RM-02-I.
+- Scope: presentation-only LIVE scoreboard hierarchy and rail polish. The public round, court, and venue fields now compose as a compact secondary row inside the existing header; absent metadata adds no decorative region; long Thai and English values remain in the DOM and truncate safely without document overflow.
+- Grid recovery: at 1672x941 the main grid moved from y=192.78 to y=149.08, recovering 43.70px and leaving about 1.08px to the measured target y=148. At 1920x1080 it recovered 46.43px, at 1366x768 it recovered 33.25px, and at 1024x576 it recovered 10px while preserving compact-control clearance.
+- Browser geometry: Chromium passed 1672x941, 1920x1080, 1600x900, 1366x768, 1280x720, 1024x576, and 960x540. Frame, integrated metadata, grid, team panels, center panel, ticker, status rail, and utility rail remained inside the document with zero horizontal overflow; utility controls did not intersect metadata or the main grid.
+- Rail hierarchy: the one-item recent-action ticker received restrained contrast improvement and remains one polite atomic sanitized item. The icon-first system rail is more readable at distance while remaining tertiary to score and clocks. No data field or scene text changed.
+- P1 and P3 boundaries: NORMAL, REFRESH, FULLSCREEN order, four-second auto-hide, focus-within reveal, 3px focus treatment, forced-colors, and reduced-motion behavior passed. Score, game-clock, shot-clock, and team-name scale variables plus scoreboard column ratios were not changed; intentional parity tuning remains RM-02-P3.
+- Color and public safety: scores remain fixed off-white, the game clock remains cyan, and shot-clock warning remains red. Public sequence and private operational metadata remain absent; possession remains deferred `[NEEDS SOURCE]`; public auth requests and protected writes were both zero.
+- Scene and lifecycle evidence: LIVE -> BLANK -> SCHEDULE -> LIVE rendered only scene-appropriate DOM with no stale ticker, metadata, or score content. Public polling and socket ownership were unchanged; normal-load console errors, warnings, page errors, and failed resources were zero.
+- Focused validation: `PASS`; all eight `tests/web/public-*.test.ts` files passed 72 tests. The P2 metadata/header and rail contract subset passed 21 tests after the expected test-first failure.
+- Full validation: lint `PASS`; 544 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-DfBwPxGE.js` 530.87 kB (139.06 kB gzip) and `index-DUHkgTaz.css` 70.65 kB (13.78 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS`; scoreboard dominance, compact header composition, metadata readability, restrained rail weight, utility-control subordination, distant readability, spacing rhythm, compact-height safety, and broadcast composition passed review.
+- Product decision: the recent-action rail remains one atomic sanitized item through RM-02-P2; a multi-item public feed remains deferred pending explicit product approval.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-02-P2 - Broadcast Hierarchy and Rail Polish
+RM-02-P3 - Scoreboard Geometry and Typography Parity
 ```
 
-Do not begin RM-02-P2 until it is separately approved.
+Do not begin RM-02-P3 until it is separately approved.

@@ -23,6 +23,24 @@ describe("public live scoreboard arena visual contract", () => {
     expect(styles).toContain("--arena-score-size: clamp(");
   });
 
+  test("compacts public metadata into the header and recovers the separate grid row", () => {
+    expect(componentSource).toContain('className={`arena-header${hasMatchMetadata ? " has-match-metadata" : ""}`}');
+    expect(styles).toMatch(/\.arena-layout\.has-match-metadata\s*\{\s*grid-template-rows:\s*var\(--arena-header-h\) minmax\(0, 1fr\) var\(--arena-action-h\) var\(--arena-system-h\)/);
+    expect(styles).toMatch(/\.arena-header\.has-match-metadata\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) auto/);
+    expect(styles).toMatch(/\.arena-match-metadata\s*\{[\s\S]*grid-column:\s*1 \/ -1[\s\S]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/);
+    expect(styles).toMatch(/\.arena-match-metadata dd\s*\{[\s\S]*overflow:\s*hidden[\s\S]*text-overflow:\s*ellipsis[\s\S]*white-space:\s*nowrap/);
+  });
+
+  test("improves rail readability without changing P1 score or clock scale", () => {
+    expect(styles).toContain("--arena-score-size: clamp(8.2rem, 28vh, 19rem)");
+    expect(styles).toContain("--arena-game-clock-size: clamp(4.8rem, 16vh, 10.5rem)");
+    expect(styles).toContain("--arena-shot-clock-size: clamp(3.6rem, 13vh, 8.2rem)");
+    expect(styles).toMatch(/\.recent-event-ticker\s*\{[^}]*opacity:\s*0\.88/);
+    expect(styles).toMatch(/\.kiosk-mode \.recent-event-ticker\s*\{[^}]*opacity:\s*0\.64/);
+    expect(styles).toMatch(/\.compact-system-strip\s*\{[^}]*opacity:\s*0\.58/);
+    expect(styles).toMatch(/\.kiosk-mode \.compact-system-strip\s*\{[^}]*opacity:\s*0\.5/);
+  });
+
   test("fits the arena frame to both viewport axes without body-level clipping", () => {
     expect(styles).toContain("--public-display-inset: 20px");
     expect(styles).toContain("height: 100dvh");
