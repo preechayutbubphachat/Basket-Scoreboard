@@ -38,11 +38,14 @@ Then read milestone-specific architecture, rule, API/socket, database, UI, quali
 ## 3. Baselines
 
 ```text
-Repository main:
+Pre-RM-02-I repository main baseline:
 84c1b92f4a333f3a76636bc6bca84f5ce721395e
 
-origin/main:
+Pre-RM-02-I origin/main baseline:
 84c1b92f4a333f3a76636bc6bca84f5ce721395e
+
+Post-RM-02-I main/origin target:
+this RM-02 integration governance commit (`docs(roadmap): record rm02 integration gate`)
 
 Last proven production:
 50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8
@@ -83,7 +86,7 @@ Use only these status values:
 |---|---|---|
 | RM-00 | Accessibility Integration Baseline | `INTEGRATED` |
 | RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
-| RM-02 | Public Scoreboard Visual Parity Closure | `CURRENT` |
+| RM-02 | Public Scoreboard Visual Parity Closure | `READY FOR PRODUCTION` |
 | RM-03 | Unified LiveMatchShell Foundation | `PENDING` |
 | RM-04 | Clock & Shot Clock Dashboard | `PENDING` |
 | RM-05 | Score Control Dashboard | `PENDING` |
@@ -106,7 +109,7 @@ Current milestone slice state:
 ```text
 RM-00 = INTEGRATED
 RM-01 = INTEGRATED
-RM-02 = CURRENT
+RM-02 = READY FOR PRODUCTION
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
@@ -114,9 +117,9 @@ RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-P5 = IMPLEMENTATION COMPLETE
-RM-02-I = PENDING
+RM-02-I = INTEGRATED
 RM-03 through RM-18 = PENDING
-Next safe step: RM-02-I - Public Scoreboard Visual Parity Integration Gate
+Next safe step: RM-02 owner deployment and read-only production verification
 ```
 
 ## 6. Straight-Line Diagram
@@ -202,7 +205,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P5 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-I remains `PENDING`.
+- Current implementation state: `READY FOR PRODUCTION`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P5 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-I is `INTEGRATED`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -210,7 +213,7 @@ There is no parallel top-level path.
 - Acceptance: accessible zoom fallback, broadcast rail polish, local FINAL_SUMMARY browser fixture, and production closure.
 - Tests: public DOM/metadata/ticker/auth-boundary/final-summary tests plus five public broadcast viewports.
 - Production gate: owner deployment and read-only route/DOM/console verification.
-- Known blockers: RM-02-I integration remains pending.
+- Known blockers: owner deployment and read-only production verification remain pending; production is not yet proven.
 - Source requirements: no new basketball automation.
 - Next milestone: RM-03.
 
@@ -634,12 +637,12 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-02-P5 local closure:
+Current roadmap state after RM-02-I integration approval:
 
 ```text
 RM-00 = INTEGRATED
 RM-01 = INTEGRATED
-RM-02 = CURRENT
+RM-02 = READY FOR PRODUCTION
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
@@ -647,7 +650,7 @@ RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = IMPLEMENTATION COMPLETE
 RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-P5 = IMPLEMENTATION COMPLETE
-RM-02-I = PENDING
+RM-02-I = INTEGRATED
 RM-03 through RM-18 = PENDING
 ```
 
@@ -872,7 +875,21 @@ RM-02-P5 local closure evidence:
 Next safe step:
 
 ```text
-RM-02-I - Public Scoreboard Visual Parity Integration Gate
+RM-02 owner deployment and read-only production verification
 ```
 
-Do not begin RM-02-I until it is separately approved.
+RM-02-I integration evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; approved P5 closure: `4d85ce6067d1bb9cc3f95ab3e47c4a02d77dc8a7`; integration governance commit: this commit (`docs(roadmap): record rm02 integration gate`).
+- Commit chain: the branch is a six-commit linear descendant of `84c1b92f4a333f3a76636bc6bca84f5ce721395e`, containing P1 `407106d052d70355b9a3dca67c93d564de5b1fe2`, P2 `dc4b2626f6b149d1601205f4a1b29204107446b6`, P3 `1a1ab21f18e3385858d53514e0d072a841be2131`, P4 `6611869169693a94a993aecbbeb051e7df09e42c`, P5-F1 `afbc5dd06e8541006706fdfc5ee72f25802914a8`, and P5 closure `4d85ce6067d1bb9cc3f95ab3e47c4a02d77dc8a7`; no merge or unrelated commit was present.
+- Scope audit: eight files were approved across presentation-only LIVE scoreboard hierarchy/geometry, focused public visual and accessibility tests, deterministic FINAL_SUMMARY browser fixtures, lifecycle classification, and Roadmap evidence. No backend, API/socket contract, public mapper, auth/RBAC/CSRF, migration, dependency, deployment configuration, event-store, or production-data file changed.
+- Architecture and security: event sourcing, append-only `match_events`, compensating correction behavior, server authority, public allowlist mapping, route-owned polling/socket behavior, and read-only public access remain unchanged. No mutable scoreboard-state table, timer-tick event, production fixture route, application fixture flag, public sequence, or private operational metadata was added.
+- F1 guard: expected `net::ERR_ABORTED` teardown remains narrowly classified only after completed LIVE assertions, for the exact public scoreboard GET or Socket.IO polling path, exact resource type, and a known scene navigation. Every other failed request remains a test failure.
+- Focused validation: `PASS`; eight public brand, display shell, focus/keyboard, LIVE, metadata, recent-action, FINAL_SUMMARY, and auth-boundary files passed 77 tests.
+- Browser integration smoke: `PASS`; Chromium `149.0.7827.55` passed finalized/unavailable FINAL_SUMMARY, LIVE at 1672x941, 1024x576, and 960x540, and the LIVE -> BLANK -> SCHEDULE -> LIVE_RETURN -> FINAL_SUMMARY -> UNAVAILABLE lifecycle. Horizontal overflow, auth requests, protected writes, console warnings/errors, page errors, and unexpected failed resources were all `0`. Scores remained `rgb(248, 250, 252)`, game clock `rgb(103, 232, 249)`, shot clock `rgb(239, 68, 68)`, and the ticker remained one sanitized atomic empty state.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests (`DB_DEPENDENT_TESTS_UNAVAILABLE`); `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS WITH LIMITATION`; parity, hierarchy, responsive containment, zoom-equivalent viewports, public safety, and scene isolation passed. Native fullscreen and native browser zoom were not automated.
+- Deferred policy: the recent-action rail remains one atomic sanitized item; a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; timezone formatting and CSP remain `FOLLOW-UP`. Possession and bonus automation remain excluded pending governing sources.
+- Integration method: approved fast-forward only; no squash, rebase, cherry-pick, merge commit, reset, or force push. Branch cleanup was not run and remains an owner follow-up after integration.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-03 remains `PENDING` until the RM-02 owner deployment and read-only production verification gate is completed.
