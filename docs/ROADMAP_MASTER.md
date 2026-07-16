@@ -110,12 +110,12 @@ RM-02 = CURRENT
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
-RM-02-P3 = PENDING
+RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = PENDING
 RM-02-P5 = PENDING
 RM-02-I = PENDING
 RM-03 through RM-18 = PENDING
-Next safe step: RM-02-P3 - Scoreboard Geometry and Typography Parity
+Next safe step: RM-02-P4 - FINAL_SUMMARY Browser Fixture Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -201,7 +201,7 @@ There is no parallel top-level path.
 - Objective: close public scoreboard parity while preserving public-safe real data.
 - Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
 - Intended roles: public viewers and kiosk/display operators with no command authority.
-- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 and RM-02-P2 are `IMPLEMENTATION COMPLETE`; RM-02-P3 through RM-02-P5 plus RM-02-I remain `PENDING`.
+- Current implementation state: `CURRENT`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P3 are `IMPLEMENTATION COMPLETE`; RM-02-P4, RM-02-P5, and RM-02-I remain `PENDING`.
 - Domain dependencies: existing public live scoreboard and final-summary projections only.
 - API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
 - Database dependencies: existing derived projections; no mutable source-of-truth table.
@@ -633,7 +633,7 @@ RM-01-D1 evidence is recorded in:
 - `docs/ui/UI_DESIGN_INVENTORY.md`
 - `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
 
-Current roadmap state after RM-02-P2 implementation:
+Current roadmap state after RM-02-P3 implementation:
 
 ```text
 RM-00 = INTEGRATED
@@ -642,7 +642,7 @@ RM-02 = CURRENT
 RM-02-D1 = DISCOVERY COMPLETE
 RM-02-P1 = IMPLEMENTATION COMPLETE
 RM-02-P2 = IMPLEMENTATION COMPLETE
-RM-02-P3 = PENDING
+RM-02-P3 = IMPLEMENTATION COMPLETE
 RM-02-P4 = PENDING
 RM-02-P5 = PENDING
 RM-02-I = PENDING
@@ -796,10 +796,30 @@ RM-02-P2 implementation evidence:
 - Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
 - Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
 
+RM-02-P3 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `dc4b2626f6b149d1601205f4a1b29204107446b6`.
+- Strategy: RM-02 remains a stacked linear implementation branch; integration into `main` occurs only at RM-02-I. P4/P5/I were not started.
+- Scope: presentation-only LIVE scoreboard geometry and typography plus focused visual-contract tests. No component data model, REST/socket contract, auth behavior, public mapper, event logic, dependency, or scene payload changed.
+- Target geometry at 1672x941: the main grid remained y=149.08 and moved from 613.64px to 585.64px high. HOME/CENTER/AWAY became 597.25/364.34/597.25px, compared with the approximate 600/364/600px target. The shot-clock block became x=654.81, y=495.47, w=362.34, h=238.25, within the source-image measurement tolerance of the approximate x=654, y=496, w=364, h=237 target.
+- Hierarchy: team names moved to y=222.66-263.45; score regions aligned at y=315.31-535.50; metric bands became 136.02px high; game-clock and shot-clock tracks were rebalanced without changing authoritative labels or values. Score digits remain fixed off-white and tabular; game clock remains cyan; shot-clock warning remains red.
+- Responsive browser evidence: Chromium passed 1672x941, 1920x1080, 1600x900, 1366x768, 1280x720, 1024x576, and 960x540 with document horizontal and vertical overflow both zero. HOME/AWAY widths and score baselines remained symmetric at every viewport.
+- Stress evidence: short, long English, long Thai, and mixed Thai/English team names stayed bounded to two lines; scores 0, 9, 99, and 100 stayed visible and non-wrapping; game clocks 10:00, 2:14, and 0:09 fit; shot clocks 24, 14, 9, and 0 fit; REG P4 and OT P1 retained authoritative formatter output.
+- P1/P2 regression: compact NORMAL, REFRESH, FULLSCREEN semantics/order, four-second auto-hide, focus recovery, 3px focus treatment, reduced-motion behavior, integrated metadata hierarchy, ticker hierarchy, and secondary system rail remained intact. Header and metadata geometry remained unchanged; only the intended main-grid and lower-rail height allocation changed.
+- Scene and lifecycle evidence: LIVE -> BLANK -> SCHEDULE -> LIVE rendered only scene-appropriate DOM with no stale score, metadata, or ticker. Existing polling/socket ownership remained unchanged; no new socket, subscription, interval, or layout observer was added.
+- Public safety: public sequence remains hidden, possession remains deferred `[NEEDS SOURCE]`, and the recent-action rail remains one polite atomic sanitized item. Browser public auth requests and protected writes were both zero; console warnings/errors and failed normal-load resources were zero.
+- Focused validation: `PASS`; six public display, live-scoreboard, metadata, recent-action, focus, and auth-boundary files passed 66 tests. The final P3 visual-contract file passed 11 tests after the expected test-first failure.
+- Full validation: lint `PASS`; 546 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS`; column balance, score dominance, clock hierarchy, baseline alignment, long-name handling, metric density, distant readability, responsive scaling, compact safety, and broadcast composition passed review.
+- Product decision: the recent-action rail remains one atomic sanitized item through RM-02-P3; a multi-item public feed remains deferred pending explicit product approval.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
 Next safe step:
 
 ```text
-RM-02-P3 - Scoreboard Geometry and Typography Parity
+RM-02-P4 - FINAL_SUMMARY Browser Fixture Closure
 ```
 
-Do not begin RM-02-P3 until it is separately approved.
+Do not begin RM-02-P4 until it is separately approved.

@@ -31,14 +31,33 @@ describe("public live scoreboard arena visual contract", () => {
     expect(styles).toMatch(/\.arena-match-metadata dd\s*\{[\s\S]*overflow:\s*hidden[\s\S]*text-overflow:\s*ellipsis[\s\S]*white-space:\s*nowrap/);
   });
 
-  test("improves rail readability without changing P1 score or clock scale", () => {
-    expect(styles).toContain("--arena-score-size: clamp(8.2rem, 28vh, 19rem)");
-    expect(styles).toContain("--arena-game-clock-size: clamp(4.8rem, 16vh, 10.5rem)");
-    expect(styles).toContain("--arena-shot-clock-size: clamp(3.6rem, 13vh, 8.2rem)");
+  test("aligns the broadcast hierarchy while retaining secondary rails", () => {
+    expect(styles).toContain("--arena-score-size: clamp(8.8rem, 30vh, 20rem)");
+    expect(styles).toContain("--arena-game-clock-size: clamp(4.8rem, 16.5vh, 10.5rem)");
+    expect(styles).toContain("--arena-shot-clock-size: clamp(3.8rem, 14vh, 8.6rem)");
+    expect(styles).toContain("--arena-system-h: clamp(26px, 8.4vh, 78px)");
     expect(styles).toMatch(/\.recent-event-ticker\s*\{[^}]*opacity:\s*0\.88/);
     expect(styles).toMatch(/\.kiosk-mode \.recent-event-ticker\s*\{[^}]*opacity:\s*0\.64/);
     expect(styles).toMatch(/\.compact-system-strip\s*\{[^}]*opacity:\s*0\.58/);
     expect(styles).toMatch(/\.kiosk-mode \.compact-system-strip\s*\{[^}]*opacity:\s*0\.5/);
+  });
+
+  test("uses symmetric target-like columns and a balanced clock stack", () => {
+    expect(styles).toContain("--arena-clock-column: minmax(230px, 0.61fr)");
+    expect(styles).toMatch(/\.arena-scoreboard-grid\s*\{[^}]*gap:\s*clamp\(7px, 0\.85vw, 14px\)[^}]*grid-template-columns:\s*var\(--arena-team-column\) var\(--arena-clock-column\) var\(--arena-team-column\)/);
+    expect(styles).toMatch(/\.public-display-team\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 0\.22fr\) minmax\(0, 1fr\) auto/);
+    expect(styles).toMatch(/\.central-clock-panel\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1\.08fr\) minmax\(0, 1fr\)/);
+    expect(styles).toMatch(/\.public-display-shot-clock\s*\{[^}]*margin:\s*0 calc\(-1 \* var\(--arena-clock-panel-padding\)\) calc\(-1 \* var\(--arena-clock-panel-padding\)\)/);
+  });
+
+  test("raises team-name and metric readability without relaxing compact bounds", () => {
+    expect(styles).toContain("--arena-team-name-size: clamp(1.55rem, 4.25vh, 3.3rem)");
+    expect(styles).toContain("--arena-metric-label-size: clamp(0.62rem, 1.55vh, 0.95rem)");
+    expect(styles).toMatch(/\.public-display-team-metrics\s*\{[^}]*min-height:\s*clamp\(62px, 15vh, 136px\)/);
+    expect(styles).toMatch(/@media \(max-height: 700px\) and \(min-width: 761px\)[\s\S]*--arena-system-h:\s*27px/);
+    expect(styles).toMatch(/@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)[\s\S]*--arena-system-h:\s*24px/);
+    expect(styles).toMatch(/@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)[\s\S]*\.public-display-team\s*\{[^}]*grid-template-rows:\s*auto minmax\(2em, 0\.28fr\) minmax\(0, 1fr\) auto/);
+    expect(styles).toMatch(/@media \(max-height: 620px\) and \(min-aspect-ratio: 16 \/ 10\)[\s\S]*\.public-display-team h2\s*\{[^}]*display:\s*block[^}]*-webkit-line-clamp:\s*unset[^}]*min-height:\s*2em/);
   });
 
   test("fits the arena frame to both viewport axes without body-level clipping", () => {
