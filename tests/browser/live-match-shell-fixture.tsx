@@ -121,7 +121,14 @@ createRoot(root).render(
               <div key={teamName}>
                 <h3>{teamName}</h3>
                 <div className="button-row">
-                  {(workspace === "clock" ? ["Start", "Stop"] : workspace === "timeouts" ? ["Grant timeout"] : ["Add team foul", "Add player foul"]).map((action) => (
+                  {(workspace === "score"
+                    ? ["+1", "+2", "+3"]
+                    : workspace === "clock"
+                      ? ["Start", "Stop"]
+                      : workspace === "timeouts"
+                        ? ["Grant timeout"]
+                        : ["Add team foul", "Add player foul"]
+                  ).map((action) => (
                     <button
                       className="score-button"
                       disabled={fixtureState === "final" || commandState === "pending"}

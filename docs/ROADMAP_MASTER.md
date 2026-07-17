@@ -132,10 +132,10 @@ RM-03-P2 = IMPLEMENTATION COMPLETE
 RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = IMPLEMENTATION COMPLETE
 RM-03-P4 = IMPLEMENTATION COMPLETE
-RM-03-P5 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-I = PENDING
+RM-03-P5 = REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION
+RM-03-I = BLOCKED (DB AUTHORIZATION CLOSURE GATE OPEN)
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P5 - Realtime / RBAC / Accessibility Regression Closure
+Next safe step: Provide disposable non-production DATABASE_* and run the committed RM-03 DB authorization closure suite; RM-03-I remains unauthorized
 ```
 
 ## 6. Straight-Line Diagram
@@ -1045,3 +1045,34 @@ RM-03-P4 implementation evidence:
 - Roadmap transition: RM-03-P4 is `IMPLEMENTATION COMPLETE`; RM-03-P5 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03 remains
   `CURRENT` and is not integrated. RM-04 through RM-18 remain `PENDING`.
 - Next safe step: `RM-03-P5 - Realtime / RBAC / Accessibility Regression Closure`.
+
+RM-03-P5 regression closure evidence:
+
+- Decision: `READY TO CLOSE RM-03-P5 WITH DB GATE OPEN`; all non-DB realtime, RBAC, accessibility, concurrency,
+  public/private, and route-adoption regression gates passed without changing production source, backend contracts,
+  sockets, persistence, event semantics, dependencies, or production state.
+- Ownership invariants: Score, Fouls, Clock, and Timeouts each retain exactly one route-owned realtime hook and one
+  polling interval. Routes retain projection/effective-access hydration, reconnect refresh, commands,
+  projection-derived `expectedSeq`, and conflict handling. Clock alone retains interpolation. LiveMatchShell and P2
+  adapters remain presentation-only and own no fetch, socket, polling, command, sequence, or clock behavior.
+- Authorization: EffectiveMatchAccess remains server-calculated and navigation-only. Missing/mismatched access and
+  failed hydration fail closed without role, global-permission, assignment-role, or route-visibility fallback.
+  Backend middleware remains authoritative for every protected request and command.
+- Regression validation: 21 focused files passed 296 tests with 2 environment-gated skips. The full suite passed 610
+  tests with 24 environment-gated skips; lint and both production builds passed. Public socket, correction, replay,
+  lifecycle/overtime, idempotency, stale-sequence, auth/CSRF, and public-isolation regressions remained green.
+- Browser evidence: local test-only authenticated fixtures passed 144 combinations covering Score, Fouls, Clock, and
+  Timeouts at 1920x1080, 1366x768, 1280x720, and 1024x768 across full/partial/zero navigation, ready/degraded/offline,
+  command pending/rejection/conflict, FINAL/read-only, and long multilingual labels. Horizontal overflow, duplicate
+  main landmarks, console warnings/errors, page errors, and failed resources were zero; 44px targets, 3px focus,
+  forced-colors, and reduced-motion passed.
+- DB limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; no disposable `DATABASE_*` environment was present. `npm run
+  test:db` passed 2 source guards and skipped 19 DB-dependent tests. Therefore canonical Admin, assigned
+  Referee/Scorer, Viewer denial, revocation/inactivation, cross-match denial, TIMER/SHOT_CLOCK isolation, and
+  denial-without-event/projection-mutation are not claimed as executed DB evidence.
+- Gate status: `DB AUTHORIZATION CLOSURE GATE = OPEN`; RM-03 integration/deployment readiness is `NO`. RM-03-I remains
+  unauthorized and RM-03 is not integrated.
+- Roadmap transition: RM-03-P5 is `REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION`; RM-03-I is blocked on
+  the DB authorization closure gate. RM-04 through RM-18 remain `PENDING`.
+- Next safe step: provide disposable non-production `DATABASE_*` and run the committed RM-03 DB authorization closure
+  suite. Do not begin RM-03-I until that evidence passes and governance explicitly authorizes integration.

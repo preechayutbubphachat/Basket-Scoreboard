@@ -11,11 +11,12 @@ const port = Number(process.env.RM03_P1_PORT || 4181);
 const baseUrl = `http://127.0.0.1:${port}`;
 const fixturePath = "/tests/browser/live-match-shell-fixture.html";
 const viewports = [
+  { width: 1920, height: 1080 },
   { width: 1366, height: 768 },
   { width: 1280, height: 720 },
   { width: 1024, height: 768 }
 ];
-const workspaces = ["fouls", "clock", "timeouts"];
+const workspaces = ["score", "fouls", "clock", "timeouts"];
 const states = [
   { name: "ready-long-rail", query: "state=ready&rail=1&names=long&navigation=full", shellState: "ready", rail: true, navigation: "full" },
   { name: "ready-no-rail", query: "state=ready&rail=0&navigation=partial&metadata=none", shellState: "ready", rail: false, navigation: "partial" },
