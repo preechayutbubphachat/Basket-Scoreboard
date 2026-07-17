@@ -39,8 +39,9 @@ describeDb.sequential("DB-backed public match metadata", () => {
   });
 
   it("resolves complete, partial and missing metadata without cross-match leakage", async () => {
+    const roundLabel = uniqueMatchCode("Round 2");
     const completeId = await insertMatch(pool, {
-      matchCode: "Round 2",
+      matchCode: roundLabel,
       scheduledAt: "2026-07-20 10:00:00",
       venueName: "Municipal Arena",
       metadata: { courtLabel: "Court A", courtId: randomUUID(), privateNote: "hidden" }
@@ -49,7 +50,7 @@ describeDb.sequential("DB-backed public match metadata", () => {
     const missingId = await insertMatch(pool, { metadata: {} });
 
     expect(await resolvePublicMatchMetadata(pool, completeId)).toEqual({
-      roundLabel: "Round 2",
+      roundLabel,
       courtLabel: "Court A",
       venueLabel: "Municipal Arena",
       scheduledStart: "2026-07-20T10:00:00.000Z"
@@ -70,7 +71,7 @@ describeDb.sequential("DB-backed public match metadata", () => {
 
   it("omits blank and control-character labels loaded from authoritative columns", async () => {
     const matchId = await insertMatch(pool, {
-      matchCode: " ",
+      matchCode: uniqueMatchCode(" \t"),
       venueName: "Arena\nPrivate",
       metadata: { courtLabel: "\tCourt A" }
     });
@@ -79,8 +80,9 @@ describeDb.sequential("DB-backed public match metadata", () => {
   });
 
   it("keeps public HTTP and socket metadata identical with exact safe envelopes", async () => {
+    const roundLabel = uniqueMatchCode("Final");
     const matchId = await insertMatch(pool, {
-      matchCode: "Final",
+      matchCode: roundLabel,
       scheduledAt: "2026-07-20 10:00:00",
       venueName: "Municipal Arena",
       metadata: { courtLabel: "Court A", courtId: randomUUID(), venueId: randomUUID() }
@@ -103,7 +105,7 @@ describeDb.sequential("DB-backed public match metadata", () => {
       expect(response.statusCode).toBe(200);
       expect(snapshot.publicScoreboard.matchMetadata).toEqual(httpProjection.matchMetadata);
       expect(snapshot.publicScoreboard.matchMetadata).toEqual({
-        roundLabel: "Final",
+        roundLabel,
         courtLabel: "Court A",
         venueLabel: "Municipal Arena",
         scheduledStart: "2026-07-20T10:00:00.000Z"
@@ -117,6 +119,10 @@ describeDb.sequential("DB-backed public match metadata", () => {
     }
   });
 });
+
+function uniqueMatchCode(prefix: string) {
+  return `${prefix}-${randomUUID()}`;
+}
 
 async function insertMatch(pool: Pool, input: {
   matchCode?: string | null;
