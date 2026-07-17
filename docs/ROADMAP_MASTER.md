@@ -131,11 +131,11 @@ RM-03-P1 = IMPLEMENTATION COMPLETE
 RM-03-P2 = IMPLEMENTATION COMPLETE
 RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = IMPLEMENTATION COMPLETE
-RM-03-P4 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P5 = PENDING
+RM-03-P4 = IMPLEMENTATION COMPLETE
+RM-03-P5 = PENDING (AUTHORIZED TO BEGIN)
 RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P4 - Remaining Live Operator Presentation Adoption
+Next safe step: RM-03-P5 - Realtime / RBAC / Accessibility Regression Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -1018,3 +1018,30 @@ RM-03-P3 implementation evidence:
 - Limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; `npm run test:db` passed 2 source guards and skipped 19 tests because no disposable `DATABASE_*` environment was available. DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remain mandatory before RM-03 integration or deployment.
 - Roadmap transition: RM-03-P3 is `IMPLEMENTATION COMPLETE`; RM-03-P4 - `Remaining Live Operator Presentation Adoption` is `PENDING (AUTHORIZED TO BEGIN)` for the remaining Roadmap-authorized live operator presentation routes, including Foul, Clock, and Timeout. RM-03 is not integrated.
 - Next safe step: `RM-03-P4 - Remaining Live Operator Presentation Adoption`.
+
+RM-03-P4 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P4`; the Roadmap-authorized Foul, Clock, and Timeout operator routes now compose
+  `AuthenticatedDashboardShell -> LiveMatchShell -> existing feature workspace` with exactly one `main` landmark.
+- Presentation inputs: every adopted route uses the pure RM-03-P2 match-context and navigation adapters. Navigation
+  derives only from the canonical server-calculated `EffectiveMatchAccess`; missing, mismatched, or failed access
+  hydration fails closed to an empty navigation set without becoming command authorization.
+- Ownership: each route retains its protected projection hydration, public-notification realtime hook, single polling
+  interval, reconnect refresh, feature commands, projection-derived `expectedSeq`, API-client identifiers, conflict
+  refresh, and pending/error handling. Clock retains `useLiveClockNow` interpolation and reconciliation in the route.
+  LiveMatchShell and presentation adapters own no fetch, socket, polling, command, retry, or interpolation behavior.
+- Scope and isolation: Lifecycle and later operator routes remain outside P4. No backend, API, socket, event, database,
+  public-display contract, or future RM-04 through RM-07 feature-dashboard behavior changed. Sequence internals were
+  removed from the adopted route DOM.
+- Validation: focused shell, adapter, effective-access, auth, realtime, and public-isolation coverage passed 189 tests.
+  The full suite passed 603 tests with 24 environment-gated skips; lint and both production builds passed. Local
+  Chromium passed 81 route/state/viewport combinations at 1366x768, 1280x720, and 1024x768 with no horizontal
+  overflow, duplicate main landmark, console warning/error, page error, or failed resource; 3px focus, forced-colors,
+  reduced-motion, long labels, partial/zero navigation, command states, connection states, and FINAL read-only passed.
+- Limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; `npm run test:db` passed 2 source guards and skipped 19 tests because no
+  disposable `DATABASE_*` environment was available. DB-backed active-assignment authorization, revocation,
+  cross-match denial, TIMER/SHOT_CLOCK isolation, and denied-command no-event/no-projection-change evidence remain
+  mandatory before RM-03 integration or deployment.
+- Roadmap transition: RM-03-P4 is `IMPLEMENTATION COMPLETE`; RM-03-P5 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03 remains
+  `CURRENT` and is not integrated. RM-04 through RM-18 remain `PENDING`.
+- Next safe step: `RM-03-P5 - Realtime / RBAC / Accessibility Regression Closure`.

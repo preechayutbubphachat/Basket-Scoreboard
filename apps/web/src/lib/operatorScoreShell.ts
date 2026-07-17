@@ -7,7 +7,7 @@ type ScoreMessage = {
   tone: "success" | "error";
 };
 
-export function buildOperatorScoreConnection(
+export function buildOperatorLiveConnection(
   realtimeState: RealtimeConnectionState,
   readOnly: boolean
 ): { label: string; state: UiConnectionState } {
@@ -28,12 +28,13 @@ export function buildOperatorScoreConnection(
   };
 }
 
-export function buildOperatorScoreCommandStatus(
+export function buildOperatorLiveCommandStatus(
   pendingKey: string | null,
-  message: ScoreMessage | null
+  message: ScoreMessage | null,
+  pendingLabel = "Saving changes"
 ): { detail?: string; label?: string; state: UiCommandState } | undefined {
   if (pendingKey) {
-    return { label: "Saving score", state: "pending" };
+    return { label: pendingLabel, state: "pending" };
   }
   if (!message) return undefined;
 
@@ -45,4 +46,18 @@ export function buildOperatorScoreCommandStatus(
     ? "sync-required"
     : "rejected";
   return { detail: message.text, state };
+}
+
+export function buildOperatorScoreConnection(
+  realtimeState: RealtimeConnectionState,
+  readOnly: boolean
+) {
+  return buildOperatorLiveConnection(realtimeState, readOnly);
+}
+
+export function buildOperatorScoreCommandStatus(
+  pendingKey: string | null,
+  message: ScoreMessage | null
+) {
+  return buildOperatorLiveCommandStatus(pendingKey, message, "Saving score");
 }

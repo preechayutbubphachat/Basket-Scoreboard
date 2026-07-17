@@ -88,6 +88,8 @@ import {
   buildLiveMatchPresentationContext
 } from "./lib/liveMatchPresentation";
 import {
+  buildOperatorLiveCommandStatus,
+  buildOperatorLiveConnection,
   buildOperatorScoreCommandStatus,
   buildOperatorScoreConnection
 } from "./lib/operatorScoreShell";
@@ -108,7 +110,6 @@ import {
   buildTeamFoulCommandPayload,
   foulTypeOptions,
   getFoulControlFeedback,
-  getFoulControlLinks,
   type FoulControlTeamSide
 } from "./lib/foulControl";
 import {
@@ -116,8 +117,7 @@ import {
   buildGameClockSetPayload,
   buildShotClockResetPayload,
   buildShotClockSetPayload,
-  getClockControlFeedback,
-  getClockControlLinks
+  getClockControlFeedback
 } from "./lib/clockControl";
 import {
   buildTimeoutControlPanels,
@@ -125,7 +125,6 @@ import {
   buildTimeoutGrantPayload,
   getActiveTimeoutLabel,
   getTimeoutControlFeedback,
-  getTimeoutControlLinks,
   timeoutRequestedByOptions,
   type TimeoutControlTeamSide
 } from "./lib/timeoutControl";
@@ -3073,6 +3072,93 @@ function usePublicProjectionRealtime(
   return realtimeState;
 }
 
+type OperatorLiveMatchFrameProps = {
+  children: React.ReactNode;
+  commandLabel: string;
+  currentView: "fouls" | "clock" | "timeouts";
+  effectiveAccess: EffectiveMatchAccess | null;
+  matchId: string;
+  message: { tone: "success" | "error"; text: string; code?: string } | null;
+  pendingKey: string | null;
+  projection: ScoreboardProjection | null;
+  realtimeState: RealtimeConnectionState;
+  subtitle: string;
+  title: string;
+};
+
+function OperatorLiveMatchFrame({
+  children,
+  commandLabel,
+  currentView,
+  effectiveAccess,
+  matchId,
+  message,
+  pendingKey,
+  projection,
+  realtimeState,
+  subtitle,
+  title
+}: OperatorLiveMatchFrameProps) {
+  const { currentUser, roleSummary, logout } = useCurrentUser();
+  const readOnly = projection ? isFinishedMatchStatus(projection.status) : false;
+  const match = buildLiveMatchPresentationContext({
+    awayTeamName: projection?.awayTeamName ?? null,
+    homeTeamName: projection?.homeTeamName ?? null,
+    matchId,
+    periodLabel: projection
+      ? `${projection.periodType === "OVERTIME" ? "OT" : "P"}${projection.periodNumber}`
+      : null,
+    status: projection?.status ?? "LOADING"
+  });
+  const navigation = buildLiveMatchNavigation({ currentView, effectiveAccess, matchId });
+  const connection = buildOperatorLiveConnection(realtimeState, readOnly);
+  const commandStatus = buildOperatorLiveCommandStatus(pendingKey, message, commandLabel);
+  const displayName = currentUser?.displayName ?? currentUser?.email ?? currentUser?.userId ?? "Authenticated user";
+
+  async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    await logout();
+    navigate("/login");
+  }
+
+  return (
+    <AuthenticatedDashboardShell
+      actions={<a href="/login" onClick={onLogout}>Logout</a>}
+      brand={{
+        href: "/",
+        label: "Basketball Scoreboard",
+        onClick: (event) => {
+          event.preventDefault();
+          navigate("/");
+        }
+      }}
+      contentMode="wide"
+      contextLabel="Match operations"
+      navigationItems={[{
+        href: "/operator/matches",
+        label: "Operator Matches",
+        onClick: (event) => {
+          event.preventDefault();
+          navigate("/operator/matches");
+        }
+      }]}
+      statusContent={<UiConnectionStatus label="Authenticated session" state="connected" />}
+      subtitle={subtitle}
+      title={title}
+      userContent={<><strong>{displayName}</strong><span>{roleSummary}</span></>}
+    >
+      <LiveMatchShell
+        {...(commandStatus ? { commandStatus } : {})}
+        connection={connection}
+        match={match}
+        navigation={navigation}
+      >
+        {children}
+      </LiveMatchShell>
+    </AuthenticatedDashboardShell>
+  );
+}
+
 function OperatorScorePage({ matchId }: { matchId: string }) {
   const { api, currentUser, roleSummary, logout } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -3308,6 +3394,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [foulType, setFoulType] = useState<FoulType>("PERSONAL");
@@ -3319,13 +3406,19 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   async function loadState() {
     setLoading(true);
     setMessage(null);
+    setEffectiveAccess(null);
     try {
-      const [nextProjection, nextRosters] = await Promise.all([
+      const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
         api.getMatchProjection(matchId),
-        api.getMatchRosters(matchId).catch(() => null)
+        api.getMatchRosters(matchId).catch(() => null),
+        api.getEffectiveMatchAccess(matchId).catch((error) => {
+          setMessage(toUiMessage(error));
+          return null;
+        })
       ]);
       setProjection(nextProjection);
       setRosters(nextRosters);
+      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -3421,10 +3514,20 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }
 
   return (
-    <section className="stack">
+    <OperatorLiveMatchFrame
+      commandLabel="Saving foul"
+      currentView="fouls"
+      effectiveAccess={effectiveAccess}
+      matchId={matchId}
+      message={message}
+      pendingKey={pendingKey}
+      projection={projection}
+      realtimeState={realtimeState}
+      subtitle="Authoritative team and player foul controls"
+      title="Foul Control"
+    >
+      <section className="stack" aria-label="Foul workspace">
       <div className="panel">
-        <h1>Foul Control</h1>
-        <p className="muted">Match ID: {matchId}</p>
         {!canSubmitFoul ? <ErrorMessage code="FORBIDDEN" message="Foul operation permission is required." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
@@ -3441,8 +3544,6 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
-            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
-            <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="form-grid compact">
@@ -3513,30 +3614,17 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
               </div>
             )}
           </section>
-          <div className="button-row">
-            {Object.values(getFoulControlLinks(matchId)).map((link) => (
-              <a
-                key={link.href}
-                className="button-link secondary"
-                href={link.href}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate(link.href);
-                }}
-              >
-                {link.label}
-              </a>
-            ))}
-          </div>
         </section>
       ) : null}
-    </section>
+      </section>
+    </OperatorLiveMatchFrame>
   );
 }
 
 function OperatorClockPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -3555,9 +3643,17 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   async function loadState() {
     setLoading(true);
     setMessage(null);
+    setEffectiveAccess(null);
     try {
-      const nextProjection = await api.getMatchProjection(matchId);
+      const [nextProjection, nextEffectiveAccess] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getEffectiveMatchAccess(matchId).catch((error) => {
+          setMessage(toUiMessage(error));
+          return null;
+        })
+      ]);
       setProjection(nextProjection);
+      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
       setProjectionReceivedAtMs(Date.now());
       setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
       setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
@@ -3628,10 +3724,20 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const clockState = projection ? buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }) : null;
 
   return (
-    <section className="stack">
+    <OperatorLiveMatchFrame
+      commandLabel="Saving clock"
+      currentView="clock"
+      effectiveAccess={effectiveAccess}
+      matchId={matchId}
+      message={message}
+      pendingKey={pendingKey}
+      projection={projection}
+      realtimeState={realtimeState}
+      subtitle="Authoritative game and shot clock controls"
+      title="Clock Control"
+    >
+      <section className="stack" aria-label="Clock workspace">
       <div className="panel">
-        <h1>Clock Control</h1>
-        <p className="muted">Match ID: {matchId}</p>
         {!canSubmitGameClock && !canSubmitShotClock ? <ErrorMessage code="FORBIDDEN" message="Clock operation permission is required." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
@@ -3657,8 +3763,6 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
-            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
-            <div><dt>Expected Seq</dt><dd>{clockState.expectedSeq}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="button-row">
@@ -3763,30 +3867,17 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
               Set Shot Clock
             </button>
           </div>
-          <div className="button-row">
-            {Object.values(getClockControlLinks(matchId)).map((link) => (
-              <a
-                key={link.href}
-                className="button-link secondary"
-                href={link.href}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate(link.href);
-                }}
-              >
-                {link.label}
-              </a>
-            ))}
-          </div>
         </section>
       ) : null}
-    </section>
+      </section>
+    </OperatorLiveMatchFrame>
   );
 }
 
 function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [requestedBy, setRequestedBy] = useState<TimeoutRequestedBy>("HEAD_COACH");
@@ -3799,8 +3890,17 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   async function loadState() {
     setLoading(true);
     setMessage(null);
+    setEffectiveAccess(null);
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const [nextProjection, nextEffectiveAccess] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getEffectiveMatchAccess(matchId).catch((error) => {
+          setMessage(toUiMessage(error));
+          return null;
+        })
+      ]);
+      setProjection(nextProjection);
+      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -3887,10 +3987,20 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   }
 
   return (
-    <section className="stack">
+    <OperatorLiveMatchFrame
+      commandLabel="Saving timeout"
+      currentView="timeouts"
+      effectiveAccess={effectiveAccess}
+      matchId={matchId}
+      message={message}
+      pendingKey={pendingKey}
+      projection={projection}
+      realtimeState={realtimeState}
+      subtitle="Authoritative timeout controls and live match state"
+      title="Timeout Control"
+    >
+      <section className="stack" aria-label="Timeout workspace">
       <div className="panel">
-        <h1>Timeout Control</h1>
-        <p className="muted">Match ID: {matchId}</p>
         {!canSubmitTimeout ? <ErrorMessage code="FORBIDDEN" message="Timeout operation permission is required." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
@@ -3904,8 +4014,6 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
-            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
-            <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="form-grid compact">
@@ -3967,24 +4075,10 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
               </div>
             ))}
           </div>
-          <div className="button-row">
-            {Object.values(getTimeoutControlLinks(matchId)).map((link) => (
-              <a
-                key={link.href}
-                className="button-link secondary"
-                href={link.href}
-                onClick={(event) => {
-                  event.preventDefault();
-                  navigate(link.href);
-                }}
-              >
-                {link.label}
-              </a>
-            ))}
-          </div>
         </section>
       ) : null}
-    </section>
+      </section>
+    </OperatorLiveMatchFrame>
   );
 }
 
@@ -6489,7 +6583,15 @@ function RoutedApp({ route }: { route: Route }) {
     }
   }, [route]);
 
-  if (route.name === "admin" || route.name === "operator-score" || route.name === "public-scoreboard-display" || route.name === "public-display-scene") {
+  if (
+    route.name === "admin" ||
+    route.name === "operator-score" ||
+    route.name === "operator-fouls" ||
+    route.name === "operator-clock" ||
+    route.name === "operator-timeouts" ||
+    route.name === "public-scoreboard-display" ||
+    route.name === "public-display-scene"
+  ) {
     return content;
   }
 

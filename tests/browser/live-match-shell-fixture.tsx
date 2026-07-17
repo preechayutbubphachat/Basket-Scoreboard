@@ -20,6 +20,7 @@ const useLongNames = parameters.get("names") === "long";
 const navigationState = parameters.get("navigation") ?? "full";
 const omitMetadata = parameters.get("metadata") === "none";
 const commandState = parameters.get("command") ?? "idle";
+const workspace = parameters.get("workspace") ?? "score";
 
 const connectionByState: Record<string, LiveMatchShellProps["connection"]> = {
   degraded: { label: "Arena link degraded", state: "reconnecting" },
@@ -65,15 +66,16 @@ const effectiveAccess: EffectiveMatchAccess | null = navigationState === "zero" 
 };
 const navigation = buildLiveMatchNavigation({
   matchId: match.matchId,
-  currentView: navigationState === "partial" ? "clock" : "score",
+  currentView: workspace,
   effectiveAccess
 });
+const workspaceLabel = `${workspace[0]?.toUpperCase()}${workspace.slice(1)} workspace`;
 const commandStatus: LiveMatchShellProps["commandStatus"] = commandState === "pending"
-  ? { label: "Saving score", state: "pending" }
+  ? { label: `Saving ${workspace}`, state: "pending" }
   : commandState === "conflict"
     ? { detail: "Authoritative state changed. Refresh before retrying.", state: "sync-required" }
     : commandState === "error"
-      ? { detail: "Score command rejected.", state: "rejected" }
+      ? { detail: `${workspaceLabel} command rejected.`, state: "rejected" }
       : undefined;
 
 const root = document.getElementById("root");
@@ -108,25 +110,25 @@ createRoot(root).render(
           </section>
         ) : undefined}
       >
-        <section aria-label="Score workspace" className="panel score-control">
-          <h2>Score workspace</h2>
+        <section aria-label={workspaceLabel} className="panel score-control">
+          <h2>{workspaceLabel}</h2>
           <div className="score-display" aria-label="Current score">
-            <div><span>HOME</span><strong>72</strong><small>{match.homeTeamName}</small></div>
-            <div><span>AWAY</span><strong>68</strong><small>{match.awayTeamName}</small></div>
+            <div><span>{workspace === "clock" ? "GAME CLOCK" : "HOME"}</span><strong>{workspace === "clock" ? "02:41" : "72"}</strong><small>{match.homeTeamName}</small></div>
+            <div><span>{workspace === "clock" ? "SHOT CLOCK" : "AWAY"}</span><strong>{workspace === "clock" ? "14" : "68"}</strong><small>{match.awayTeamName}</small></div>
           </div>
           <div className="score-actions">
             {[match.homeTeamName, match.awayTeamName].map((teamName) => (
               <div key={teamName}>
                 <h3>{teamName}</h3>
                 <div className="button-row">
-                  {[1, 2, 3].map((points) => (
+                  {(workspace === "clock" ? ["Start", "Stop"] : workspace === "timeouts" ? ["Grant timeout"] : ["Add team foul", "Add player foul"]).map((action) => (
                     <button
                       className="score-button"
                       disabled={fixtureState === "final" || commandState === "pending"}
-                      key={points}
+                      key={action}
                       type="button"
                     >
-                      +{points}
+                      {action}
                     </button>
                   ))}
                 </div>

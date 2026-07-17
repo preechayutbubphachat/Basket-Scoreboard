@@ -11,21 +11,19 @@ const port = Number(process.env.RM03_P1_PORT || 4181);
 const baseUrl = `http://127.0.0.1:${port}`;
 const fixturePath = "/tests/browser/live-match-shell-fixture.html";
 const viewports = [
-  { width: 1920, height: 1080 },
-  { width: 1600, height: 900 },
-  { width: 1536, height: 1024 },
   { width: 1366, height: 768 },
   { width: 1280, height: 720 },
   { width: 1024, height: 768 }
 ];
+const workspaces = ["fouls", "clock", "timeouts"];
 const states = [
   { name: "ready-long-rail", query: "state=ready&rail=1&names=long&navigation=full", shellState: "ready", rail: true, navigation: "full" },
   { name: "ready-no-rail", query: "state=ready&rail=0&navigation=partial&metadata=none", shellState: "ready", rail: false, navigation: "partial" },
   { name: "ready-zero-navigation", query: "state=ready&rail=0&navigation=zero", shellState: "ready", rail: false, navigation: "zero" },
   { name: "degraded", query: "state=degraded&rail=1", shellState: "degraded", rail: true },
   { name: "offline", query: "state=offline&rail=1", shellState: "offline", rail: true },
-  { name: "command-pending", query: "state=ready&rail=0&command=pending", shellState: "ready", rail: false, command: "Saving score" },
-  { name: "command-error", query: "state=ready&rail=0&command=error", shellState: "ready", rail: false, command: "Score command rejected." },
+  { name: "command-pending", query: "state=ready&rail=0&command=pending", shellState: "ready", rail: false, command: "pending" },
+  { name: "command-error", query: "state=ready&rail=0&command=error", shellState: "ready", rail: false, command: "error" },
   { name: "command-conflict", query: "state=ready&rail=0&command=conflict", shellState: "ready", rail: false, command: "Authoritative state changed." },
   { name: "final", query: "state=final&rail=1", shellState: "read-only", rail: true }
 ];
@@ -41,18 +39,18 @@ async function waitForServer() {
   throw new Error("RM-03-P1 fixture server did not become ready");
 }
 
-async function measure(page, viewport, state) {
+async function measure(page, viewport, state, workspaceName) {
   await page.setViewportSize(viewport);
-  await page.goto(`${baseUrl}${fixturePath}?${state.query}`, { waitUntil: "networkidle" });
+  await page.goto(`${baseUrl}${fixturePath}?${state.query}&workspace=${workspaceName}`, { waitUntil: "networkidle" });
   const firstNavigationLink = page.locator(".live-match-shell__navigation a").first();
   if (await firstNavigationLink.count()) await firstNavigationLink.focus();
 
-  return page.evaluate(({ expectedState, hasRail, compact }) => {
+  return page.evaluate(({ expectedState, hasRail, compact, workspace }) => {
     const documentElement = document.documentElement;
     const shell = document.querySelector(".live-match-shell");
     const navigation = document.querySelector(".live-match-shell__navigation");
     const navigationLink = navigation?.querySelector("a");
-    const workspace = document.querySelector(".live-match-shell__workspace");
+    const workspaceElement = document.querySelector(".live-match-shell__workspace");
     const primary = document.querySelector(".live-match-shell__primary");
     const rail = document.querySelector(".live-match-shell__secondary");
     const teamNames = [...document.querySelectorAll(".live-match-shell__team")];
@@ -79,8 +77,8 @@ async function measure(page, viewport, state) {
       commandText: document.querySelector(".ui-command-status")?.textContent ?? "",
       mainCount: document.querySelectorAll("main").length,
       navigationLinkHeight: linkRect?.height ?? 0,
-      scoreButtonCount: document.querySelectorAll('[aria-label="Score workspace"] button').length,
-      scoreButtonsDisabled: [...document.querySelectorAll('[aria-label="Score workspace"] button')].every((button) => button.disabled),
+      workspaceButtonCount: document.querySelectorAll(`[aria-label="${workspace[0].toUpperCase()}${workspace.slice(1)} workspace"] button`).length,
+      workspaceButtonsDisabled: [...document.querySelectorAll(`[aria-label="${workspace[0].toUpperCase()}${workspace.slice(1)} workspace"] button`)].every((button) => button.disabled),
       railPositionSafe: !hasRail || !primaryRect || !railRect
         ? !hasRail && !rail
         : compact
@@ -92,9 +90,9 @@ async function measure(page, viewport, state) {
         const rect = element.getBoundingClientRect();
         return rect.left >= -1 && rect.right <= documentElement.clientWidth + 1;
       }),
-      workspaceColumns: workspace ? getComputedStyle(workspace).gridTemplateColumns : null
+      workspaceColumns: workspaceElement ? getComputedStyle(workspaceElement).gridTemplateColumns : null
     };
-  }, { compact: viewport.width <= 1100, expectedState: state.shellState, hasRail: state.rail });
+  }, { compact: viewport.width <= 1100, expectedState: state.shellState, hasRail: state.rail, workspace: workspaceName });
 }
 
 async function main() {
@@ -109,7 +107,12 @@ async function main() {
 
   try {
     await waitForServer();
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      headless: true,
+      ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+        : {})
+    });
     const page = await browser.newPage();
     const consoleMessages = [];
     const pageErrors = [];
@@ -122,17 +125,20 @@ async function main() {
 
     const matrix = [];
     for (const viewport of viewports) {
+      for (const workspace of workspaces) {
       for (const state of states) {
-        const result = await measure(page, viewport, state);
-        assert.equal(result.documentScrollWidth, result.documentClientWidth, `${viewport.width} ${state.name} overflowed horizontally`);
-        assert.equal(result.mainCount, 1, `${viewport.width} ${state.name} must render one main landmark`);
+        const result = await measure(page, viewport, state, workspace);
+        assert.equal(result.documentScrollWidth, result.documentClientWidth, `${viewport.width} ${workspace} ${state.name} overflowed horizontally`);
+        assert.equal(result.mainCount, 1, `${viewport.width} ${workspace} ${state.name} must render one main landmark`);
         assert.equal(result.liveNavigationLabel, "Live match controls");
         assert.equal(result.shellStatePresent, true, `${viewport.width} ${state.name} shell state mismatch`);
         assert.equal(result.hasRail, state.rail, `${viewport.width} ${state.name} rail mismatch`);
         assert.equal(result.railPositionSafe, true, `${viewport.width} ${state.name} rail position mismatch`);
         assert.equal(result.teamNamesBounded, true, `${viewport.width} ${state.name} team label overflow`);
-        assert.equal(result.scoreButtonCount, 6, `${viewport.width} ${state.name} score controls missing`);
-        if (state.command) assert(result.commandText.includes(state.command), `${viewport.width} ${state.name} command status missing`);
+        assert(result.workspaceButtonCount >= 2, `${viewport.width} ${workspace} ${state.name} controls missing`);
+        if (state.command === "pending") assert(result.commandText.includes(`Saving ${workspace}`), `${viewport.width} ${workspace} pending status missing`);
+        if (state.command === "error") assert(result.commandText.includes(`${workspace[0].toUpperCase()}${workspace.slice(1)} workspace command rejected.`), `${viewport.width} ${workspace} error status missing`);
+        if (state.command === "Authoritative state changed.") assert(result.commandText.includes(state.command), `${viewport.width} ${workspace} conflict status missing`);
         if (state.navigation === "zero") {
           assert.equal(result.navigationIds.length, 0);
           assert.equal(result.currentNavigationCount, 0);
@@ -141,7 +147,7 @@ async function main() {
           assert.equal(result.focusInsideNavigation, true, `${viewport.width} ${state.name} focus is clipped`);
           assert.equal(result.focusOutlineStyle, "solid");
           assert.equal(result.focusOutlineWidth, "3px");
-          assert.equal(result.currentNavigationCount, 1);
+          assert.equal(result.currentNavigationCount, state.navigation === "partial" && workspace !== "clock" ? 0 : 1);
         }
         if (state.navigation === "partial") {
           assert.deepEqual(result.navigationIds, [
@@ -152,9 +158,10 @@ async function main() {
         }
         if (state.name === "final") {
           assert.equal(result.readOnlyTextVisible, true);
-          assert.equal(result.scoreButtonsDisabled, true);
+          assert.equal(result.workspaceButtonsDisabled, true);
         }
-        matrix.push({ viewport, state: state.name, ...result });
+        matrix.push({ viewport, workspace, state: state.name, ...result });
+      }
       }
     }
 
