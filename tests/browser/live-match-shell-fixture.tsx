@@ -2,6 +2,11 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { AuthenticatedDashboardShell } from "../../apps/web/src/components/AuthenticatedDashboardShell";
 import { LiveMatchShell, type LiveMatchShellProps } from "../../apps/web/src/components/LiveMatchShell";
+import type { EffectiveMatchAccess } from "@basket-scoreboard/api-contracts";
+import {
+  buildLiveMatchNavigation,
+  buildLiveMatchPresentationContext
+} from "../../apps/web/src/lib/liveMatchPresentation";
 import "../../apps/web/src/styles/tokens.css";
 import "../../apps/web/src/styles/primitives.css";
 import "../../apps/web/src/styles/authenticated-dashboard.css";
@@ -12,6 +17,8 @@ const parameters = new URLSearchParams(window.location.search);
 const fixtureState = parameters.get("state") ?? "ready";
 const showRail = parameters.get("rail") !== "0";
 const useLongNames = parameters.get("names") === "long";
+const navigationState = parameters.get("navigation") ?? "full";
+const omitMetadata = parameters.get("metadata") === "none";
 
 const connectionByState: Record<string, LiveMatchShellProps["connection"]> = {
   degraded: { label: "Arena link degraded", state: "reconnecting" },
@@ -20,22 +27,46 @@ const connectionByState: Record<string, LiveMatchShellProps["connection"]> = {
   ready: { label: "Arena link connected", state: "connected" }
 };
 
-const match: LiveMatchShellProps["match"] = {
+const match = buildLiveMatchPresentationContext({
   awayTeamName: useLongNames
     ? "สโมสรบาสเกตบอลเยาวชนเชียงใหม่ฟอลคอนส์นานาชาติชิงแชมป์ประเทศไทย"
     : "Chiang Mai Falcons",
-  courtLabel: "Court 1",
+  courtLabel: omitMetadata ? null : "Court 1",
   homeTeamName: useLongNames
     ? "Bangkok Metropolitan Youth Basketball Academy Championship Selection"
     : "Bangkok Thunder",
   matchId: "fixture-match-1",
-  periodLabel: fixtureState === "final" ? "Final" : "Q4",
-  readOnly: fixtureState === "final",
+  periodLabel: omitMetadata ? null : fixtureState === "final" ? "Final" : "Q4",
   status: fixtureState === "final" ? "FINAL" : "LIVE",
-  tournamentLabel: useLongNames
+  tournamentLabel: omitMetadata ? null : useLongNames
     ? "การแข่งขัน National Arena Invitational กรุงเทพมหานคร 2026"
     : "National Arena Invitational"
+});
+
+const fullCapabilities: EffectiveMatchAccess["capabilities"] = {
+  matchRead: true,
+  scoreOperate: true,
+  foulOperate: true,
+  gameClockOperate: true,
+  shotClockOperate: true,
+  timeoutOperate: true,
+  lifecycleOperate: true,
+  correctionRequest: true,
+  correctionApply: true,
+  correctionReject: true,
+  auditRead: true
 };
+const effectiveAccess: EffectiveMatchAccess | null = navigationState === "zero" ? null : {
+  matchId: match.matchId,
+  capabilities: navigationState === "partial"
+    ? { ...fullCapabilities, scoreOperate: false, foulOperate: false, timeoutOperate: false, lifecycleOperate: false, correctionRequest: false, auditRead: false }
+    : fullCapabilities
+};
+const navigation = buildLiveMatchNavigation({
+  matchId: match.matchId,
+  currentView: navigationState === "partial" ? "clock" : "score",
+  effectiveAccess
+});
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Fixture root was not found");
@@ -58,12 +89,7 @@ createRoot(root).render(
           : undefined}
         connection={connectionByState[fixtureState] ?? connectionByState.ready}
         match={match}
-        navigation={[
-          { current: true, href: "#score", id: "score", label: "Score" },
-          { href: "#fouls", id: "fouls", label: "Fouls" },
-          { href: "#clock", id: "clock", label: "Clock" },
-          { href: "#timeouts", id: "timeouts", label: "Timeouts" }
-        ]}
+        navigation={navigation}
         safetyGuidance={fixtureState === "degraded" ? "Refresh authoritative state before continuing." : undefined}
         secondaryRail={showRail ? (
           <section>

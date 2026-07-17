@@ -19,8 +19,9 @@ const viewports = [
   { width: 1024, height: 768 }
 ];
 const states = [
-  { name: "ready-long-rail", query: "state=ready&rail=1&names=long", shellState: "ready", rail: true },
-  { name: "ready-no-rail", query: "state=ready&rail=0", shellState: "ready", rail: false },
+  { name: "ready-long-rail", query: "state=ready&rail=1&names=long&navigation=full", shellState: "ready", rail: true, navigation: "full" },
+  { name: "ready-no-rail", query: "state=ready&rail=0&navigation=partial&metadata=none", shellState: "ready", rail: false, navigation: "partial" },
+  { name: "ready-zero-navigation", query: "state=ready&rail=0&navigation=zero", shellState: "ready", rail: false, navigation: "zero" },
   { name: "degraded", query: "state=degraded&rail=1", shellState: "degraded", rail: true },
   { name: "offline", query: "state=offline&rail=1", shellState: "offline", rail: true },
   { name: "final", query: "state=final&rail=1", shellState: "read-only", rail: true }
@@ -40,7 +41,8 @@ async function waitForServer() {
 async function measure(page, viewport, state) {
   await page.setViewportSize(viewport);
   await page.goto(`${baseUrl}${fixturePath}?${state.query}`, { waitUntil: "networkidle" });
-  await page.locator(".live-match-shell__navigation a").first().focus();
+  const firstNavigationLink = page.locator(".live-match-shell__navigation a").first();
+  if (await firstNavigationLink.count()) await firstNavigationLink.focus();
 
   return page.evaluate(({ expectedState, hasRail, compact }) => {
     const documentElement = document.documentElement;
@@ -69,6 +71,8 @@ async function measure(page, viewport, state) {
       focusOutlineWidth: focusStyle?.outlineWidth ?? null,
       hasRail: Boolean(rail),
       liveNavigationLabel: navigation?.getAttribute("aria-label") ?? null,
+      navigationIds: [...document.querySelectorAll(".live-match-shell__navigation a")].map((link) => link.getAttribute("href")),
+      currentNavigationCount: document.querySelectorAll('.live-match-shell__navigation a[aria-current="page"]').length,
       mainCount: document.querySelectorAll("main").length,
       navigationLinkHeight: linkRect?.height ?? 0,
       railPositionSafe: !hasRail || !primaryRect || !railRect
@@ -121,10 +125,23 @@ async function main() {
         assert.equal(result.hasRail, state.rail, `${viewport.width} ${state.name} rail mismatch`);
         assert.equal(result.railPositionSafe, true, `${viewport.width} ${state.name} rail position mismatch`);
         assert.equal(result.teamNamesBounded, true, `${viewport.width} ${state.name} team label overflow`);
-        assert(result.navigationLinkHeight >= 44, `${viewport.width} ${state.name} navigation target is below 44px`);
-        assert.equal(result.focusInsideNavigation, true, `${viewport.width} ${state.name} focus is clipped`);
-        assert.equal(result.focusOutlineStyle, "solid");
-        assert.equal(result.focusOutlineWidth, "3px");
+        if (state.navigation === "zero") {
+          assert.equal(result.navigationIds.length, 0);
+          assert.equal(result.currentNavigationCount, 0);
+        } else {
+          assert(result.navigationLinkHeight >= 44, `${viewport.width} ${state.name} navigation target is below 44px`);
+          assert.equal(result.focusInsideNavigation, true, `${viewport.width} ${state.name} focus is clipped`);
+          assert.equal(result.focusOutlineStyle, "solid");
+          assert.equal(result.focusOutlineWidth, "3px");
+          assert.equal(result.currentNavigationCount, 1);
+        }
+        if (state.navigation === "partial") {
+          assert.deepEqual(result.navigationIds, [
+            "/operator/matches/fixture-match-1/clock",
+            "/operator/matches/fixture-match-1/summary",
+            "/operator/matches/fixture-match-1/replay"
+          ]);
+        }
         if (state.name === "final") assert.equal(result.readOnlyTextVisible, true);
         matrix.push({ viewport, state: state.name, ...result });
       }
