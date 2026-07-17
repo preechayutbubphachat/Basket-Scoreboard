@@ -680,9 +680,10 @@ RM-03-P1 = IMPLEMENTATION COMPLETE
 RM-03-P2 = IMPLEMENTATION COMPLETE
 RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = IMPLEMENTATION COMPLETE
-RM-03-P4 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P5 = PENDING
-RM-03-I = PENDING
+RM-03-P4 = IMPLEMENTATION COMPLETE
+RM-03-P5 = REGRESSION CLOSURE COMPLETE
+RM-03-P5-F1 = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
+RM-03-I = PENDING (AUTHORIZED FOR LOCAL FAST-FORWARD)
 RM-04 through RM-18 = PENDING
 ```
 
@@ -1161,3 +1162,31 @@ RM-03 DB authorization closure gate evidence:
 - Closure documentation: this Roadmap-only commit records the verified gate closure; its parent is the corrective
   test commit `63b489c59ee15a75cc54cdf7a455d5bd2077c53d`.
 - Next safe step: `RM-03-I - Integration Gate`.
+
+RM-03-I integration-governance evidence:
+
+- Decision: `READY_FOR_FAST_FORWARD_INTEGRATION`; this Roadmap-only governance commit is the final verified feature
+  target for a local fast-forward of `feature/rm03-live-match-shell` into `main`.
+- Baseline and ancestry: starting feature head `781a97a320d1032c73e96a9ba14a84118b9b522f`; starting local `main` and
+  `origin/main` `1f763d896c6bf39111338264be61cd06b9d38c46`; the working tree was clean, `main` is the
+  merge base and an ancestor of the feature branch, and the range is 11 commits ahead with zero commits behind.
+- Scope audit: 24 changed files comprise 10 application-source files, one API-contract file, 12 test files, and this
+  Roadmap. Unauthorized commits, migrations, configuration or dependency changes, generated artifacts, secret-bearing
+  files, and production configuration changes are zero.
+- Security and integrity: effective access remains authenticated, server-calculated, assignment-scoped, and private;
+  the public scoreboard allowlist and public/private projection boundary remain protected. No `UPDATE`, `DELETE`,
+  `TRUNCATE`, or `DROP` operation targets `match_events`; append-only corrections and server authority remain intact.
+- Disposable DB evidence: the configured endpoint was confirmed as loopback port 3300 with the dedicated
+  `basket_rm03_test` database and user without exposing credentials. TCP, the repository `mysql2` handshake, and
+  `SELECT 1` passed.
+- Validation: lint `PASS`; `npm run test:db` passed 24 tests with zero failures and zero skips; `npm test` passed 637
+  tests with zero failures and zero skips; `npm run db:check`, `npm run migrate:status`, `npm run build`, and
+  `npm run build:single` passed. The existing Vite chunk-size warning remains non-blocking.
+- Browser evidence: accepted RM-03-P1 through RM-03-P5 browser, responsive, accessibility, and regression evidence is
+  unchanged; the integration gate adds no application behavior requiring a new browser run.
+- Integration method: local fast-forward only; no merge commit, squash, rebase, cherry-pick, reset, force operation,
+  push, deployment, production operation, or feature-branch cleanup is authorized in this task.
+- Status boundary: RM-03 remains `CURRENT` and RM-03-I remains incomplete until the local fast-forward is established.
+  Because push is prohibited, `origin/main` remains at the recorded baseline and RM-03 cannot be labeled `INTEGRATED`
+  under the canonical status vocabulary in this task.
+- Next safe step: fast-forward local `main` to this governance commit, then re-anchor Guardian. Do not begin RM-04.
