@@ -133,9 +133,10 @@ RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = IMPLEMENTATION COMPLETE
 RM-03-P4 = IMPLEMENTATION COMPLETE
 RM-03-P5 = REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION
+RM-03-P5-F1 = PENDING (AUTHORIZED TO BEGIN)
 RM-03-I = BLOCKED (DB AUTHORIZATION CLOSURE GATE OPEN)
 RM-04 through RM-18 = PENDING
-Next safe step: Provide disposable non-production DATABASE_* and run the committed RM-03 DB authorization closure suite; RM-03-I remains unauthorized
+Next safe step: RM-03-P5-F1 - DB Authorization Coverage Completion
 ```
 
 ## 6. Straight-Line Diagram
@@ -1076,3 +1077,33 @@ RM-03-P5 regression closure evidence:
   the DB authorization closure gate. RM-04 through RM-18 remain `PENDING`.
 - Next safe step: provide disposable non-production `DATABASE_*` and run the committed RM-03 DB authorization closure
   suite. Do not begin RM-03-I until that evidence passes and governance explicitly authorizes integration.
+
+RM-03 DB coverage gap governance reconciliation:
+
+- Decision: `READY_TO_RECORD_RM03_DB_COVERAGE_CORRECTIVE_SLICE`; the DB authorization closure gate remains `OPEN`
+  and RM-03-I remains blocked and unauthorized.
+- Environment blocker: required `DATABASE_*` values are missing and no disposable non-production database has been
+  confirmed. No database connection or verification run is authorized until disposability is proven.
+- Coverage gap: committed DB-backed verification is missing direct Admin effective-access behavior, assigned Referee
+  behavior, and explicit inactive-assignment behavior. These cases are not claimed as passed.
+- Corrective slice: `RM-03-P5-F1 - DB Authorization Coverage Completion` is `PENDING (AUTHORIZED TO BEGIN)`.
+- Corrective scope: add DB-backed tests only for canonical existing Admin effective access, assigned Referee access,
+  and explicit inactive-assignment denial. No production-source change is expected. Tests must not introduce an
+  Admin role bypass, duplicate authorization engine, client-authoritative RBAC, or weakened assertions.
+- Defect boundary: if the missing tests prove a real application-source defect, stop and require a separately
+  authorized corrective implementation slice. RM-03-P5-F1 does not authorize feature, authorization-policy, API,
+  socket, schema, migration, configuration, dependency, RM-03-I, or RM-04-and-later changes.
+- Required final DB matrix: Admin canonical policy; assigned Referee; assigned Scorer; Viewer/unauthorized denial;
+  inactive assignment; revocation; cross-match denial; TIMER isolation; SHOT_CLOCK isolation; denial without event
+  mutation; denial without projection mutation; optimistic concurrency; and idempotency/duplicate-append protection.
+- Security boundary: EffectiveMatchAccess remains server-calculated. Client role, global permissions alone, and
+  client assignment-role interpretation are not match-scoped authorization authority. DB verification must use only
+  confirmed disposable non-production infrastructure.
+- Required sequence: (1) complete the three missing DB-backed tests; (2) provide and confirm disposable
+  non-production `DATABASE_*`; (3) run the complete RM-03 DB authorization closure gate; (4) require zero mandatory
+  failures and zero mandatory skips; (5) only then may Guardian decide whether RM-03-I is authorized.
+- Preserved state: RM-03 remains `CURRENT`; RM-03-P1 through RM-03-P4 remain `IMPLEMENTATION COMPLETE`; RM-03-P5
+  remains `REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION`; the recent-action multi-item feed remains
+  `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; timezone formatting and CSP remain
+  `FOLLOW-UP`.
+- Next safe step: `RM-03-P5-F1 - DB Authorization Coverage Completion`.
