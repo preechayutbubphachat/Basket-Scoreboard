@@ -157,6 +157,108 @@ async function getEffectiveAccess(app: App, session: Session, matchId: string) {
 }
 
 describeDb.sequential("DB-backed granular operator permission matrix", () => {
+  it("returns canonical effective access for an ADMIN without a match assignment", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const admin = await login(app, adminUser);
+      const matchId = await createMatch(app, admin);
+      const before = await state(pool, matchId);
+
+      const response = await getEffectiveAccess(app, admin, matchId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        ok: true,
+        data: {
+          matchId,
+          capabilities: {
+            matchRead: true,
+            scoreOperate: true,
+            foulOperate: true,
+            gameClockOperate: true,
+            shotClockOperate: true,
+            timeoutOperate: true,
+            lifecycleOperate: true,
+            correctionRequest: true,
+            correctionApply: true,
+            correctionReject: true,
+            auditRead: true
+          }
+        }
+      });
+      expect(await state(pool, matchId)).toEqual(before);
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
+  it("returns canonical effective access for an actively assigned REFEREE", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const refereeUser = await seedUser(pool, "REFEREE");
+      const admin = await login(app, adminUser);
+      const referee = await login(app, refereeUser);
+      const matchId = await createMatch(app, admin);
+      await assign(pool, matchId, refereeUser.userId, "REFEREE", adminUser.userId);
+      const before = await state(pool, matchId);
+
+      const response = await getEffectiveAccess(app, referee, matchId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        ok: true,
+        data: {
+          matchId,
+          capabilities: {
+            matchRead: true,
+            scoreOperate: false,
+            foulOperate: false,
+            gameClockOperate: false,
+            shotClockOperate: false,
+            timeoutOperate: false,
+            lifecycleOperate: false,
+            correctionRequest: true,
+            correctionApply: true,
+            correctionReject: true,
+            auditRead: false
+          }
+        }
+      });
+      expect(await state(pool, matchId)).toEqual(before);
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
+  it("denies effective access for an explicitly inactive assignment without match writes", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const scorerUser = await seedUser(pool, "SCORER");
+      const admin = await login(app, adminUser);
+      const scorer = await login(app, scorerUser);
+      const matchId = await createMatch(app, admin);
+      const assignmentId = await assign(pool, matchId, scorerUser.userId, "SCORER", adminUser.userId);
+
+      expect((await getEffectiveAccess(app, scorer, matchId)).statusCode).toBe(200);
+      const before = await state(pool, matchId);
+      await pool.query(
+        "UPDATE match_officials SET assignment_status = 'INACTIVE', updated_at = NOW(3) WHERE id = ?",
+        [assignmentId]
+      );
+
+      const response = await getEffectiveAccess(app, scorer, matchId);
+
+      expect(response.statusCode).toBe(403);
+      expect(JSON.stringify(response.json())).not.toMatch(/match\.(score|foul|clock|timeout|lifecycle|correction)\./i);
+      expect(await state(pool, matchId)).toEqual(before);
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
   it("calculates effective access from current assignment state without match writes", async () => {
     const { app, pool } = await buildMigratedApp();
     try {

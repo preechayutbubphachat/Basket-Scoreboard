@@ -133,10 +133,13 @@ RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = IMPLEMENTATION COMPLETE
 RM-03-P4 = IMPLEMENTATION COMPLETE
 RM-03-P5 = REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION
-RM-03-P5-F1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P5-F1 = IMPLEMENTATION COMPLETE
+DB COVERAGE GAP = CLOSED
+DB ENVIRONMENT / EXECUTION GATE = OPEN
+DB AUTHORIZATION CLOSURE GATE = OPEN
 RM-03-I = BLOCKED (DB AUTHORIZATION CLOSURE GATE OPEN)
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P5-F1 - DB Authorization Coverage Completion
+Next safe step: provide confirmed disposable non-production DATABASE_* and run the complete RM-03 DB authorization closure gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -1107,3 +1110,28 @@ RM-03 DB coverage gap governance reconciliation:
   `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; timezone formatting and CSP remain
   `FOLLOW-UP`.
 - Next safe step: `RM-03-P5-F1 - DB Authorization Coverage Completion`.
+
+RM-03-P5-F1 DB authorization coverage completion evidence:
+
+- Decision: `IMPLEMENTATION COMPLETE WITH DB EXECUTION LIMITATION`; the three previously missing DB-backed cases are
+  now committed for canonical direct Admin effective access, actively assigned Referee effective access, and
+  explicit inactive-assignment denial.
+- Coverage behavior: Admin is verified through the existing canonical policy without a match assignment; Referee
+  capabilities are derived from the existing role and active assignment policy; changing an existing assignment to
+  `INACTIVE` must deny the next effective-access request. Each case asserts no match event or projection mutation.
+- Scope: tests and roadmap only. No production source, authorization policy, API, socket, schema, migration,
+  configuration, dependency, event, projection, or production-data behavior changed.
+- Validation: focused policy/effective-access validation passed 18 tests and discovered all 6 tests in the DB matrix;
+  the 6 DB tests skipped only through the repository's canonical environment gate. Lint passed; the full suite
+  passed 610 tests with 27 environment-gated skips; both production builds passed. `npm run test:db` passed 2
+  source-guard tests and skipped 22 DB-dependent tests.
+- DB execution limitation: required disposable non-production `DATABASE_*` remains unavailable. The committed cases
+  are present and discoverable but are not claimed as executed against a database.
+- Gate status: the DB coverage gap is `CLOSED`; the DB environment/execution gate and DB authorization closure gate
+  remain `OPEN`. RM-03-I remains blocked and unauthorized until the complete mandatory DB matrix passes with zero
+  failures and zero mandatory skips.
+- Preserved state: RM-03 remains `CURRENT`; RM-03-P1 through RM-03-P4 remain `IMPLEMENTATION COMPLETE`; RM-03-P5
+  remains `REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION`; RM-04 through RM-18 remain `PENDING`.
+- Next safe step: provide and confirm disposable non-production `DATABASE_*`, then run the complete RM-03 DB
+  authorization closure gate. Do not begin RM-03-I until that evidence passes and governance explicitly authorizes
+  integration.
