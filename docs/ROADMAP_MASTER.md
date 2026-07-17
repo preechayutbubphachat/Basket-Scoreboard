@@ -128,13 +128,14 @@ RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
 RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
-RM-03-P2 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P3 = PENDING
+RM-03-P2 = BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP
+RM-03-P2-F1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P3 = PENDING (NOT AUTHORIZED)
 RM-03-P4 = PENDING
 RM-03-P5 = PENDING
 RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P2 - Shared Live Match Hydration and Realtime Ownership
+Next safe step: RM-03-P2-F1 - Server-Authoritative Effective Match Access Contract
 ```
 
 ## 6. Straight-Line Diagram
@@ -237,7 +238,7 @@ There is no parallel top-level path.
 - Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
 - Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
 - Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
-- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING` and authorized as the next safe step. The presentation-only shell foundation exists, but production routes have not adopted it and shared realtime ownership is not implemented.
+- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP`; RM-03-P2-F1 is `PENDING` and authorized as the next safe step; RM-03-P3 remains `PENDING (NOT AUTHORIZED)`. The presentation-only shell foundation exists, but production routes have not adopted it and shared realtime ownership is not implemented.
 - Domain dependencies: existing live projections and command-state models.
 - API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
 - Database dependencies: active `match_officials` assignment and existing projections/event stream.
@@ -245,7 +246,7 @@ There is no parallel top-level path.
 - Acceptance: shared hydration, stale/offline/permission states, navigation, and role-aware command surfaces without client-trusted permission.
 - Tests: cross-role route, reconnect, assignment revocation, command denial, and shell rendering.
 - Production gate: DB-backed authorization verification before deployment.
-- Known blockers: DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure. This does not block presentation-only RM-03-P1.
+- Known blockers: no protected response currently returns server-calculated per-match effective capabilities, so RM-03-P2 navigation cannot proceed safely. RM-03-P2-F1 must close this contract gap first. DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure.
 - Source requirements: none for shell mechanics.
 - Next milestone: RM-04.
 
@@ -670,8 +671,9 @@ RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
 RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
-RM-03-P2 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P3 = PENDING
+RM-03-P2 = BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP
+RM-03-P2-F1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P3 = PENDING (NOT AUTHORIZED)
 RM-03-P4 = PENDING
 RM-03-P5 = PENDING
 RM-03-I = PENDING
@@ -960,5 +962,20 @@ RM-03-P1 implementation evidence:
 - Guard evidence: source-only ownership scans found no fetch, API client, socket, room subscription, polling/timer, command sequencing, timer-tick event, public route, or public display adoption. Repository event-store guards found no mutable scoreboard/display-state table or historical `match_events` mutation pattern.
 - Visual review: Gridgeist `PASS`; dense match context, stable hierarchy, bounded multilingual team names, explicit status hierarchy, responsive rail placement, and compact navigation containment meet the accepted RM-03-D1 presentation contract.
 - Known limitation: DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remains unavailable and mandatory before RM-03 integration or deployment closure. This presentation-only P1 is not deployed or production-proven.
-- Roadmap transition: RM-03-P1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING (AUTHORIZED TO BEGIN)`. RM-03 remains `CURRENT`; RM-03-I and RM-04 through RM-18 remain unchanged.
-- Next safe step: `RM-03-P2 - Shared Live Match Hydration and Realtime Ownership`.
+- Roadmap transition: RM-03-P1 is `IMPLEMENTATION COMPLETE`; subsequent authorization-input audit evidence supersedes the earlier P2 authorization recorded at P1 closure. RM-03 remains `CURRENT`; RM-03-I and RM-04 through RM-18 remain unchanged.
+- Next safe step at P1 closure was RM-03-P2; the governance reconciliation below records the blocking contract gap discovered before P2 implementation.
+
+RM-03-P2-G1 governance reconciliation evidence:
+
+- Decision: `GOVERNANCE_BLOCKER_RECORD_ALIGNED`; RM-03-P2 is blocked because existing protected responses do not expose server-calculated per-match effective navigation/access capabilities.
+- Available inputs: `/api/v1/auth/me` returns global permissions and active match assignments; `/api/v1/operator/matches` returns match presentation data; protected projections return authoritative match, period, and finality data; backend `requireMatchPermission` remains the canonical match-scoped authorization authority.
+- Missing contract: no existing protected response returns per-match `effectivePermissions`, `effectiveAccess`, `allowedCapabilities`, or an equivalent server-calculated capability decision.
+- Security decision: client role, global permission arrays alone, frontend route visibility, and client-side assignment-role interpretation are not authorization authority and must not be used to reproduce backend match-scoped decisions.
+- Corrective slice: RM-03-P2-F1 - `Server-Authoritative Effective Match Access Contract` is `PENDING (AUTHORIZED TO BEGIN)`. It may expose one protected, read-only, server-calculated per-match capability contract by reusing canonical backend authorization logic.
+- Corrective boundaries: RM-03-P2-F1 introduces no client-authoritative permission calculation, public exposure, event/projection mutation, realtime provider or behavior change, mutable access cache, database migration, or schema change.
+- Realtime ownership: existing route-owned socket, polling, reconnect, resync, clock interpolation, and command ownership remain unchanged; F1 addresses authorization contract sufficiency only.
+- Closure gate: DB-backed authorization evidence remains mandatory before RM-03 integration/deployment, including canonical Admin policy, assigned Referee/Scorer, Viewer/unauthorized denial, revoked assignment, cross-match denial, TIMER and SHOT_CLOCK isolation, and proof that denial produces no event/projection mutation. This evidence is not yet claimed.
+- Deferred policy: the recent-action multi-item feed remains `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
+- Rule boundary: `[NEEDS SOURCE] Missing governing document: FIBA alternating-possession/possession-arrow operational semantics.` Possession and bonus semantics remain excluded.
+- Roadmap transition: RM-03-P2 is `BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP`; RM-03-P2-F1 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03-P3 is `PENDING (NOT AUTHORIZED)`; RM-04 through RM-18 remain `PENDING`.
+- Next safe step: `RM-03-P2-F1 - Server-Authoritative Effective Match Access Contract`.
