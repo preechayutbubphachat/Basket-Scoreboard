@@ -132,14 +132,16 @@ RM-03-P2 = IMPLEMENTATION COMPLETE
 RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = IMPLEMENTATION COMPLETE
 RM-03-P4 = IMPLEMENTATION COMPLETE
-RM-03-P5 = REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION
+RM-03-P5 = REGRESSION CLOSURE COMPLETE
 RM-03-P5-F1 = IMPLEMENTATION COMPLETE
+RM-03-P5 DB VERIFICATION LIMITATION = RESOLVED
+RM-03-P5-F1 DB COVERAGE = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
 DB COVERAGE GAP = CLOSED
-DB ENVIRONMENT / EXECUTION GATE = OPEN
-DB AUTHORIZATION CLOSURE GATE = OPEN
-RM-03-I = BLOCKED (DB AUTHORIZATION CLOSURE GATE OPEN)
+DB ENVIRONMENT / EXECUTION GATE = CLOSED
+DB AUTHORIZATION CLOSURE GATE = CLOSED
+RM-03-I = PENDING (AUTHORIZED TO BEGIN)
 RM-04 through RM-18 = PENDING
-Next safe step: provide confirmed disposable non-production DATABASE_* and run the complete RM-03 DB authorization closure gate
+Next safe step: RM-03-I - Integration Gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -1135,3 +1137,27 @@ RM-03-P5-F1 DB authorization coverage completion evidence:
 - Next safe step: provide and confirm disposable non-production `DATABASE_*`, then run the complete RM-03 DB
   authorization closure gate. Do not begin RM-03-I until that evidence passes and governance explicitly authorizes
   integration.
+
+RM-03 DB authorization closure gate evidence:
+
+- Decision: `DB_AUTHORIZATION_CLOSURE_GATE_CLOSED`; the complete mandatory DB matrix executed against the confirmed
+  disposable local database with zero failures and zero skips. The RM-03-P5 DB verification limitation is resolved.
+- Corrective prerequisite: commit `63b489c59ee15a75cc54cdf7a455d5bd2077c53d` makes public metadata match fixtures
+  collision-resistant across immediate reruns and parallel workers without destructive cleanup or production-source
+  changes. The focused public metadata target passed twice consecutively with 4 tests per run.
+- DB authorization evidence: canonical Admin, assigned Referee, assigned Scorer, unauthorized denial, inactive and
+  revoked assignment denial, cross-match isolation, TIMER and SHOT_CLOCK capability isolation, protected mutation
+  denial, optimistic concurrency, and idempotency all passed through the server-authoritative DB-backed matrix.
+- Verification: the exact prior failure sequence passed `npm run test:db` with 24 tests and zero skips followed by
+  `npm test` with 637 tests and zero skips. The final sequence passed lint, `npm run test:db` (24 tests), `npm test`
+  (637 tests), a second `npm run test:db` (24 tests), `npm run build`, and `npm run build:single`. The same closure
+  matrix passed again from the corrective commit before this Roadmap-only closure.
+- Integrity and scope: no `UPDATE`, `DELETE`, `TRUNCATE`, or `DROP` operation targets `match_events`; append-only
+  history, effective-access policy, assignment and revocation semantics, CSRF/RBAC, public/private projections, API
+  contracts, and socket contracts remain unchanged. Production application source changes are zero.
+- Roadmap transition: RM-03 remains `CURRENT`; RM-03-P5 is `REGRESSION CLOSURE COMPLETE`; RM-03-P5-F1 DB coverage is
+  `VERIFIED AGAINST DISPOSABLE LOCAL DATABASE`; the DB environment/execution and authorization closure gates are
+  `CLOSED`. RM-03-I is `PENDING (AUTHORIZED TO BEGIN)` but was not begun. RM-04 through RM-18 remain `PENDING`.
+- Closure documentation: this Roadmap-only commit records the verified gate closure; its parent is the corrective
+  test commit `63b489c59ee15a75cc54cdf7a455d5bd2077c53d`.
+- Next safe step: `RM-03-I - Integration Gate`.
