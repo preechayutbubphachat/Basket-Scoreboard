@@ -19,6 +19,7 @@ const showRail = parameters.get("rail") !== "0";
 const useLongNames = parameters.get("names") === "long";
 const navigationState = parameters.get("navigation") ?? "full";
 const omitMetadata = parameters.get("metadata") === "none";
+const commandState = parameters.get("command") ?? "idle";
 
 const connectionByState: Record<string, LiveMatchShellProps["connection"]> = {
   degraded: { label: "Arena link degraded", state: "reconnecting" },
@@ -67,6 +68,13 @@ const navigation = buildLiveMatchNavigation({
   currentView: navigationState === "partial" ? "clock" : "score",
   effectiveAccess
 });
+const commandStatus: LiveMatchShellProps["commandStatus"] = commandState === "pending"
+  ? { label: "Saving score", state: "pending" }
+  : commandState === "conflict"
+    ? { detail: "Authoritative state changed. Refresh before retrying.", state: "sync-required" }
+    : commandState === "error"
+      ? { detail: "Score command rejected.", state: "rejected" }
+      : undefined;
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Fixture root was not found");
@@ -84,9 +92,11 @@ createRoot(root).render(
     >
       <LiveMatchShell
         actions={<button type="button">Open match details</button>}
-        commandStatus={fixtureState === "degraded"
-          ? { detail: "Waiting for authoritative state", state: "sync-required" }
-          : undefined}
+        {...(commandStatus
+          ? { commandStatus }
+          : fixtureState === "degraded"
+            ? { commandStatus: { detail: "Waiting for authoritative state", state: "sync-required" as const } }
+            : {})}
         connection={connectionByState[fixtureState] ?? connectionByState.ready}
         match={match}
         navigation={navigation}
@@ -98,10 +108,31 @@ createRoot(root).render(
           </section>
         ) : undefined}
       >
-        <section aria-label="Feature workspace">
-          <h2>Feature workspace</h2>
-          <p>Future milestone controls render here without moving their ownership into the shell.</p>
-          <button type="button">Fixture action</button>
+        <section aria-label="Score workspace" className="panel score-control">
+          <h2>Score workspace</h2>
+          <div className="score-display" aria-label="Current score">
+            <div><span>HOME</span><strong>72</strong><small>{match.homeTeamName}</small></div>
+            <div><span>AWAY</span><strong>68</strong><small>{match.awayTeamName}</small></div>
+          </div>
+          <div className="score-actions">
+            {[match.homeTeamName, match.awayTeamName].map((teamName) => (
+              <div key={teamName}>
+                <h3>{teamName}</h3>
+                <div className="button-row">
+                  {[1, 2, 3].map((points) => (
+                    <button
+                      className="score-button"
+                      disabled={fixtureState === "final" || commandState === "pending"}
+                      key={points}
+                      type="button"
+                    >
+                      +{points}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
       </LiveMatchShell>
     </AuthenticatedDashboardShell>

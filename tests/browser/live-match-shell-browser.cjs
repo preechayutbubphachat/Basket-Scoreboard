@@ -24,6 +24,9 @@ const states = [
   { name: "ready-zero-navigation", query: "state=ready&rail=0&navigation=zero", shellState: "ready", rail: false, navigation: "zero" },
   { name: "degraded", query: "state=degraded&rail=1", shellState: "degraded", rail: true },
   { name: "offline", query: "state=offline&rail=1", shellState: "offline", rail: true },
+  { name: "command-pending", query: "state=ready&rail=0&command=pending", shellState: "ready", rail: false, command: "Saving score" },
+  { name: "command-error", query: "state=ready&rail=0&command=error", shellState: "ready", rail: false, command: "Score command rejected." },
+  { name: "command-conflict", query: "state=ready&rail=0&command=conflict", shellState: "ready", rail: false, command: "Authoritative state changed." },
   { name: "final", query: "state=final&rail=1", shellState: "read-only", rail: true }
 ];
 
@@ -73,8 +76,11 @@ async function measure(page, viewport, state) {
       liveNavigationLabel: navigation?.getAttribute("aria-label") ?? null,
       navigationIds: [...document.querySelectorAll(".live-match-shell__navigation a")].map((link) => link.getAttribute("href")),
       currentNavigationCount: document.querySelectorAll('.live-match-shell__navigation a[aria-current="page"]').length,
+      commandText: document.querySelector(".ui-command-status")?.textContent ?? "",
       mainCount: document.querySelectorAll("main").length,
       navigationLinkHeight: linkRect?.height ?? 0,
+      scoreButtonCount: document.querySelectorAll('[aria-label="Score workspace"] button').length,
+      scoreButtonsDisabled: [...document.querySelectorAll('[aria-label="Score workspace"] button')].every((button) => button.disabled),
       railPositionSafe: !hasRail || !primaryRect || !railRect
         ? !hasRail && !rail
         : compact
@@ -125,6 +131,8 @@ async function main() {
         assert.equal(result.hasRail, state.rail, `${viewport.width} ${state.name} rail mismatch`);
         assert.equal(result.railPositionSafe, true, `${viewport.width} ${state.name} rail position mismatch`);
         assert.equal(result.teamNamesBounded, true, `${viewport.width} ${state.name} team label overflow`);
+        assert.equal(result.scoreButtonCount, 6, `${viewport.width} ${state.name} score controls missing`);
+        if (state.command) assert(result.commandText.includes(state.command), `${viewport.width} ${state.name} command status missing`);
         if (state.navigation === "zero") {
           assert.equal(result.navigationIds.length, 0);
           assert.equal(result.currentNavigationCount, 0);
@@ -142,7 +150,10 @@ async function main() {
             "/operator/matches/fixture-match-1/replay"
           ]);
         }
-        if (state.name === "final") assert.equal(result.readOnlyTextVisible, true);
+        if (state.name === "final") {
+          assert.equal(result.readOnlyTextVisible, true);
+          assert.equal(result.scoreButtonsDisabled, true);
+        }
         matrix.push({ viewport, state: state.name, ...result });
       }
     }

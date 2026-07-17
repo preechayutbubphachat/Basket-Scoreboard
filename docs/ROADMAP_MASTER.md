@@ -130,12 +130,12 @@ RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
 RM-03-P2 = IMPLEMENTATION COMPLETE
 RM-03-P2-F1 = IMPLEMENTATION COMPLETE
-RM-03-P3 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P4 = PENDING
+RM-03-P3 = IMPLEMENTATION COMPLETE
+RM-03-P4 = PENDING (AUTHORIZED TO BEGIN)
 RM-03-P5 = PENDING
 RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P3 - Representative Score Route Adoption
+Next safe step: RM-03-P4 - Remaining Live Operator Presentation Adoption
 ```
 
 ## 6. Straight-Line Diagram
@@ -238,7 +238,7 @@ There is no parallel top-level path.
 - Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
 - Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
 - Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
-- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1, RM-03-P2-F1, and RM-03-P2 are `IMPLEMENTATION COMPLETE`; RM-03-P3 is `PENDING (AUTHORIZED TO BEGIN)`. The presentation-only shell, protected effective-access contract, and pure match-context/navigation adapters exist, but production routes have not adopted the shell and shared realtime ownership is not implemented.
+- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1, RM-03-P2-F1, RM-03-P2, and RM-03-P3 are `IMPLEMENTATION COMPLETE`; RM-03-P4 is `PENDING (AUTHORIZED TO BEGIN)`. The representative Score route now adopts the presentation-only shell while retaining route-owned fetch, realtime, polling, reconnect, and command behavior. Remaining live operator presentation adoption and shared realtime ownership are pending.
 - Domain dependencies: existing live projections and command-state models.
 - API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
 - Database dependencies: active `match_officials` assignment and existing projections/event stream.
@@ -246,7 +246,7 @@ There is no parallel top-level path.
 - Acceptance: shared hydration, stale/offline/permission states, navigation, and role-aware command surfaces without client-trusted permission.
 - Tests: cross-role route, reconnect, assignment revocation, command denial, and shell rendering.
 - Production gate: DB-backed authorization verification before deployment.
-- Known blockers: RM-03-P2 is complete and RM-03-P3 may begin. DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure.
+- Known blockers: RM-03-P3 is complete and RM-03-P4 may begin. DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure.
 - Source requirements: none for shell mechanics.
 - Next milestone: RM-04.
 
@@ -673,8 +673,8 @@ RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
 RM-03-P2 = IMPLEMENTATION COMPLETE
 RM-03-P2-F1 = IMPLEMENTATION COMPLETE
-RM-03-P3 = PENDING (AUTHORIZED TO BEGIN)
-RM-03-P4 = PENDING
+RM-03-P3 = IMPLEMENTATION COMPLETE
+RM-03-P4 = PENDING (AUTHORIZED TO BEGIN)
 RM-03-P5 = PENDING
 RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
@@ -1007,3 +1007,14 @@ RM-03-P2 implementation evidence:
 - Carried-forward observations: RM-02 production observation limitations remain unchanged; recent-action multi-item feed remains `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
 - Roadmap transition: RM-03-P2 is `IMPLEMENTATION COMPLETE`; RM-03-P3 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03 is not integrated; RM-04 through RM-18 remain `PENDING`.
 - Next safe step: `RM-03-P3 - Representative Score Route Adoption`.
+
+RM-03-P3 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P3`; the representative `/operator/matches/:matchId/score` route composes `AuthenticatedDashboardShell -> LiveMatchShell -> Score workspace` with exactly one `main` landmark.
+- Presentation inputs: the route uses the pure RM-03-P2 match-context adapter and builds live navigation only from the canonical server-calculated `EffectiveMatchAccess` response. Missing, mismatched, denied, not-found, and failed access hydration leaves navigation empty; role, global permission, and assignment claims are not navigation authority.
+- Ownership: `OperatorScorePage` retains protected projection and roster hydration, the existing public-notification realtime hook, one fallback polling interval, reconnect refresh, score command construction, projection-derived `expectedSeq`, API-client command/correlation identifiers, pending/success/rejection/conflict handling, and authoritative refresh. `LiveMatchShell` and the P2 adapters own no fetch, socket, polling, command, retry, or authorization behavior.
+- Scope and isolation: only Score adopted the shell. Fouls, Clock, Timeout, Lifecycle, Corrections, Summary, Replay, Audit, public display, and public scoreboard composition remain unchanged. Sequence and command internals are not rendered in Score shell/navigation.
+- Validation: focused P3, shell, adapter, effective-access, score, realtime, auth, and public-isolation suites passed 236 tests across 9 files. Full validation passed lint, 597 tests with 24 DB-dependent skips, production build, and single-app build. Browser verification passed 27 Score-shell cases at 1366x768, 1280x720, and 1024x768 with no horizontal overflow, duplicate main landmark, console warning/error, page error, or failed resource; 3px focus, forced-colors, reduced-motion, partial/zero navigation, connection states, command states, long labels, and FINAL read-only behavior passed.
+- Limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; `npm run test:db` passed 2 source guards and skipped 19 tests because no disposable `DATABASE_*` environment was available. DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remain mandatory before RM-03 integration or deployment.
+- Roadmap transition: RM-03-P3 is `IMPLEMENTATION COMPLETE`; RM-03-P4 - `Remaining Live Operator Presentation Adoption` is `PENDING (AUTHORIZED TO BEGIN)` for the remaining Roadmap-authorized live operator presentation routes, including Foul, Clock, and Timeout. RM-03 is not integrated.
+- Next safe step: `RM-03-P4 - Remaining Live Operator Presentation Adoption`.

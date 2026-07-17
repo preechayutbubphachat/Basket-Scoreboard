@@ -14,6 +14,7 @@ import type {
   CreatePlayerRequest,
   DisplaySceneResponse,
   DisplayScreenResponse,
+  EffectiveMatchAccess,
   MatchDisplayOverrideInput,
   MatchDisplayOverrideResponse,
   MatchAssignment,
@@ -523,6 +524,11 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         {},
         false,
         { acceptRawSuccess: true }
+      );
+    },
+    async getEffectiveMatchAccess(matchId: string) {
+      return request<EffectiveMatchAccess>(
+        `/matches/${encodeURIComponent(matchId)}/effective-access`
       );
     },
     async getMatchSummary(matchId: string) {

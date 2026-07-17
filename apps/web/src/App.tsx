@@ -6,6 +6,7 @@ import type {
   ActiveDisplaySceneResponse,
   DisplaySceneResponse,
   DisplayScreenResponse,
+  EffectiveMatchAccess,
   FoulType,
   AuditLogGroupFilter,
   AuditLogRow,
@@ -37,6 +38,7 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem } from "./components/AuthenticatedDashboardShell";
+import { LiveMatchShell } from "./components/LiveMatchShell";
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
@@ -82,13 +84,20 @@ import {
   getTeamLabel
 } from "./lib/operatorMatches";
 import {
+  buildLiveMatchNavigation,
+  buildLiveMatchPresentationContext
+} from "./lib/liveMatchPresentation";
+import {
+  buildOperatorScoreCommandStatus,
+  buildOperatorScoreConnection
+} from "./lib/operatorScoreShell";
+import {
   buildScoreCommandPayload,
   buildScoreControlPanels,
   canUseLiveMatchControls,
   finishedMatchLiveControlWarning,
   getAcceptedScoreProjection,
   getScoreControlFeedback,
-  getScoreControlLinks,
   getScoreControlPendingLabel,
   isFinishedMatchStatus,
   type ScoreControlPoint,
@@ -3065,9 +3074,10 @@ function usePublicProjectionRealtime(
 }
 
 function OperatorScorePage({ matchId }: { matchId: string }) {
-  const { api, currentUser } = useCurrentUser();
+  const { api, currentUser, roleSummary, logout } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [selectedPlayers, setSelectedPlayers] = useState<Record<ScoreControlTeamSide, string>>({ HOME: "", AWAY: "" });
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -3078,13 +3088,19 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   async function loadState() {
     setLoading(true);
     setMessage(null);
+    setEffectiveAccess(null);
     try {
-      const [nextProjection, nextRosters] = await Promise.all([
+      const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
         api.getMatchProjection(matchId),
-        api.getMatchRosters(matchId).catch(() => null)
+        api.getMatchRosters(matchId).catch(() => null),
+        api.getEffectiveMatchAccess(matchId).catch((error) => {
+          setMessage(toUiMessage(error));
+          return null;
+        })
       ]);
       setProjection(nextProjection);
       setRosters(nextRosters);
+      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -3159,21 +3175,71 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     }
   }
 
+  const isReadOnly = projection ? isFinishedMatchStatus(projection.status) : false;
+  const liveMatchContext = buildLiveMatchPresentationContext({
+    awayTeamName: projection?.awayTeamName ?? null,
+    homeTeamName: projection?.homeTeamName ?? null,
+    matchId,
+    periodLabel: projection ? `${projection.periodType === "OVERTIME" ? "OT" : "P"}${projection.periodNumber}` : null,
+    status: projection?.status ?? "LOADING"
+  });
+  const liveMatchNavigation = buildLiveMatchNavigation({
+    currentView: "score",
+    effectiveAccess,
+    matchId
+  });
+  const connection = buildOperatorScoreConnection(realtimeState, isReadOnly);
+  const commandStatus = buildOperatorScoreCommandStatus(pendingKey, message);
+  const displayName = currentUser?.displayName ?? currentUser?.email ?? currentUser?.userId ?? "Authenticated user";
+
+  async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    await logout();
+    navigate("/login");
+  }
+
   return (
-    <section className="stack">
-      <div className="panel">
-        <h1>Score Control</h1>
-        <p className="muted">Match ID: {matchId}</p>
-        {!canSubmitScore ? <ErrorMessage code="FORBIDDEN" message="Score operation permission is required." /> : null}
-        {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
-        {message ? <Notice {...message} /> : null}
-      </div>
-      {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
-      {!loading && !projection ? (
-        <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
-      ) : null}
-      {projection ? (
-        <section className="panel score-control">
+    <AuthenticatedDashboardShell
+      actions={<a href="/login" onClick={onLogout}>Logout</a>}
+      brand={{
+        href: "/",
+        label: "Basketball Scoreboard",
+        onClick: (event) => {
+          event.preventDefault();
+          navigate("/");
+        }
+      }}
+      contentMode="wide"
+      contextLabel="Match operations"
+      navigationItems={[{
+        href: "/operator/matches",
+        label: "Operator Matches",
+        onClick: (event) => {
+          event.preventDefault();
+          navigate("/operator/matches");
+        }
+      }]}
+      statusContent={<UiConnectionStatus label="Authenticated session" state="connected" />}
+      subtitle="Authoritative score controls and live match state"
+      title="Score Control"
+      userContent={<><strong>{displayName}</strong><span>{roleSummary}</span></>}
+    >
+      <LiveMatchShell
+        {...(commandStatus ? { commandStatus } : {})}
+        connection={connection}
+        match={liveMatchContext}
+        navigation={liveMatchNavigation}
+      >
+        <section className="stack" aria-label="Score workspace">
+          {!canSubmitScore ? <ErrorMessage code="FORBIDDEN" message="Score operation permission is required." /> : null}
+          {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
+          {message ? <Notice {...message} /> : null}
+          {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
+          {!loading && !projection ? (
+            <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
+          ) : null}
+          {projection ? (
+            <section className="panel score-control">
           {isFinishedMatchStatus(projection.status) ? (
             <Notice tone="error" text={finishedMatchLiveControlWarning} />
           ) : null}
@@ -3190,8 +3256,6 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
-            <div><dt>Seq</dt><dd>{projection.currentSeq}</dd></div>
-            <div><dt>Expected Seq</dt><dd>{projection.currentSeq}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="score-actions">
@@ -3232,26 +3296,11 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
               </div>
             ))}
           </div>
-          <div className="button-row">
-            {Object.values(getScoreControlLinks(matchId, currentUser))
-              .filter((link): link is { href: string; label: string } => Boolean(link))
-              .map((link) => (
-                <a
-                  key={link.href}
-                  className="button-link secondary"
-                  href={link.href}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    navigate(link.href);
-                  }}
-                >
-                  {link.label}
-                </a>
-              ))}
-          </div>
+            </section>
+          ) : null}
         </section>
-      ) : null}
-    </section>
+      </LiveMatchShell>
+    </AuthenticatedDashboardShell>
   );
 }
 
@@ -6440,7 +6489,7 @@ function RoutedApp({ route }: { route: Route }) {
     }
   }, [route]);
 
-  if (route.name === "admin" || route.name === "public-scoreboard-display" || route.name === "public-display-scene") {
+  if (route.name === "admin" || route.name === "operator-score" || route.name === "public-scoreboard-display" || route.name === "public-display-scene") {
     return content;
   }
 

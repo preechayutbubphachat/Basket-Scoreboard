@@ -74,9 +74,10 @@ describe("AuthenticatedDashboardShell", () => {
     expect(styles).toMatch(/@media \(max-width: 1100px\)[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/);
   });
 
-  test("adopts only the low-risk admin landing route and keeps public display composition separate", () => {
+  test("adopts the admin landing and authorized Score route while keeping public display composition separate", () => {
     expect(appSource).toContain("<AdminDashboardHome />");
-    expect(appSource).toContain('route.name === "admin" || route.name === "public-scoreboard-display" || route.name === "public-display-scene"');
+    expect(appSource).toContain('route.name === "admin" || route.name === "operator-score" || route.name === "public-scoreboard-display" || route.name === "public-display-scene"');
+    expect(appSource).toContain("<OperatorScorePage matchId={route.matchId} />");
     expect(appSource).toContain("<PublicDisplayShell");
     expect(shellSource).not.toMatch(/PublicDisplayShell|PublicLiveScoreboard|PublicDisplayScene/);
   });
