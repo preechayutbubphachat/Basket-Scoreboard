@@ -818,6 +818,30 @@ export type MatchOperatorPermission =
   | "match.timeout.operate"
   | "match.lifecycle.operate";
 
+export type EffectiveMatchCapabilities = {
+  matchRead: boolean;
+  scoreOperate: boolean;
+  foulOperate: boolean;
+  gameClockOperate: boolean;
+  shotClockOperate: boolean;
+  timeoutOperate: boolean;
+  lifecycleOperate: boolean;
+  correctionRequest: boolean;
+  correctionApply: boolean;
+  correctionReject: boolean;
+  auditRead: boolean;
+};
+
+export type EffectiveMatchAccess = {
+  matchId: string;
+  capabilities: EffectiveMatchCapabilities;
+};
+
+export type EffectiveMatchAccessResponse = {
+  ok: true;
+  data: EffectiveMatchAccess;
+};
+
 export const matchOperatorPermissions: readonly MatchOperatorPermission[] = [
   "match.score.operate",
   "match.foul.operate",

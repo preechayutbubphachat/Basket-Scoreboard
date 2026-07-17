@@ -148,7 +148,62 @@ async function expectDeniedUnchanged(app: App, pool: Pool, session: Session, mat
   expect(await state(pool, matchId)).toEqual(before);
 }
 
+async function getEffectiveAccess(app: App, session: Session, matchId: string) {
+  return app.inject({
+    method: "GET",
+    url: `/api/v1/matches/${matchId}/effective-access`,
+    headers: { cookie: session.cookie }
+  });
+}
+
 describeDb.sequential("DB-backed granular operator permission matrix", () => {
+  it("calculates effective access from current assignment state without match writes", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const operatorUser = await seedUser(pool, "SCORER");
+      const admin = await login(app, adminUser);
+      const operator = await login(app, operatorUser);
+      const matchA = await createMatch(app, admin);
+      const matchB = await createMatch(app, admin);
+      const assignmentId = await assign(pool, matchA, operatorUser.userId, "TIMER", adminUser.userId);
+      const before = await state(pool, matchA);
+
+      const active = await getEffectiveAccess(app, operator, matchA);
+      expect(active.statusCode).toBe(200);
+      expect(active.json()).toEqual({
+        ok: true,
+        data: {
+          matchId: matchA,
+          capabilities: {
+            matchRead: true,
+            scoreOperate: false,
+            foulOperate: false,
+            gameClockOperate: true,
+            shotClockOperate: false,
+            timeoutOperate: false,
+            lifecycleOperate: false,
+            correctionRequest: false,
+            correctionApply: false,
+            correctionReject: false,
+            auditRead: false
+          }
+        }
+      });
+      expect(await state(pool, matchA)).toEqual(before);
+
+      expect((await getEffectiveAccess(app, operator, matchB)).statusCode).toBe(403);
+      await pool.query(
+        "UPDATE match_officials SET assignment_status = 'REVOKED', revoked_by_user_id = ?, revoked_at = NOW(3) WHERE id = ?",
+        [adminUser.userId, assignmentId]
+      );
+      expect((await getEffectiveAccess(app, operator, matchA)).statusCode).toBe(403);
+      expect(await state(pool, matchA)).toEqual(before);
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
   it("enforces every assignment role and leaves denied commands unchanged", async () => {
     const { app, pool } = await buildMigratedApp();
     try {

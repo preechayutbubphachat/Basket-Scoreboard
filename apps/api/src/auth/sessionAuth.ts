@@ -24,6 +24,51 @@ export type { AuthenticatedUser, AuthorizationDecision, PermissionCode, RoleCode
 
 export const defaultDevUserId = "00000000-0000-4000-8000-000000000001";
 
+export async function evaluateAuthorization(
+  pool: Pool,
+  user: AuthenticatedUser | null,
+  permission: PermissionCode,
+  resource: { matchId?: string } = {}
+): Promise<AuthorizationDecision> {
+  if (!user) {
+    return {
+      allowed: false,
+      reasonCode: reasonCodes.UNAUTHENTICATED,
+      message: "Authentication required"
+    };
+  }
+
+  if (user.role === "ADMIN") {
+    return { allowed: true };
+  }
+
+  if (!user.permissions.includes(permission)) {
+    return {
+      allowed: false,
+      reasonCode: reasonCodes.FORBIDDEN,
+      message: "Operation is not permitted"
+    };
+  }
+
+  if (resource.matchId) {
+    const assigned =
+      user.authMode === "DEV_HEADER"
+        ? user.assignedMatchIds.includes(resource.matchId) &&
+          assignmentRoleAllowsPermission(defaultAssignmentRoleForSystemRole(user.role) ?? "", permission)
+        : await isUserAssignedToMatch(pool, user.userId, resource.matchId, permission);
+
+    if (!assigned) {
+      return {
+        allowed: false,
+        reasonCode: reasonCodes.MATCH_NOT_ASSIGNED,
+        message: "User is not assigned to this match"
+      };
+    }
+  }
+
+  return { allowed: true };
+}
+
 type UserRow = RowDataPacket & {
   user_id: string;
   email: string;
@@ -433,43 +478,7 @@ export function createAuthHandlers(pool: Pool) {
     permission: PermissionCode,
     resource: { matchId?: string } = {}
   ): Promise<AuthorizationDecision> {
-    if (!user) {
-      return {
-        allowed: false,
-        reasonCode: reasonCodes.UNAUTHENTICATED,
-        message: "Authentication required"
-      };
-    }
-
-    if (user.role === "ADMIN") {
-      return { allowed: true };
-    }
-
-    if (!user.permissions.includes(permission)) {
-      return {
-        allowed: false,
-        reasonCode: reasonCodes.FORBIDDEN,
-        message: "Operation is not permitted"
-      };
-    }
-
-    if (resource.matchId) {
-      const assigned =
-        user.authMode === "DEV_HEADER"
-          ? user.assignedMatchIds.includes(resource.matchId) &&
-            assignmentRoleAllowsPermission(defaultAssignmentRoleForSystemRole(user.role) ?? "", permission)
-          : await isUserAssignedToMatch(pool, user.userId, resource.matchId, permission);
-
-      if (!assigned) {
-        return {
-          allowed: false,
-          reasonCode: reasonCodes.MATCH_NOT_ASSIGNED,
-          message: "User is not assigned to this match"
-        };
-      }
-    }
-
-    return { allowed: true };
+    return evaluateAuthorization(pool, user, permission, resource);
   }
 
   async function authorizeGlobal(user: AuthenticatedUser | null, permission: PermissionCode) {

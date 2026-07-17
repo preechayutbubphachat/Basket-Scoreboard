@@ -78,6 +78,7 @@ import {
 import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboardProjection.js";
 import { resolvePublicMatchMetadata } from "../publicScoreboard/publicMatchMetadata.js";
 import { matchCommandPermissions } from "../auth/operatorPermissionPolicy.js";
+import { buildEffectiveMatchAccess, matchExists } from "../auth/effectiveMatchAccess.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -151,6 +152,26 @@ export function registerMatchRoutes(
       return {
         ok: true,
         data: result
+      };
+    }
+  );
+
+  app.get<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/effective-access",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+      ]
+    },
+    async (request, reply) => {
+      if (!(await matchExists(pool, request.params.matchId))) {
+        return reply.status(404).send(apiError(reasonCodes.MATCH_NOT_FOUND, "Match was not found"));
+      }
+
+      return {
+        ok: true,
+        data: await buildEffectiveMatchAccess(pool, request.user as AuthenticatedUser, request.params.matchId)
       };
     }
   );

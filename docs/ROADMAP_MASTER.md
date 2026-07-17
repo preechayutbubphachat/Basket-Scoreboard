@@ -128,14 +128,14 @@ RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
 RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
-RM-03-P2 = BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP
-RM-03-P2-F1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P2 = PENDING (AUTHORIZED TO RESUME)
+RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = PENDING (NOT AUTHORIZED)
 RM-03-P4 = PENDING
 RM-03-P5 = PENDING
 RM-03-I = PENDING
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-P2-F1 - Server-Authoritative Effective Match Access Contract
+Next safe step: RM-03-P2 - Shared Match Context / Navigation Adapter - RERUN
 ```
 
 ## 6. Straight-Line Diagram
@@ -238,7 +238,7 @@ There is no parallel top-level path.
 - Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
 - Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
 - Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
-- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP`; RM-03-P2-F1 is `PENDING` and authorized as the next safe step; RM-03-P3 remains `PENDING (NOT AUTHORIZED)`. The presentation-only shell foundation exists, but production routes have not adopted it and shared realtime ownership is not implemented.
+- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1 and RM-03-P2-F1 are `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING (AUTHORIZED TO RESUME)`; RM-03-P3 remains `PENDING (NOT AUTHORIZED)`. The presentation-only shell foundation and protected effective-access contract exist, but production routes have not adopted the shell and shared realtime ownership is not implemented.
 - Domain dependencies: existing live projections and command-state models.
 - API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
 - Database dependencies: active `match_officials` assignment and existing projections/event stream.
@@ -246,7 +246,7 @@ There is no parallel top-level path.
 - Acceptance: shared hydration, stale/offline/permission states, navigation, and role-aware command surfaces without client-trusted permission.
 - Tests: cross-role route, reconnect, assignment revocation, command denial, and shell rendering.
 - Production gate: DB-backed authorization verification before deployment.
-- Known blockers: no protected response currently returns server-calculated per-match effective capabilities, so RM-03-P2 navigation cannot proceed safely. RM-03-P2-F1 must close this contract gap first. DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure.
+- Known blockers: the effective-access contract gap is closed and RM-03-P2 may resume. DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure.
 - Source requirements: none for shell mechanics.
 - Next milestone: RM-04.
 
@@ -671,8 +671,8 @@ RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
 RM-03 = CURRENT
 RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
-RM-03-P2 = BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP
-RM-03-P2-F1 = PENDING (AUTHORIZED TO BEGIN)
+RM-03-P2 = PENDING (AUTHORIZED TO RESUME)
+RM-03-P2-F1 = IMPLEMENTATION COMPLETE
 RM-03-P3 = PENDING (NOT AUTHORIZED)
 RM-03-P4 = PENDING
 RM-03-P5 = PENDING
@@ -978,4 +978,17 @@ RM-03-P2-G1 governance reconciliation evidence:
 - Deferred policy: the recent-action multi-item feed remains `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
 - Rule boundary: `[NEEDS SOURCE] Missing governing document: FIBA alternating-possession/possession-arrow operational semantics.` Possession and bonus semantics remain excluded.
 - Roadmap transition: RM-03-P2 is `BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP`; RM-03-P2-F1 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03-P3 is `PENDING (NOT AUTHORIZED)`; RM-04 through RM-18 remain `PENDING`.
-- Next safe step: `RM-03-P2-F1 - Server-Authoritative Effective Match Access Contract`.
+- Next safe step at governance reconciliation: `RM-03-P2-F1 - Server-Authoritative Effective Match Access Contract`.
+
+RM-03-P2-F1 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P2-F1`; the protected `GET /api/v1/matches/:matchId/effective-access` contract is server-calculated, match-scoped, deny-by-default, read-only, and active-assignment aware.
+- Authorization architecture: the canonical backend authorization decision was extracted into a shared evaluator used by both `requireMatchPermission` and the effective-access service. Client role, permission arrays, assignment role, and capability claims are not authorization authority.
+- Capability contract: match read, score, foul, game clock, shot clock, timeout, lifecycle, correction request/apply/reject, and audit read remain separately mapped to their canonical permissions. Game-clock and shot-clock capabilities remain isolated.
+- Safety evidence: the endpoint is authenticated and protected, preserves existing inaccessible-match behavior, returns an explicit allowlist only, and exposes no assignment row, session, token, CSRF, command, sequence, audit, correction-reason, or evaluator metadata.
+- Boundary evidence: no public route/socket contract, event-store/projection write, command dispatch, realtime ownership, polling, reconnect, resync, clock interpolation, migration, schema, or mutable capability cache changed.
+- Validation: focused authorization suites passed 21 tests with 2 existing environment-gated skips; lint passed; the full suite passed 576 tests with 24 skips; both production builds passed. `npm run test:db` passed 2 source guards while 19 DB-dependent tests were skipped because disposable `DATABASE_*` was unavailable (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Closure limitation: DB-backed canonical Admin, assigned Referee/Scorer, Viewer denial, revocation, cross-match, TIMER/SHOT_CLOCK isolation, and no-event/no-projection-mutation evidence remains mandatory before RM-03 integration/deployment. The committed DB test covers the endpoint behavior when a disposable database becomes available.
+- Deferred policy remains unchanged: the recent-action multi-item feed is `DEFERRED`; controlled historical rebuild is `DEFERRED / NOT RUN`; timezone formatting and CSP remain `FOLLOW-UP`.
+- Roadmap transition: RM-03-P2-F1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING (AUTHORIZED TO RESUME)`; RM-03-P3 is `PENDING (NOT AUTHORIZED)`; RM-04 through RM-18 remain `PENDING`.
+- Next safe step: `RM-03-P2 - Shared Match Context / Navigation Adapter - RERUN`.
