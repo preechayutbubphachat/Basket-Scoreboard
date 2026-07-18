@@ -93,7 +93,7 @@ Use only these status values:
 | RM-00 | Accessibility Integration Baseline | `INTEGRATED` |
 | RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
 | RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
-| RM-03 | Unified LiveMatchShell Foundation | `CURRENT` |
+| RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
 | RM-04 | Clock & Shot Clock Dashboard | `PENDING` |
 | RM-05 | Score Control Dashboard | `PENDING` |
 | RM-06 | Foul Control Dashboard | `PENDING` |
@@ -125,7 +125,7 @@ RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = INTEGRATED
 RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
-RM-03 = CURRENT
+RM-03 = INTEGRATED
 RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
 RM-03-P2 = IMPLEMENTATION COMPLETE
@@ -139,9 +139,9 @@ RM-03-P5-F1 DB COVERAGE = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
 DB COVERAGE GAP = CLOSED
 DB ENVIRONMENT / EXECUTION GATE = CLOSED
 DB AUTHORIZATION CLOSURE GATE = CLOSED
-RM-03-I = PENDING (AUTHORIZED TO BEGIN)
+RM-03-I = INTEGRATED
 RM-04 through RM-18 = PENDING
-Next safe step: RM-03-I - Integration Gate
+Next safe step: RM-04 - Clock & Shot Clock Dashboard authorization gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -674,7 +674,7 @@ RM-02-P5-F1 = IMPLEMENTATION COMPLETE
 RM-02-P5 = IMPLEMENTATION COMPLETE
 RM-02-I = INTEGRATED
 RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
-RM-03 = CURRENT
+RM-03 = INTEGRATED
 RM-03-D1 = DISCOVERY COMPLETE
 RM-03-P1 = IMPLEMENTATION COMPLETE
 RM-03-P2 = IMPLEMENTATION COMPLETE
@@ -683,7 +683,7 @@ RM-03-P3 = IMPLEMENTATION COMPLETE
 RM-03-P4 = IMPLEMENTATION COMPLETE
 RM-03-P5 = REGRESSION CLOSURE COMPLETE
 RM-03-P5-F1 = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
-RM-03-I = PENDING (AUTHORIZED FOR LOCAL FAST-FORWARD)
+RM-03-I = INTEGRATED
 RM-04 through RM-18 = PENDING
 ```
 
@@ -1190,3 +1190,23 @@ RM-03-I integration-governance evidence:
   Because push is prohibited, `origin/main` remains at the recorded baseline and RM-03 cannot be labeled `INTEGRATED`
   under the canonical status vocabulary in this task.
 - Next safe step: fast-forward local `main` to this governance commit, then re-anchor Guardian. Do not begin RM-04.
+
+RM-03-I origin/main synchronization evidence:
+
+- Decision: `RM_03_INTEGRATED`; local `main` and `origin/main` were synchronized by normal fast-forward push after
+  remote-state verification. The synchronized pre-completion SHA was `2eecfc4055848def15d0ba55fbad09523e7cd52f`.
+- Remote guard: post-fetch `origin/main` before push remained `1f763d896c6bf39111338264be61cd06b9d38c46`;
+  `origin/main` was an ancestor of local `main`, and the range was 12 commits ahead with zero commits behind.
+- Scope audit: the pushed range contained only authorized RM-03 implementation, regression closure, DB coverage,
+  DB authorization closure, and integration-governance work. Unauthorized commits, secret-bearing files, production
+  configuration changes, generated artifacts, migrations, force operations, rebase, squash, and merge commits were
+  zero.
+- Validation before push: `npm test` passed 637 tests with zero failures; `npm run build` passed with the existing
+  Vite chunk-size warning. The repository event-store guard found zero `scoreboard_state` or historical
+  `match_events` mutation patterns.
+- Synchronization result: post-push fetch confirmed local `main` and `origin/main` both at
+  `2eecfc4055848def15d0ba55fbad09523e7cd52f` with a clean working tree. No feature branch deletion, Plesk/Hostatom
+  operation, production deployment, force push, rebase, squash, or merge commit occurred.
+- Roadmap transition: RM-03-I is `INTEGRATED`; RM-03 is `INTEGRATED`; RM-04 through RM-18 remain `PENDING` and RM-04
+  implementation was not begun in this task.
+- Next safe step: `RM-04 - Clock & Shot Clock Dashboard authorization gate`.
