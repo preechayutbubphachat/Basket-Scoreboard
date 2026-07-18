@@ -1,6 +1,7 @@
 import type {
   AuthenticatedUser,
   CommandResult,
+  EffectiveMatchAccess,
   ScoreAddedPayload,
   ScoreboardProjection
 } from "@basket-scoreboard/api-contracts";
@@ -18,6 +19,45 @@ export const finishedMatchLiveControlWarning = "Match is finished. Use correctio
 
 export type ScoreControlTeamSide = ScoreAddedPayload["teamSide"];
 export type ScoreControlPoint = ScoreAddedPayload["points"];
+export type ScoreAccessLifecycle = "ACCESS_LOADING" | "ACCESS_READY" | "ACCESS_DENIED" | "ACCESS_ERROR" | "ACCESS_MATCH_MISMATCH";
+export type ScoreEffectiveAccessState = {
+  lifecycle: ScoreAccessLifecycle;
+  access: EffectiveMatchAccess | null;
+  canRead: boolean;
+  canOperateScore: boolean;
+  canRequestCorrection: boolean;
+};
+
+function isEffectiveMatchAccess(value: unknown): value is EffectiveMatchAccess {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<EffectiveMatchAccess>;
+  const capabilities = candidate.capabilities as Partial<EffectiveMatchAccess["capabilities"]> | undefined;
+  return typeof candidate.matchId === "string" && Boolean(capabilities) &&
+    typeof capabilities?.matchRead === "boolean" &&
+    typeof capabilities.scoreOperate === "boolean" &&
+    typeof capabilities.correctionRequest === "boolean";
+}
+
+export function resolveScoreEffectiveAccess(matchId: string, phase: "loading" | "ready" | "error", value: unknown): ScoreEffectiveAccessState {
+  const closed = (lifecycle: ScoreAccessLifecycle): ScoreEffectiveAccessState => ({
+    lifecycle,
+    access: null,
+    canRead: false,
+    canOperateScore: false,
+    canRequestCorrection: false
+  });
+  if (phase === "loading") return closed("ACCESS_LOADING");
+  if (phase === "error" || !isEffectiveMatchAccess(value)) return closed("ACCESS_ERROR");
+  if (value.matchId !== matchId) return closed("ACCESS_MATCH_MISMATCH");
+  if (!value.capabilities.matchRead) return closed("ACCESS_DENIED");
+  return {
+    lifecycle: "ACCESS_READY",
+    access: value,
+    canRead: true,
+    canOperateScore: value.capabilities.scoreOperate,
+    canRequestCorrection: value.capabilities.correctionRequest
+  };
+}
 
 type ScorePanelProjection = Pick<ScoreboardProjection, "homeScore" | "awayScore"> &
   Partial<Pick<ScoreboardProjection, "homeTeamName" | "homeTeamId" | "awayTeamName" | "awayTeamId">>;

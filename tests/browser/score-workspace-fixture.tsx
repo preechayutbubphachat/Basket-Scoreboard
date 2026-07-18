@@ -24,6 +24,10 @@ function Fixture() {
   const [maxNetworkActive, setMaxNetworkActive] = useState(0);
   const failedOnceRef = useRef(false);
   const failureMode = new URLSearchParams(window.location.search).get("failure");
+  const accessMode = new URLSearchParams(window.location.search).get("access") ?? "both";
+  const canRead = !["denied", "loading", "error", "mismatch"].includes(accessMode);
+  const canScore = accessMode === "both" || accessMode === "score";
+  const canCorrect = accessMode === "both" || accessMode === "correction";
   const panels = buildScoreControlPanels({
     awayScore: 84,
     awayTeamName: "Phuket Sharks Academy",
@@ -82,15 +86,21 @@ function Fixture() {
 
   return (
     <main style={{ margin: "0 auto", maxWidth: 1560, padding: 16 }}>
+      <section aria-atomic="true" aria-live="polite" className="panel" role="status" tabIndex={-1}>
+        <strong>Score access</strong>
+        <p>{accessMode === "loading" ? "Checking match access…" : accessMode === "error" ? "Match access is unavailable. Commands are disabled." : accessMode === "mismatch" ? "Match access could not be verified for this route. Commands are disabled." : accessMode === "denied" ? "This match is not available for operation." : canScore ? "Scoring controls are available." : "Scores are available read-only."}</p>
+      </section>
+      {canRead ? (
       <ScoreWorkspace
         commandPending={false}
         connectionLabel="Realtime connected"
-        controlsEnabled={!queue.pauseReason}
-        correctionEntry={{
+        controlsEnabled={canScore && !queue.pauseReason}
+        scoreControlsVisible={canScore}
+        correctionEntry={canCorrect ? {
           blocked: Boolean(queue.activeIntent || queue.queuedIntents.length > 0 || queue.pauseReason),
           href: "#corrections",
           onNavigate: () => setCorrectionNavigations((count) => count + 1)
-        }}
+        } : null}
         currentSeq={1284}
         matchStatus="LIVE"
         onPlayerChange={(teamSide, playerId) => setSelectedPlayers((current) => ({ ...current, [teamSide]: playerId }))}
@@ -100,11 +110,13 @@ function Fixture() {
         periodLabel="P4"
         queueStatus={queuePresentation ? {
           ...queuePresentation,
+          resumeAvailable: true,
           onDiscard: () => dispatchQueue({ type: "DISCARD_ALL" }),
           onResume: () => dispatchQueue({ type: "RESUME_QUEUED" }),
           onRetry: () => dispatchQueue({ type: "RETRY_ACTIVE" })
         } : null}
       />
+      ) : null}
       <output data-testid="dispatches">{dispatches.join(",")}</output>
       <output data-testid="correction-navigations">{correctionNavigations}</output>
       <output data-testid="max-network-active">{maxNetworkActive}</output>

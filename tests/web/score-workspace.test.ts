@@ -28,6 +28,7 @@ function props(overrides: Partial<ScoreWorkspaceProps> = {}): ScoreWorkspaceProp
     commandPending: false,
     connectionLabel: "Realtime connected",
     controlsEnabled: true,
+    scoreControlsVisible: true,
     correctionEntry: { href: "/operator/matches/match-1/corrections", onNavigate: vi.fn() },
     currentSeq: 1284,
     matchStatus: "LIVE",
@@ -74,7 +75,7 @@ describe("RM-05-P1 Score workspace", () => {
     )).toEqual(["HOME:1", "HOME:2", "HOME:3", "AWAY:1", "AWAY:2", "AWAY:3"]);
   });
 
-  test("preserves route ownership and current legacy gating boundary", () => {
+  test("preserves route ownership and uses effective access as the score authority", () => {
     const scoreSource = appSource.slice(
       appSource.indexOf("function OperatorScorePage"),
       appSource.indexOf("function OperatorFoulPage")
@@ -89,9 +90,11 @@ describe("RM-05-P1 Score workspace", () => {
       "api.syncMatch(matchId",
       "api.addScore(matchId",
       "projection.currentSeq",
-      "canOperateScore(currentUser, matchId)",
+      "resolveScoreEffectiveAccess(matchId, accessPhase, effectiveAccess)",
+      "const canSubmitScore = accessState.canOperateScore",
       "<ScoreWorkspace"
     ]) expect(scoreSource).toContain(ownerSignal);
+    expect(scoreSource).not.toContain("canOperateScore(currentUser, matchId)");
 
     expect(componentSource).not.toMatch(/api\.|fetch\(|usePublicProjectionRealtime|setInterval|canOperateScore|EffectiveMatchAccess/);
     expect(scoreSource).not.toContain("effectiveAccess.capabilities.scoreOperate");

@@ -87,6 +87,19 @@ describe("RM-05-P2 score intent queue", () => {
     expect(retried.pauseReason).toBeNull();
   });
 
+  test("capability loss pauses without discarding or advancing queued intents", () => {
+    const active = intent("1", "HOME", 2);
+    const waiting = intent("2", "AWAY", 1);
+    let state = scoreIntentQueueReducer(initialScoreIntentQueueState, { type: "ENQUEUE", intent: active });
+    state = scoreIntentQueueReducer(state, { type: "ENQUEUE", intent: waiting });
+    state = scoreIntentQueueReducer(state, { type: "START_NEXT" });
+    state = scoreIntentQueueReducer(state, { type: "PAUSE", reason: "ACCESS_LOST", detail: "Access changed" });
+    const unchanged = scoreIntentQueueReducer(state, { type: "START_NEXT" });
+    expect(unchanged.activeIntent).toEqual(active);
+    expect(unchanged.queuedIntents).toEqual([waiting]);
+    expect(buildScoreQueuePresentation(unchanged)).toMatchObject({ paused: true, queuedCount: 1, retryAvailable: false });
+  });
+
   test("discard deterministically clears active and queued work", () => {
     let state = scoreIntentQueueReducer(initialScoreIntentQueueState, { type: "ENQUEUE", intent: intent("1", "HOME", 1) });
     state = scoreIntentQueueReducer(state, { type: "START_NEXT" });

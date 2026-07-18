@@ -13,7 +13,7 @@ export type ScoreIntent = {
   teamSide: ScoreControlTeamSide;
 };
 
-export type ScoreQueuePauseReason = "SYNC_REQUIRED" | "REJECTED" | "NETWORK_AMBIGUOUS";
+export type ScoreQueuePauseReason = "SYNC_REQUIRED" | "REJECTED" | "NETWORK_AMBIGUOUS" | "ACCESS_LOST";
 
 export type ScoreIntentQueueState = {
   activeIntent: ScoreIntent | null;
@@ -91,7 +91,9 @@ export function buildScoreQueuePresentation(state: ScoreIntentQueueState) {
   if (state.pauseReason) {
     return {
       detail: state.pauseDetail ?? "Score actions are paused for operator review.",
-      label: state.pauseReason === "SYNC_REQUIRED"
+      label: state.pauseReason === "ACCESS_LOST"
+        ? "Score access changed — queued actions paused"
+        : state.pauseReason === "SYNC_REQUIRED"
         ? "Synchronization required — queued actions paused"
         : state.pauseReason === "NETWORK_AMBIGUOUS"
           ? "Delivery uncertain — retry with the same command identity"

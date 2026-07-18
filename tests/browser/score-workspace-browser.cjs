@@ -138,6 +138,33 @@ async function verifySyncPause(page, viewport) {
   return { viewport, paused: true, noAutoReplay: true, resume: true, discard: true };
 }
 
+async function verifyAccessStates(page, viewport) {
+  const results = [];
+  for (const mode of ["read-only", "score", "correction", "both", "loading", "error", "mismatch"]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${baseUrl}${fixturePath}?access=${mode}`, { waitUntil: "networkidle" });
+    const state = await page.evaluate(() => ({
+      correction: Boolean(document.querySelector(".score-workspace__correction")),
+      noHorizontalOverflow: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      scores: document.querySelectorAll(".score-workspace__score-block output").length,
+      scoreButtons: document.querySelectorAll(".score-workspace__score-actions button").length,
+      statusText: document.querySelector('[role="status"]')?.textContent ?? ""
+    }));
+    assert.equal(state.noHorizontalOverflow, true, `${mode} ${viewport.width} overflowed`);
+    if (["loading", "error", "mismatch"].includes(mode)) {
+      assert.equal(state.scores, 0);
+      assert.equal(state.scoreButtons, 0);
+      assert.equal(state.correction, false);
+    } else {
+      assert.equal(state.scores, 2);
+      assert.equal(state.scoreButtons, mode === "score" || mode === "both" ? 6 : 0);
+      assert.equal(state.correction, mode === "correction" || mode === "both");
+    }
+    results.push({ mode, ...state });
+  }
+  return { viewport, results };
+}
+
 async function main() {
   const server = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: repositoryRoot,
@@ -169,10 +196,14 @@ async function main() {
     for (const viewport of [viewports[0], viewports[2], viewports[4]]) rapid.push(await verifyRapidQueue(page, viewport));
     const syncPause = [];
     for (const viewport of [viewports[0], viewports[2], viewports[4]]) syncPause.push(await verifySyncPause(page, viewport));
+    const accessStates = [];
+    for (const viewport of viewports) accessStates.push(await verifyAccessStates(page, viewport));
+    await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+    const accessibleMedia = await verifyAccessStates(page, viewports[4]);
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(failedRequests, []);
-    process.stdout.write(`${JSON.stringify({ matrix, zoom, rapid, syncPause, consoleErrors, pageErrors, failedRequests })}\n`);
+    process.stdout.write(`${JSON.stringify({ matrix, zoom, rapid, syncPause, accessStates, accessibleMedia, consoleErrors, pageErrors, failedRequests })}\n`);
   } finally {
     if (browser) await browser.close();
     server.kill();

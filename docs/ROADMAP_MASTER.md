@@ -153,9 +153,10 @@ RM-05-D1 = DISCOVERY COMPLETE
 RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
 RM-05-P3 = IMPLEMENTATION COMPLETE
-RM-05-P4 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P4 = IMPLEMENTATION COMPLETE
+RM-05-P5 = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
-Next safe step: RM-05-P4 - Effective Access, Reconnect, Error, and Accessibility States
+Next safe step: RM-05-P5 - Responsive and Full Regression Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -292,7 +293,7 @@ There is no parallel top-level path.
 - Objective: deliver fast, safe, production-grade score operation.
 - Visual target: `UI Score Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P3 are `IMPLEMENTATION COMPLETE`, and RM-05-P4 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; effective-access migration and full regression closure remain pending in their authorized linear slices.
+- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P4 are `IMPLEMENTATION COMPLETE`, and RM-05-P5 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; responsive and full regression closure remains pending in its authorized linear slice.
 - Domain dependencies: score events, optional player attribution, correction workflow.
 - API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and operator/public projections.
@@ -711,7 +712,8 @@ RM-05-D1 = DISCOVERY COMPLETE
 RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
 RM-05-P3 = IMPLEMENTATION COMPLETE
-RM-05-P4 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P4 = IMPLEMENTATION COMPLETE
+RM-05-P5 = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
 ```
 
@@ -1580,6 +1582,28 @@ RM-05-P3 score correction and compensating-event safety closure evidence:
 - Roadmap transition: RM-05 remains `CURRENT`; RM-05-P3 is `IMPLEMENTATION COMPLETE`; RM-05-P4 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
 - Next safe step: `RM-05-P4 - Effective Access, Reconnect, Error, and Accessibility States`. Do not begin it automatically.
+
+RM-05-P4 effective-access and resilient-state closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): enforce effective access and resilient states`).
+- EffectiveMatchAccess is the fail-closed Score command-surface authority for match read, score operation, and the
+  independently gated correction entry. Loading, malformed/error, denied, and cross-match states expose no command
+  surface; legacy current-user role/assignment inference cannot grant Score commands. Server RBAC remains final.
+- Authoritative polling, reconnect/resync, and stale-command refresh reconcile both projection and access. Capability
+  loss blocks new enqueue and queue auto-drain, preserves remaining intents for review/discard, never auto-resumes, and
+  revalidates correction access immediately before the existing P3 confirmation dispatch.
+- Accessibility: stable polite/atomic access status and focus recovery are present; rapid queue updates are not live
+  regions, while paused queues are announced concisely. The five-viewport capability-state matrix, forced colors,
+  reduced motion, visible keyboard focus, no-overflow, P2 FIFO/no-replay, and P3 correction safety checks passed.
+- Verification: focused P4/P2/P3 tests 24/24, `npm run lint`, `npm run test:db` 25/25, `npm test` 671/671,
+  `npm run build`, `npm run build:single`, score browser matrix, and `git diff --check` passed. The existing Vite
+  chunk-size warning is unchanged.
+- Scope guards: API contract, socket contract, event model, database/schema, capability, and event type changes are
+  zero. Public projections remain unchanged and socket payloads remain notification-only/non-authoritative.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P4 is `IMPLEMENTATION COMPLETE`; RM-05-P5 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P5 - Responsive and Full Regression Closure`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 

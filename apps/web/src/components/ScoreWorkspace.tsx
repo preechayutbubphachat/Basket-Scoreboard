@@ -19,6 +19,7 @@ export type ScoreWorkspaceProps = {
   commandPending: boolean;
   connectionLabel: string;
   controlsEnabled: boolean;
+  scoreControlsVisible: boolean;
   correctionEntry?: {
     blocked?: boolean;
     blockedDetail?: string;
@@ -41,6 +42,7 @@ export type ScoreWorkspaceProps = {
     paused: boolean;
     queuedCount: number;
     retryAvailable: boolean;
+    resumeAvailable: boolean;
   } | null;
 };
 
@@ -48,6 +50,7 @@ export function ScoreWorkspace({
   commandPending,
   connectionLabel,
   controlsEnabled,
+  scoreControlsVisible,
   correctionEntry,
   currentSeq,
   matchStatus,
@@ -92,7 +95,7 @@ export function ScoreWorkspace({
                 <small>Team fouls {panel.fouls}</small>
               </div>
 
-              <label className="score-workspace__player-select">
+              {scoreControlsVisible ? <label className="score-workspace__player-select">
                 Optional scoring player
                 <select
                   value={panel.selectedPlayerId}
@@ -103,9 +106,9 @@ export function ScoreWorkspace({
                     <option key={player.playerId} value={player.playerId}>{player.label}</option>
                   ))}
                 </select>
-              </label>
+              </label> : null}
 
-              <div className="score-workspace__score-actions" aria-label={`${panel.label} scoring controls`}>
+              {scoreControlsVisible ? <div className="score-workspace__score-actions" aria-label={`${panel.label} scoring controls`}>
                 {panel.buttons.map((button) => (
                   <button
                     aria-label={`${panel.label} add ${button.points} point${button.points === 1 ? "" : "s"}`}
@@ -117,7 +120,7 @@ export function ScoreWorkspace({
                     {pendingKey === button.pendingKey ? "Saving..." : button.label}
                   </button>
                 ))}
-              </div>
+              </div> : null}
             </section>
           );
         })}
@@ -127,9 +130,9 @@ export function ScoreWorkspace({
         {queueStatus ? (
           <section
             aria-atomic="true"
-            aria-live="polite"
+            aria-live={queueStatus.paused ? "polite" : undefined}
             className={`score-workspace__queue-status${queueStatus.paused ? " score-workspace__queue-status--paused" : ""}`}
-            role="status"
+            role={queueStatus.paused ? "status" : undefined}
           >
             <div>
               <span className="score-workspace__eyebrow">Rapid scoring queue</span>
@@ -140,7 +143,7 @@ export function ScoreWorkspace({
             {queueStatus.paused ? (
               <div className="score-workspace__queue-actions" aria-label="Paused score queue actions">
                 {queueStatus.retryAvailable ? <button type="button" onClick={queueStatus.onRetry}>Retry uncertain action</button> : null}
-                <button type="button" onClick={queueStatus.onResume}>Resume queued actions</button>
+                {queueStatus.resumeAvailable ? <button type="button" onClick={queueStatus.onResume}>Resume queued actions</button> : null}
                 <button type="button" onClick={queueStatus.onDiscard}>Discard queued actions</button>
               </div>
             ) : null}

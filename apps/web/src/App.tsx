@@ -78,7 +78,6 @@ import {
   buildPublicScoreboardLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
-  canOperateScore,
   canOperateFoul,
   canOperateTimeout,
   canOperateLifecycle,
@@ -102,6 +101,7 @@ import {
   getAcceptedScoreProjection,
   getScoreControlFeedback,
   isFinishedMatchStatus,
+  resolveScoreEffectiveAccess,
   type ScoreControlPoint,
   type ScoreControlTeamSide
 } from "./lib/scoreControl";
@@ -3176,31 +3176,38 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
+  const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
   const [selectedPlayers, setSelectedPlayers] = useState<Record<ScoreControlTeamSide, string>>({ HOME: "", AWAY: "" });
   const [loading, setLoading] = useState(true);
   const [scoreQueue, dispatchScoreQueue] = useReducer(scoreIntentQueueReducer, initialScoreIntentQueueState);
   const dispatchedAttemptRef = useRef<string | null>(null);
+  const accessStatusRef = useRef<HTMLElement | null>(null);
+  const previousScoreAccessRef = useRef(false);
+  const scoreAccessRef = useRef(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitScore = canOperateScore(currentUser, matchId);
-  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
+  const accessState = resolveScoreEffectiveAccess(matchId, accessPhase, effectiveAccess);
+  const canSubmitScore = accessState.canOperateScore;
+  scoreAccessRef.current = canSubmitScore;
+  const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshAuthoritativeScoreState);
 
   async function loadState() {
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
+    setAccessPhase("loading");
     try {
       const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
         api.getMatchProjection(matchId),
         api.getMatchRosters(matchId).catch(() => null),
-        api.getEffectiveMatchAccess(matchId).catch((error) => {
-          setMessage(toUiMessage(error));
-          return null;
-        })
+        api.getEffectiveMatchAccess(matchId)
       ]);
       setProjection(nextProjection);
       setRosters(nextRosters);
-      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
+      setEffectiveAccess(nextEffectiveAccess);
+      setAccessPhase("ready");
     } catch (error) {
+      setEffectiveAccess(null);
+      setAccessPhase("error");
       setMessage(toUiMessage(error));
     } finally {
       setLoading(false);
@@ -3213,29 +3220,38 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     void loadState();
   }, [matchId]);
 
-  async function refreshProjectionSilently() {
+  async function refreshAuthoritativeScoreState() {
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const [nextProjection, nextAccess] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getEffectiveMatchAccess(matchId)
+      ]);
+      setProjection(nextProjection);
+      setEffectiveAccess(nextAccess);
+      setAccessPhase("ready");
     } catch (error) {
+      setEffectiveAccess(null);
+      setAccessPhase("error");
       setMessage(toUiMessage(error));
     }
   }
 
   useEffect(() => {
     const timer = window.setInterval(
-      () => void refreshProjectionSilently(),
+      () => void refreshAuthoritativeScoreState(),
       getOperatorPollingIntervalMs(realtimeState)
     );
     return () => window.clearInterval(timer);
   }, [api, matchId, realtimeState]);
 
   async function refreshAfterCommand(lastSeq: number) {
-    const sync = await api.syncMatch(matchId, lastSeq);
-    if (sync.projection) {
-      setProjection(sync.projection);
-      return;
-    }
-    setProjection(await api.getMatchProjection(matchId));
+    const [sync, nextAccess] = await Promise.all([
+      api.syncMatch(matchId, lastSeq),
+      api.getEffectiveMatchAccess(matchId)
+    ]);
+    setEffectiveAccess(nextAccess);
+    setAccessPhase("ready");
+    setProjection(sync.projection ?? await api.getMatchProjection(matchId));
   }
 
   function enqueueScoreIntent(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
@@ -3256,13 +3272,27 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   }
 
   useEffect(() => {
-    if (!projection || scoreQueue.activeIntent || scoreQueue.pauseReason || scoreQueue.queuedIntents.length === 0) return;
+    if (!projection || !canSubmitScore || scoreQueue.activeIntent || scoreQueue.pauseReason || scoreQueue.queuedIntents.length === 0) return;
     dispatchScoreQueue({ type: "START_NEXT" });
-  }, [projection, scoreQueue.activeIntent, scoreQueue.pauseReason, scoreQueue.queuedIntents.length]);
+  }, [canSubmitScore, projection, scoreQueue.activeIntent, scoreQueue.pauseReason, scoreQueue.queuedIntents.length]);
+
+  useEffect(() => {
+    if (previousScoreAccessRef.current && !canSubmitScore) {
+      if (scoreQueue.activeIntent || scoreQueue.queuedIntents.length > 0) {
+        dispatchScoreQueue({
+          type: "PAUSE",
+          reason: "ACCESS_LOST",
+          detail: "Score access changed. Active delivery may finish under server authority; remaining actions require review."
+        });
+      }
+      window.setTimeout(() => accessStatusRef.current?.focus(), 0);
+    }
+    previousScoreAccessRef.current = canSubmitScore;
+  }, [canSubmitScore, scoreQueue.activeIntent, scoreQueue.queuedIntents.length]);
 
   useEffect(() => {
     const intent = scoreQueue.activeIntent;
-    if (!intent || scoreQueue.pauseReason || !projection) return;
+    if (!intent || scoreQueue.pauseReason || !projection || !canSubmitScore) return;
     const attemptKey = `${intent.localIntentId}:${scoreQueue.retryNonce}`;
     if (dispatchedAttemptRef.current === attemptKey) return;
     dispatchedAttemptRef.current = attemptKey;
@@ -3310,6 +3340,9 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         else await refreshAfterCommand(previousSeq);
         setMessage(getScoreControlFeedback(result));
         dispatchScoreQueue({ type: "ACCEPT_ACTIVE" });
+        if (!scoreAccessRef.current) {
+          dispatchScoreQueue({ type: "PAUSE", reason: "ACCESS_LOST", detail: "Score access changed. Remaining queued actions require review." });
+        }
       } catch (error) {
         setMessage(toUiMessage(error));
         dispatchScoreQueue({
@@ -3319,7 +3352,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         });
       }
     })();
-  }, [api, matchId, projection, scoreQueue.activeIntent, scoreQueue.pauseReason, scoreQueue.retryNonce]);
+  }, [api, canSubmitScore, matchId, projection, scoreQueue.activeIntent, scoreQueue.pauseReason, scoreQueue.retryNonce]);
 
   const pendingKey = scoreQueue.activeIntent
     ? `${scoreQueue.activeIntent.teamSide}-${scoreQueue.activeIntent.points}`
@@ -3327,11 +3360,13 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const queuePresentation = buildScoreQueuePresentation(scoreQueue);
 
   function retryAmbiguousIntent() {
+    if (!canSubmitScore) return;
     dispatchedAttemptRef.current = null;
     dispatchScoreQueue({ type: "RETRY_ACTIVE" });
   }
 
   function resumeQueuedIntents() {
+    if (!canSubmitScore) return;
     dispatchedAttemptRef.current = null;
     dispatchScoreQueue({ type: "RESUME_QUEUED" });
   }
@@ -3352,7 +3387,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   });
   const liveMatchNavigation = buildLiveMatchNavigation({
     currentView: "score",
-    effectiveAccess,
+    effectiveAccess: accessState.access,
     matchId
   });
   const connection = buildOperatorScoreConnection(realtimeState, isReadOnly);
@@ -3407,14 +3442,32 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         navigation={liveMatchNavigation}
       >
         <section className="stack" aria-label="Score workspace">
-          {!canSubmitScore ? <ErrorMessage code="FORBIDDEN" message="Score operation permission is required." /> : null}
+          <section
+            aria-atomic="true"
+            aria-live="polite"
+            className="panel"
+            ref={accessStatusRef}
+            role="status"
+            tabIndex={-1}
+          >
+            <strong>Score access</strong>
+            <p className="muted">{accessState.lifecycle === "ACCESS_LOADING" ? "Checking match access…" : accessState.lifecycle === "ACCESS_ERROR" ? "Match access is unavailable. Commands are disabled." : accessState.lifecycle === "ACCESS_MATCH_MISMATCH" ? "Match access could not be verified for this route. Commands are disabled." : accessState.lifecycle === "ACCESS_DENIED" ? "This match is not available for operation." : canSubmitScore ? "Scoring controls are available." : "Scores are available read-only."}</p>
+          </section>
           {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
           {message ? <Notice {...message} /> : null}
           {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
           {!loading && !projection ? (
             <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
           ) : null}
-          {projection ? (
+          {!accessState.canRead && queuePresentation ? (
+            <section aria-atomic="true" aria-live="polite" className="panel" role="status">
+              <strong>{queuePresentation.label}</strong>
+              <p>{queuePresentation.detail}</p>
+              <p>Queued {queuePresentation.queuedCount}</p>
+              <button type="button" onClick={discardScoreIntents}>Discard queued actions</button>
+            </section>
+          ) : null}
+          {projection && accessState.canRead ? (
             <section className="panel score-control">
               {isFinishedMatchStatus(projection.status) ? (
                 <Notice tone="error" text={finishedMatchLiveControlWarning} />
@@ -3423,7 +3476,8 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                 commandPending={false}
                 connectionLabel={getRealtimeConnectionLabel(realtimeState)}
                 controlsEnabled={canUseLiveMatchControls(projection, canSubmitScore, false) && !scoreQueue.pauseReason}
-                correctionEntry={correctionNavigationItem ? {
+                scoreControlsVisible={canSubmitScore}
+                correctionEntry={accessState.canRequestCorrection && correctionNavigationItem ? {
                   blocked: Boolean(scoreQueue.activeIntent || scoreQueue.queuedIntents.length > 0 || scoreQueue.pauseReason),
                   blockedDetail: "Score actions are active or queued. Finish, resume, or discard them before opening corrections.",
                   href: correctionNavigationItem.href,
@@ -3438,6 +3492,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                 periodLabel={`${projection.periodType === "OVERTIME" ? "OT" : "P"}${projection.periodNumber}`}
                 queueStatus={queuePresentation ? {
                   ...queuePresentation,
+                  resumeAvailable: canSubmitScore,
                   onDiscard: discardScoreIntents,
                   onResume: resumeQueuedIntents,
                   onRetry: retryAmbiguousIntent
@@ -4410,6 +4465,8 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
 function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
   const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
+  const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
   const [events, setEvents] = useState<CorrectionEligibleEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CorrectionEligibleEvent | null>(null);
   const [reason, setReason] = useState("");
@@ -4420,22 +4477,30 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const correctionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const correctionStatusRef = useRef<HTMLElement | null>(null);
   const correctionDispatchRef = useRef(false);
+  const accessState = resolveScoreEffectiveAccess(matchId, accessPhase, effectiveAccess);
 
   async function loadCorrections(clearMessage = true) {
     setLoading(true);
+    setAccessPhase("loading");
     if (clearMessage) setMessage(null);
     try {
-      const [nextProjection, eligible] = await Promise.all([
+      const [nextProjection, eligible, nextAccess] = await Promise.all([
         api.getMatchProjection(matchId),
-        api.getEligibleCorrectionEvents(matchId, { limit: 20 })
+        api.getEligibleCorrectionEvents(matchId, { limit: 20 }),
+        api.getEffectiveMatchAccess(matchId)
       ]);
       setProjection(nextProjection);
+      setEffectiveAccess(nextAccess);
+      setAccessPhase("ready");
       setEvents(eligible.events);
       setSelectedEvent((current) =>
         current ? eligible.events.find((event) => event.seqNo === current.seqNo) ?? null : eligible.events[0] ?? null
       );
     } catch (error) {
+      setEffectiveAccess(null);
+      setAccessPhase("error");
       setMessage(toUiMessage(error));
     } finally {
       setLoading(false);
@@ -4449,7 +4514,18 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
     void loadCorrections();
   }, [matchId]);
 
+  useEffect(() => {
+    if (stage !== "closed" && !accessState.canRequestCorrection) {
+      setStage("closed");
+      setReview(null);
+      setFormError(null);
+      setMessage({ tone: "error", code: "FORBIDDEN", text: "Correction access changed. Confirmation was cancelled." });
+      window.setTimeout(() => correctionStatusRef.current?.focus(), 0);
+    }
+  }, [accessState.canRequestCorrection, stage]);
+
   function openCorrection(event: CorrectionEligibleEvent, trigger: HTMLButtonElement) {
+    if (!accessState.canRequestCorrection) return;
     correctionTriggerRef.current = trigger;
     setSelectedEvent(event);
     setReason("");
@@ -4466,7 +4542,7 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
   }
 
   function requestCorrectionReview() {
-    if (!projection || !selectedEvent) return;
+    if (!projection || !selectedEvent || !accessState.canRequestCorrection) return;
     if (!canSubmitCorrectionReason(reason)) {
       setFormError("Enter a correction reason using 5–500 characters before continuing.");
       return;
@@ -4477,19 +4553,31 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
   }
 
   async function confirmCorrection() {
-    if (!review || correctionDispatchRef.current) return;
+    if (!review || correctionDispatchRef.current || !accessState.canRequestCorrection) return;
     correctionDispatchRef.current = true;
 
     setPending(true);
     setMessage(null);
     try {
-      const [latestProjection, eligible] = await Promise.all([
+      const [latestProjection, eligible, latestAccess] = await Promise.all([
         api.getMatchProjection(matchId),
-        api.getEligibleCorrectionEvents(matchId, { limit: 20 })
+        api.getEligibleCorrectionEvents(matchId, { limit: 20 }),
+        api.getEffectiveMatchAccess(matchId)
       ]);
+      const latestAccessState = resolveScoreEffectiveAccess(matchId, "ready", latestAccess);
+      setEffectiveAccess(latestAccess);
+      setAccessPhase("ready");
       setProjection(latestProjection);
       setEvents(eligible.events);
       const authoritativeTarget = eligible.events.find((event) => event.seqNo === review.seqNo) ?? null;
+      if (!latestAccessState.canRequestCorrection) {
+        setStage("closed");
+        setReview(null);
+        setReason("");
+        setMessage({ tone: "error", code: "FORBIDDEN", text: "Correction access changed. Confirmation was cancelled." });
+        window.setTimeout(() => correctionStatusRef.current?.focus(), 0);
+        return;
+      }
       if (latestProjection.currentSeq !== review.expectedSeq || !authoritativeTarget || !isSameCorrectionTarget(authoritativeTarget, review)) {
         setStage("closed");
         setReview(null);
@@ -4551,6 +4639,10 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
         </div>
       </div>
       {message ? <Notice tone={message.tone} text={message.code ? `${message.code}: ${message.text}` : message.text} /> : null}
+      <section aria-atomic="true" aria-live="polite" className="panel" ref={correctionStatusRef} role="status" tabIndex={-1}>
+        <strong>Correction access</strong>
+        <p className="muted">{accessState.lifecycle === "ACCESS_LOADING" ? "Checking correction access…" : accessState.lifecycle === "ACCESS_ERROR" ? "Correction access is unavailable." : accessState.lifecycle === "ACCESS_MATCH_MISMATCH" ? "Correction access could not be verified for this route." : accessState.lifecycle === "ACCESS_DENIED" || !accessState.canRequestCorrection ? "Corrections are unavailable for this match." : "Corrections are available."}</p>
+      </section>
       {loading ? <p className="muted">Loading corrections...</p> : null}
       {projection ? (
         <dl className="state-strip">
@@ -4583,7 +4675,7 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
                     <button
                       type="button"
                       onClick={(clickEvent) => openCorrection(event, clickEvent.currentTarget)}
-                      disabled={!event.eligible}
+                      disabled={!event.eligible || !accessState.canRequestCorrection}
                     >
                       {meta.actionLabel}
                     </button>
