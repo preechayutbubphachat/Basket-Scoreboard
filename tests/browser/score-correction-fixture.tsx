@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { CorrectionEligibleEvent, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
 import { ScoreCorrectionWorkspace } from "../../apps/web/src/components/ScoreCorrectionWorkspace";
@@ -19,17 +19,29 @@ function Fixture() {
   const [pending, setPending] = useState(false);
   const [dispatchCount, setDispatchCount] = useState(0);
   const [status, setStatus] = useState("Ready");
+  const [access, setAccess] = useState<"ready" | "revoked" | "mismatch">("ready");
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const statusRef = useRef<HTMLOutputElement>(null);
   const dispatchGuard = useRef(false);
 
-  function open() { setReason(""); setReview(null); setError(null); setStage("edit"); }
+  useEffect(() => {
+    if (access !== "ready" && stage !== "closed") {
+      setStage("closed");
+      setReview(null);
+      setError(null);
+      setStatus(access === "mismatch" ? "Correction access mismatch. Confirmation cancelled." : "Correction access revoked. Confirmation cancelled.");
+      window.setTimeout(() => statusRef.current?.focus(), 0);
+    }
+  }, [access, stage]);
+
+  function open() { if (access !== "ready") return; setReason(""); setReview(null); setError(null); setStage("edit"); }
   function close() { if (!pending) { setStage("closed"); setReview(null); setError(null); } }
   function requestReview() {
     if (!canSubmitCorrectionReason(reason)) { setError("Enter a correction reason using 5–500 characters before continuing."); return; }
     setReview(buildScoreCorrectionReview(projection, target, reason)); setError(null); setStage("confirm");
   }
   function confirm() {
-    if (dispatchGuard.current) return;
+    if (dispatchGuard.current || access !== "ready") return;
     if (new URLSearchParams(window.location.search).get("invalidated") === "1") {
       setStatus("INVALID_EXPECTED_SEQ: Match or correction target changed");
       setStage("closed");
@@ -43,10 +55,12 @@ function Fixture() {
   return <main style={{ margin: "0 auto", maxWidth: 1100, padding: 24 }}>
     <h1>Score correction safety fixture</h1>
     <p>Match: Bangkok Tigers 72 - 68 Phuket Sharks · Period 4</p>
-    <button ref={triggerRef} type="button" onClick={open}>Correct HOME +2 event #41</button>
-    <output data-testid="status" role="status">{status}</output>
+    <button ref={triggerRef} type="button" onClick={open} disabled={access !== "ready"}>Correct HOME +2 event #41</button>
+    <button data-testid="revoke-correction" type="button" onClick={() => setAccess("revoked")}>Revoke correction access</button>
+    <button data-testid="mismatch-correction" type="button" onClick={() => setAccess("mismatch")}>Mismatch correction access</button>
+    <output data-testid="status" ref={statusRef} role="status" tabIndex={-1}>{status}</output>
     <output data-testid="dispatch-count">{dispatchCount}</output>
-    <ScoreCorrectionWorkspace error={error} onCancel={close} onConfirm={confirm} onFocusReturn={() => triggerRef.current?.focus()} onReasonChange={(value) => { setReason(value); setError(null); }} onReview={requestReview} pending={pending} reason={reason} review={review} selectedSummary={target.summary} stage={stage} />
+    <ScoreCorrectionWorkspace error={error} onCancel={close} onConfirm={confirm} onFocusReturn={() => { if (access === "ready") triggerRef.current?.focus(); else statusRef.current?.focus(); }} onReasonChange={(value) => { setReason(value); setError(null); }} onReview={requestReview} pending={pending} reason={reason} review={review} selectedSummary={target.summary} stage={stage} />
   </main>;
 }
 createRoot(document.getElementById("root")!).render(<Fixture />);

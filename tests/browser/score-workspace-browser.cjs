@@ -165,6 +165,25 @@ async function verifyAccessStates(page, viewport) {
   return { viewport, results };
 }
 
+async function verifyScoreCapabilityLoss(page, viewport) {
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}${fixturePath}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="queue-state"]')?.textContent?.endsWith(":ACTIVE"));
+  await page.getByRole("button", { name: "HOME add 2 points", exact: true }).click();
+  await page.getByRole("button", { name: "AWAY add 3 points", exact: true }).click();
+  const activeQueueLive = await page.locator(".score-workspace__queue-status").getAttribute("aria-live");
+  assert.equal(activeQueueLive, null, "active rapid queue must not announce each count change");
+  await page.getByTestId("revoke-score").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="queue-state"]')?.textContent?.startsWith("ACCESS_LOST:"));
+  assert.equal(await page.getByTestId("queue-state").textContent(), "ACCESS_LOST:2:ACTIVE");
+  assert.equal(await page.locator(".score-workspace__score-actions button").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Resume queued actions" }).count(), 0);
+  const accessFocused = await page.getByText("Scores are available read-only.").evaluate((element) => element.closest('[role="status"]') === document.activeElement);
+  assert.equal(accessFocused, true, "focus did not move to stable access status");
+  return { viewport, accessFocused, activeQueueLiveRegion: false, queuedIntentsPreserved: 2, unsafeAutoDrain: false };
+}
+
 async function main() {
   const server = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: repositoryRoot,
@@ -200,10 +219,13 @@ async function main() {
     for (const viewport of viewports) accessStates.push(await verifyAccessStates(page, viewport));
     await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
     const accessibleMedia = await verifyAccessStates(page, viewports[4]);
+    await page.emulateMedia({ forcedColors: "none", reducedMotion: "no-preference" });
+    const capabilityLoss = [];
+    for (const viewport of [viewports[0], viewports[2], viewports[4]]) capabilityLoss.push(await verifyScoreCapabilityLoss(page, viewport));
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(failedRequests, []);
-    process.stdout.write(`${JSON.stringify({ matrix, zoom, rapid, syncPause, accessStates, accessibleMedia, consoleErrors, pageErrors, failedRequests })}\n`);
+    process.stdout.write(`${JSON.stringify({ matrix, zoom, rapid, syncPause, accessStates, accessibleMedia, capabilityLoss, consoleErrors, pageErrors, failedRequests })}\n`);
   } finally {
     if (browser) await browser.close();
     server.kill();

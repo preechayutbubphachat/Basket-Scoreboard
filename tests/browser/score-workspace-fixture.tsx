@@ -24,7 +24,9 @@ function Fixture() {
   const [maxNetworkActive, setMaxNetworkActive] = useState(0);
   const failedOnceRef = useRef(false);
   const failureMode = new URLSearchParams(window.location.search).get("failure");
-  const accessMode = new URLSearchParams(window.location.search).get("access") ?? "both";
+  const [accessMode, setAccessMode] = useState(new URLSearchParams(window.location.search).get("access") ?? "both");
+  const accessStatusRef = useRef<HTMLElement>(null);
+  const previousScoreAccessRef = useRef(false);
   const canRead = !["denied", "loading", "error", "mismatch"].includes(accessMode);
   const canScore = accessMode === "both" || accessMode === "score";
   const canCorrect = accessMode === "both" || accessMode === "correction";
@@ -43,6 +45,7 @@ function Fixture() {
   }));
 
   function score(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
+    if (!canScore || queue.pauseReason) return;
     identityRef.current += 1;
     const suffix = String(identityRef.current).padStart(12, "0");
     dispatchQueue({
@@ -60,8 +63,18 @@ function Fixture() {
   }
 
   useEffect(() => {
-    if (!queue.activeIntent && !queue.pauseReason && queue.queuedIntents.length > 0) dispatchQueue({ type: "START_NEXT" });
-  }, [queue.activeIntent, queue.pauseReason, queue.queuedIntents.length]);
+    if (canScore && !queue.activeIntent && !queue.pauseReason && queue.queuedIntents.length > 0) dispatchQueue({ type: "START_NEXT" });
+  }, [canScore, queue.activeIntent, queue.pauseReason, queue.queuedIntents.length]);
+
+  useEffect(() => {
+    if (previousScoreAccessRef.current && !canScore) {
+      if (queue.activeIntent || queue.queuedIntents.length > 0) {
+        dispatchQueue({ type: "PAUSE", reason: "ACCESS_LOST", detail: "Score access changed. Remaining actions require review." });
+      }
+      window.setTimeout(() => accessStatusRef.current?.focus(), 0);
+    }
+    previousScoreAccessRef.current = canScore;
+  }, [canScore, queue.activeIntent, queue.queuedIntents.length]);
 
   useEffect(() => {
     const active = queue.activeIntent;
@@ -86,10 +99,11 @@ function Fixture() {
 
   return (
     <main style={{ margin: "0 auto", maxWidth: 1560, padding: 16 }}>
-      <section aria-atomic="true" aria-live="polite" className="panel" role="status" tabIndex={-1}>
+      <section aria-atomic="true" aria-live="polite" className="panel" ref={accessStatusRef} role="status" tabIndex={-1}>
         <strong>Score access</strong>
         <p>{accessMode === "loading" ? "Checking match access…" : accessMode === "error" ? "Match access is unavailable. Commands are disabled." : accessMode === "mismatch" ? "Match access could not be verified for this route. Commands are disabled." : accessMode === "denied" ? "This match is not available for operation." : canScore ? "Scoring controls are available." : "Scores are available read-only."}</p>
       </section>
+      <button data-testid="revoke-score" type="button" onClick={() => setAccessMode("read-only")}>Revoke score access</button>
       {canRead ? (
       <ScoreWorkspace
         commandPending={false}
@@ -110,7 +124,7 @@ function Fixture() {
         periodLabel="P4"
         queueStatus={queuePresentation ? {
           ...queuePresentation,
-          resumeAvailable: true,
+          resumeAvailable: canScore,
           onDiscard: () => dispatchQueue({ type: "DISCARD_ALL" }),
           onResume: () => dispatchQueue({ type: "RESUME_QUEUED" }),
           onRetry: () => dispatchQueue({ type: "RETRY_ACTIVE" })

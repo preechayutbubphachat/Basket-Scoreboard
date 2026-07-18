@@ -25,5 +25,16 @@ async function exercise(page, viewport) {
   const layout = await page.evaluate(() => ({ noOverflow: document.documentElement.scrollWidth === document.documentElement.clientWidth, dialogReachable: !document.querySelector("dialog[open]") || document.querySelector("dialog[open]").getBoundingClientRect().bottom <= innerHeight + 1 }));
   assert.equal(layout.noOverflow, true); assert.equal(layout.dialogReachable, true); return { viewport, ...layout, dispatchCount: 1, focusReturn: true };
 }
-async function main() { const server=spawn(process.execPath,[vite,"--host","127.0.0.1","--port",String(port),"--strictPort"],{cwd:root,stdio:["ignore","pipe","pipe"]}); let browser; try { await ready(); browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})}); const page=await browser.newPage(); const errors=[]; page.on("pageerror",e=>errors.push(e.message)); const results=[]; for(const viewport of viewports) results.push(await exercise(page,viewport)); assert.deepEqual(errors,[]); process.stdout.write(`${JSON.stringify({results,errors})}\n`); } finally { if(browser) await browser.close(); server.kill(); } }
+async function capabilityLoss(page, viewport, mode) {
+  await page.setViewportSize(viewport); await page.goto(base, { waitUntil: "networkidle" });
+  const trigger = page.getByRole("button", { name: "Correct HOME +2 event #41" });
+  await trigger.click(); await page.getByLabel("Correction reason").fill("capability transition check"); await page.getByRole("button", { name: "Review correction" }).click();
+  await page.getByTestId(mode === "mismatch" ? "mismatch-correction" : "revoke-correction").evaluate((element) => element.click());
+  await page.getByText(mode === "mismatch" ? /access mismatch/ : /access revoked/).waitFor();
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  assert.equal(await page.getByTestId("dispatch-count").textContent(), "0");
+  assert.equal(await page.getByTestId("status").evaluate((element) => element === document.activeElement), true);
+  return { viewport, mode, dialogClosed: true, dispatchBlocked: true, stableFocus: true };
+}
+async function main() { const server=spawn(process.execPath,[vite,"--host","127.0.0.1","--port",String(port),"--strictPort"],{cwd:root,stdio:["ignore","pipe","pipe"]}); let browser; try { await ready(); browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})}); const page=await browser.newPage(); const errors=[]; page.on("pageerror",e=>errors.push(e.message)); const results=[]; for(const viewport of viewports) results.push(await exercise(page,viewport)); const capabilityLossResults=[]; for(const viewport of viewports) { capabilityLossResults.push(await capabilityLoss(page,viewport,"revoked")); capabilityLossResults.push(await capabilityLoss(page,viewport,"mismatch")); } assert.deepEqual(errors,[]); process.stdout.write(`${JSON.stringify({results,capabilityLossResults,errors})}\n`); } finally { if(browser) await browser.close(); server.kill(); } }
 main().catch(e=>{console.error(e);process.exitCode=1;});

@@ -4691,7 +4691,10 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
         error={formError}
         onCancel={cancelCorrection}
         onConfirm={() => void confirmCorrection()}
-        onFocusReturn={() => correctionTriggerRef.current?.focus()}
+        onFocusReturn={() => {
+          if (accessState.canRequestCorrection) correctionTriggerRef.current?.focus();
+          else correctionStatusRef.current?.focus();
+        }}
         onReasonChange={(nextReason) => { setReason(nextReason); setFormError(null); }}
         onReview={requestCorrectionReview}
         pending={pending}

@@ -154,9 +154,10 @@ RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
 RM-05-P3 = IMPLEMENTATION COMPLETE
 RM-05-P4 = IMPLEMENTATION COMPLETE
-RM-05-P5 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P5 = REGRESSION CLOSURE COMPLETE
+RM-05-I = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
-Next safe step: RM-05-P5 - Responsive and Full Regression Closure
+Next safe step: RM-05-I - Integration Gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -293,7 +294,7 @@ There is no parallel top-level path.
 - Objective: deliver fast, safe, production-grade score operation.
 - Visual target: `UI Score Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P4 are `IMPLEMENTATION COMPLETE`, and RM-05-P5 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; responsive and full regression closure remains pending in its authorized linear slice.
+- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P4 are `IMPLEMENTATION COMPLETE`, RM-05-P5 is `REGRESSION CLOSURE COMPLETE`, and RM-05-I is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; integration remains pending in its separately authorized gate.
 - Domain dependencies: score events, optional player attribution, correction workflow.
 - API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and operator/public projections.
@@ -713,7 +714,8 @@ RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
 RM-05-P3 = IMPLEMENTATION COMPLETE
 RM-05-P4 = IMPLEMENTATION COMPLETE
-RM-05-P5 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P5 = REGRESSION CLOSURE COMPLETE
+RM-05-I = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
 ```
 
@@ -1604,6 +1606,37 @@ RM-05-P4 effective-access and resilient-state closure evidence:
 - Roadmap transition: RM-05 remains `CURRENT`; RM-05-P4 is `IMPLEMENTATION COMPLETE`; RM-05-P5 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
 - Next safe step: `RM-05-P5 - Responsive and Full Regression Closure`. Do not begin it automatically.
+
+RM-05-P5 responsive and full-regression closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; closure commit: this commit
+  (`test(score): close rm05 responsive regression`).
+- Aggregate scope: RM-05 remains limited to the Score workspace, FIFO rapid-intent queue, existing append-only
+  SCORE_UNDO correction flow, EffectiveMatchAccess integration, focused API/DB/frontend tests, browser harness, and
+  Roadmap evidence. No API, socket, event-model, migration/schema, capability, event type, secret, or production
+  configuration change was introduced.
+- Browser/GridGeist: read-only, score-only, correction-only, both-capability, loading, error, mismatch, rapid FIFO,
+  SYNC_REQUIRED pause/resume/discard, forced-colors, reduced-motion, and capability-loss states passed at 1920x1080,
+  1600x900, 1366x768, 1280x720, and 1024x576. Equivalent 125%, 150%, and 200% zoom passed without horizontal
+  overflow or inaccessible scores/actions. Shared degraded/reconnecting presentation also passed its full matrix.
+- P5 correction: authoritative correction-capability loss exposed a detached-focus race between route status focus
+  and native dialog focus return. The minimum route callback correction now returns focus to the stable correction
+  status when capability is unavailable; normal cancel/confirm still returns focus to the initiating control.
+- Queue/correction safety: maximum active score requests remains one; deliberate intents remain FIFO with distinct
+  identities; transport retry retains identity; SYNC_REQUIRED and access loss do not auto-replay or auto-drain;
+  queued intents remain reviewable. SCORE_UNDO retains exact-target confirmation, reason validation, authoritative
+  target revalidation, double-submit/duplicate-target protection, and append-only SCORE_CORRECTED compensation.
+- Verification: focused P1-P4 tests 25/25, `npm run lint`, `npm run test:db` 25/25 with zero failures/skips,
+  `npm test` 671/671 across 70 files, `npm run db:check`, `npm run migrate:status`, `npm run build`,
+  `npm run build:single`, all browser matrices, event-store/public-boundary guards, and `git diff --check` passed.
+  All 13 migrations are applied with zero pending/checksum mismatches; the existing Vite chunk-size warning remains
+  non-blocking. DB integration timeout remains 15000ms; default non-DB timeout 5000ms, retries, and parallelism are
+  unchanged.
+- Dirty-tree isolation: pre-existing `AGENTS.md` and `docs/AI_HANDOFF.md` remained untouched and excluded from the
+  closure commit.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P5 is `REGRESSION CLOSURE COMPLETE`; RM-05-I is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-I - Integration Gate`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
