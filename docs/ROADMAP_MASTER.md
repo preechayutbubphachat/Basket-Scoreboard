@@ -146,9 +146,10 @@ RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
 RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
-RM-04-P5 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P5 = REGRESSION CLOSURE COMPLETE
+RM-04-I = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
-Next safe step: RM-04-P5 - Responsive and Full Regression Closure
+Next safe step: RM-04-I - Integration Gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -268,7 +269,7 @@ There is no parallel top-level path.
 - Objective: deliver the production-grade clock and shot-clock operator dashboard.
 - Visual target: `Clock and Shot Clock Dashboard.png`.
 - Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 through RM-04-P4 are `IMPLEMENTATION COMPLETE`, and RM-04-P5 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 through RM-04-P4 are `IMPLEMENTATION COMPLETE`, RM-04-P5 is `REGRESSION CLOSURE COMPLETE`, and RM-04-I is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
 - Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
 - API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and clock projections.
@@ -697,7 +698,8 @@ RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
 RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
-RM-04-P5 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P5 = REGRESSION CLOSURE COMPLETE
+RM-04-I = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
 ```
 
@@ -1346,6 +1348,34 @@ RM-04-P4 effective access, resilient state, and accessibility closure evidence:
 - Roadmap transition: RM-04 remains `CURRENT`; RM-04-P4 is `IMPLEMENTATION COMPLETE`; RM-04-P5 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
 - Next safe step: `RM-04-P5 - Responsive and Full Regression Closure`. Do not begin it automatically.
+
+RM-04-P5 responsive and full regression closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; closure commit: this commit
+  (`test(clock): close rm04 responsive regression`).
+- Scope audit: the aggregate RM-04 branch contains the authorized Clock presentation, guarded Game/Shot correction
+  contracts, EffectiveMatchAccess frontend integration, focused tests, browser/test tooling, and roadmap evidence.
+  There is no backend runtime, schema/migration, socket, event model, capability, or basketball-rule expansion.
+- Command/security closure: Game Start/Stop/Set and explicit Shot Reset 14/24/Set remain the complete supported
+  surface. Both Set commands require a trimmed reason of at most 500 characters; resets remain non-correction
+  commands. Shot Start/Stop and automatic/contextual reset remain absent. EffectiveMatchAccess stays the Clock
+  frontend authority and canonical server RBAC remains final.
+- Responsive/GridGeist: read-only, game-only, shot-only, dual, access-loading, access-error/mismatch, reconnecting,
+  degraded, pending, rejected, and sync-required states passed at 1920x1080, 1600x900, 1366x768, 1280x720, and
+  1024x576 without horizontal overflow or critical clipping. Game correction passed at 1920, 1366, and 1024;
+  Shot correction passed all five viewports. Equivalent 125%, 150%, and 200% zoom retained both timers and all
+  authorized controls. Keyboard focus return, forced colors, reduced motion, non-color status cues, and quiet timer
+  outputs passed without console, page, or request errors.
+- Data/realtime integrity: socket messages remain notification-only; route-owned resync refreshes projection and
+  effective access; no duplicate fetch, polling, reconnect, interpolation, dispatch, or expected-sequence owner was
+  introduced. Source and DB tests preserve append-only events, stale-state no-replay, idempotency, and concurrency.
+- Validation: lint passed; DB tests passed 24/24 with zero failures/skips; the full suite passed 649/649 with zero
+  failures/skips; `db:check`, `migrate:status` (13 applied, zero pending or checksum mismatch), production build,
+  single-app build, and diff checks passed. DB integration timeout remains 15000ms, global non-DB timeout remains
+  5000ms, retries remain zero, and parallelism is unchanged. The existing Vite chunk-size warning is unchanged.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P5 is `REGRESSION CLOSURE COMPLETE`; RM-04-I is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-I - Integration Gate`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 

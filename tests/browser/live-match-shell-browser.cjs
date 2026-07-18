@@ -142,6 +142,51 @@ async function verifyShotCorrectionFlow(page, viewport) {
   return { viewport, reset14: true, reset24: true, validation: true, cancel: true, focusReturn: true, confirmedOnce: true, overflow };
 }
 
+async function verifyGameCorrectionFlow(page, viewport) {
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}${fixturePath}?state=ready&rail=0&workspace=clock&access=both`, { waitUntil: "networkidle" });
+  const trigger = page.getByRole("button", { name: "Set / Adjust Game Clock" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Set / Adjust Game Clock" });
+  await dialog.getByLabel("Minutes").fill("2");
+  await dialog.getByLabel("Seconds").fill("30");
+  await dialog.getByLabel("Correction reason").fill("fixture game correction");
+  await dialog.getByRole("button", { name: "Review correction" }).click();
+  const confirm = page.getByRole("dialog", { name: "Confirm Game Clock Correction" });
+  const confirmationText = await confirm.textContent();
+  assert(confirmationText.includes("2:30"), `${viewport.width} game target missing`);
+  assert(confirmationText.includes("fixture game correction"), `${viewport.width} game reason missing`);
+  await confirm.getByRole("button", { name: "Cancel correction" }).scrollIntoViewIfNeeded();
+  assert(await confirm.getByRole("button", { name: "Cancel correction" }).isVisible(), `${viewport.width} game cancel unreachable`);
+  assert(await confirm.getByRole("button", { name: "Confirm clock correction" }).isVisible(), `${viewport.width} game confirmation unreachable`);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("dialog[open]").count(), 0);
+  assert.equal(await trigger.evaluate((element) => document.activeElement === element), true, `${viewport.width} game focus did not return`);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth);
+  assert.equal(overflow, true, `${viewport.width} game correction flow overflowed horizontally`);
+  return { viewport, target: true, reason: true, cancel: true, confirmation: true, focusReturn: true, overflow };
+}
+
+async function verifyZoomEquivalent(page, percent) {
+  const scale = percent / 100;
+  const viewport = { width: Math.floor(1280 / scale), height: Math.floor(720 / scale) };
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}${fixturePath}?state=ready&rail=0&workspace=clock&access=both`, { waitUntil: "networkidle" });
+  const result = await page.evaluate(() => {
+    const controls = [...document.querySelectorAll(".clock-workspace button")];
+    const timers = [...document.querySelectorAll(".clock-workspace__timer")];
+    return {
+      controlsReachable: controls.length === 6 && controls.every((control) => control.getBoundingClientRect().width > 0),
+      noHorizontalOverflow: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      timersReachable: timers.length === 2 && timers.every((timer) => timer.getBoundingClientRect().width > 0 && timer.getBoundingClientRect().height > 0)
+    };
+  });
+  assert.equal(result.noHorizontalOverflow, true, `${percent}% zoom equivalent overflowed horizontally`);
+  assert.equal(result.timersReachable, true, `${percent}% zoom equivalent timers unreachable`);
+  assert.equal(result.controlsReachable, true, `${percent}% zoom equivalent controls unreachable`);
+  return { percent, viewport, ...result };
+}
+
 async function verifyClockAccessMatrix(page, viewport) {
   const expected = {
     readonly: [], game: ["Start Game Clock", "Stop Game Clock", "Set / Adjust Game Clock"],
@@ -246,8 +291,12 @@ async function main() {
 
     const shotCorrectionFlows = [];
     for (const viewport of viewports) shotCorrectionFlows.push(await verifyShotCorrectionFlow(page, viewport));
+    const gameCorrectionFlows = [];
+    for (const viewport of [viewports[0], viewports[2], viewports[4]]) gameCorrectionFlows.push(await verifyGameCorrectionFlow(page, viewport));
     const clockAccessMatrix = [];
     for (const viewport of viewports) clockAccessMatrix.push(...await verifyClockAccessMatrix(page, viewport));
+    const zoomEvidence = [];
+    for (const percent of [125, 150, 200]) zoomEvidence.push(await verifyZoomEquivalent(page, percent));
 
     await page.emulateMedia({ forcedColors: "active" });
     await page.goto(`${baseUrl}${fixturePath}?state=degraded&rail=1`, { waitUntil: "networkidle" });
@@ -270,7 +319,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `Page errors: ${pageErrors.join(" | ")}`);
     assert.equal(failedRequests.length, 0, `Failed resources: ${failedRequests.join(" | ")}`);
 
-    const result = { clockAccessMatrix, consoleMessages, failedRequests, forcedColors, matrix, pageErrors, reducedMotion, shotCorrectionFlows };
+    const result = { clockAccessMatrix, consoleMessages, failedRequests, forcedColors, gameCorrectionFlows, matrix, pageErrors, reducedMotion, shotCorrectionFlows, zoomEvidence };
     writeFileSync(resolve(outputDirectory, "rm03-p1-live-match-shell-browser.json"), JSON.stringify(result, null, 2));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {
