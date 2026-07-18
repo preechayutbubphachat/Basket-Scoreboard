@@ -40,6 +40,7 @@ import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem } from "./components/AuthenticatedDashboardShell";
 import { ClockWorkspace } from "./components/ClockWorkspace";
 import { LiveMatchShell } from "./components/LiveMatchShell";
+import { ScoreWorkspace } from "./components/ScoreWorkspace";
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
@@ -99,7 +100,6 @@ import {
   finishedMatchLiveControlWarning,
   getAcceptedScoreProjection,
   getScoreControlFeedback,
-  getScoreControlPendingLabel,
   isFinishedMatchStatus,
   type ScoreControlPoint,
   type ScoreControlTeamSide
@@ -3278,6 +3278,15 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   });
   const connection = buildOperatorScoreConnection(realtimeState, isReadOnly);
   const commandStatus = buildOperatorScoreCommandStatus(pendingKey, message);
+  const correctionNavigationItem = liveMatchNavigation.find((item) => item.id === "corrections") ?? null;
+  const scoreWorkspacePanels = projection
+    ? buildScoreControlPanels(projection).map((panel) => ({
+        ...panel,
+        fouls: projection.teamFouls?.[panel.teamSide === "HOME" ? "home" : "away"] ?? 0,
+        playerOptions: buildScorePlayerOptions(rosters, panel.teamSide),
+        selectedPlayerId: selectedPlayers[panel.teamSide]
+      }))
+    : [];
   const displayName = currentUser?.displayName ?? currentUser?.email ?? currentUser?.userId ?? "Authenticated user";
 
   async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
@@ -3328,62 +3337,25 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
           ) : null}
           {projection ? (
             <section className="panel score-control">
-          {isFinishedMatchStatus(projection.status) ? (
-            <Notice tone="error" text={finishedMatchLiveControlWarning} />
-          ) : null}
-          <div className="score-display" aria-label="Current score">
-            {buildScoreControlPanels(projection).map((panel) => (
-              <div key={panel.teamSide}>
-                <span>{panel.label}</span>
-                <strong>{panel.score}</strong>
-                <small>{panel.teamName}</small>
-                <small>Fouls {projection.teamFouls?.[panel.teamSide === "HOME" ? "home" : "away"] ?? 0}</small>
-              </div>
-            ))}
-          </div>
-          <dl className="state-strip">
-            <div><dt>Status</dt><dd>{projection.status}</dd></div>
-            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
-            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
-          </dl>
-          <div className="score-actions">
-            {buildScoreControlPanels(projection).map((panel) => (
-              <div key={panel.teamSide}>
-                <h2>{panel.teamName}</h2>
-                <label>
-                  Player
-                  <select
-                    value={selectedPlayers[panel.teamSide]}
-                    onChange={(event) =>
-                      setSelectedPlayers({ ...selectedPlayers, [panel.teamSide]: event.target.value })
-                    }
-                  >
-                    <option value="">No player attribution</option>
-                    {buildScorePlayerOptions(rosters, panel.teamSide).map((player) => (
-                      <option key={player.playerId} value={player.playerId}>
-                        {player.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="button-row">
-                  {panel.buttons.map((button) => {
-                    return (
-                      <button
-                        key={button.pendingKey}
-                        type="button"
-                        className="score-button"
-                        disabled={!canUseLiveMatchControls(projection, canSubmitScore, Boolean(pendingKey))}
-                        onClick={() => void addScore(panel.teamSide, button.points)}
-                      >
-                        {getScoreControlPendingLabel(button.pendingKey, pendingKey)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+              {isFinishedMatchStatus(projection.status) ? (
+                <Notice tone="error" text={finishedMatchLiveControlWarning} />
+              ) : null}
+              <ScoreWorkspace
+                commandPending={Boolean(pendingKey)}
+                connectionLabel={getRealtimeConnectionLabel(realtimeState)}
+                controlsEnabled={canUseLiveMatchControls(projection, canSubmitScore, false)}
+                correctionEntry={correctionNavigationItem ? {
+                  href: correctionNavigationItem.href,
+                  onNavigate: () => navigate(correctionNavigationItem.href)
+                } : null}
+                currentSeq={projection.currentSeq}
+                matchStatus={projection.status}
+                onPlayerChange={(teamSide, playerId) => setSelectedPlayers({ ...selectedPlayers, [teamSide]: playerId })}
+                onScore={(teamSide, points) => void addScore(teamSide, points)}
+                panels={scoreWorkspacePanels}
+                pendingKey={pendingKey}
+                periodLabel={`${projection.periodType === "OVERTIME" ? "OT" : "P"}${projection.periodNumber}`}
+              />
             </section>
           ) : null}
         </section>

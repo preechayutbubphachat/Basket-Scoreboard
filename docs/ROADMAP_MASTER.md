@@ -150,9 +150,10 @@ RM-04-P5 = REGRESSION CLOSURE COMPLETE
 RM-04-I = INTEGRATED
 RM-05 = CURRENT
 RM-05-D1 = DISCOVERY COMPLETE
-RM-05-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P1 = IMPLEMENTATION COMPLETE
+RM-05-P2 = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
-Next safe step: RM-05-P1 - Score Workspace Hierarchy and Supported Command Surface
+Next safe step: RM-05-P2 - Rapid Scoring Controls and Duplicate-Entry Safety
 ```
 
 ## 6. Straight-Line Diagram
@@ -289,7 +290,7 @@ There is no parallel top-level path.
 - Objective: deliver fast, safe, production-grade score operation.
 - Visual target: `UI Score Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE` and RM-05-P1 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` exist; full visual and shared-shell parity is pending.
+- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 is `IMPLEMENTATION COMPLETE`, and RM-05-P2 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; rapid-entry safety, correction safety, effective-access migration, and full regression closure remain pending in their authorized linear slices.
 - Domain dependencies: score events, optional player attribution, correction workflow.
 - API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and operator/public projections.
@@ -705,7 +706,8 @@ RM-04-P5 = REGRESSION CLOSURE COMPLETE
 RM-04-I = INTEGRATED
 RM-05 = CURRENT
 RM-05-D1 = DISCOVERY COMPLETE
-RM-05-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P1 = IMPLEMENTATION COMPLETE
+RM-05-P2 = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
 ```
 
@@ -1485,6 +1487,38 @@ RM-05-D1 score dashboard authorization evidence:
   `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
 - Next safe step: `RM-05-P1 - Score Workspace Hierarchy and Supported Command Surface`. Do not begin it
   automatically.
+
+RM-05-P1 score workspace hierarchy closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): establish rm05 score workspace hierarchy`).
+- Presentation: the Score route now composes a dedicated two-team `ScoreWorkspace` with dominant HOME and AWAY
+  scores, semantic and spatial team separation, optional existing player attribution, and exactly six supported
+  HOME/AWAY +1/+2/+3 controls. No subtract, direct-total, unsupported score value, new shortcut, fake recent-event
+  context, or new scoring/correction semantic was introduced.
+- Ownership: `OperatorScorePage` retains projection, roster and effective-access hydration, realtime notification,
+  polling, reconnect/resync, pending state, score callbacks, command dispatch, and projection-derived `expectedSeq`.
+  The API client retains command/correlation IDs. `ScoreWorkspace` is presentation-only and owns no fetch, API,
+  socket, polling, retry, permission inference, or command construction.
+- Slice isolation: current legacy `canOperateScore` gating and global pending behavior are preserved without
+  expansion. EffectiveMatchAccess command authority remains RM-05-P4; rapid consecutive-entry and duplicate safety
+  remains RM-05-P2; confirmation/reason/correction changes remain RM-05-P3. Existing correction capability and
+  `SCORE_UNDO` behavior are unchanged; the entry is only visually separated when the existing navigation adapter
+  exposes it.
+- Browser/GridGeist: 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576 passed with both scores visible, all six
+  controls reachable, unambiguous team identity, separated correction entry, 44px-or-larger targets, visible 3px
+  focus, no horizontal overflow, and no console, page, or request errors. Equivalent 125%, 150%, and 200% zoom
+  passed with vertical scrolling allowed and all essential score/control surfaces reachable.
+- Verification: focused Score tests passed 9/9; canonical lint passed; the full suite passed 654/654, including all
+  24 discovered DB-backed tests; production build and single-app build passed; diff checks passed. A separate
+  duplicate `test:db` invocation was not required because this slice changes presentation only and the full suite
+  already executed every DB test. The existing Vite chunk-size warning is unchanged.
+- Scope guards: API contract, socket contract, event model, database/schema, event type, capability, correction
+  contract, production access, push, and deployment changes are zero. `match_events` remains append-only and no
+  destructive event-store operation was introduced.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P1 is `IMPLEMENTATION COMPLETE`; RM-05-P2 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P2 - Rapid Scoring Controls and Duplicate-Entry Safety`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
