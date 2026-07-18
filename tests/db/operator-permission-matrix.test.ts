@@ -118,7 +118,7 @@ const commands = {
   gameStop: { path: "clock/game/stop", payload: {} },
   gameSet: { path: "clock/game/set", payload: { remainingMs: 540000, reason: "permission matrix correction" } },
   shotReset: { path: "clock/shot/reset", payload: { resetToMs: 14000, reason: null } },
-  shotSet: { path: "clock/shot/set", payload: { remainingMs: 12000, reason: null } },
+  shotSet: { path: "clock/shot/set", payload: { remainingMs: 12000, reason: "permission matrix correction" } },
   timeout: { path: "timeout/grant", payload: { teamSide: "HOME", requestedBy: "HEAD_COACH", durationMs: 60000, reason: null } },
   lifecycle: { path: "lifecycle/start-match", payload: { reason: null } },
   correctionApply: { path: "corrections/apply-score", payload: { correctionRequestSeq: 1, targetSeq: 1, reason: "synthetic correction", removeOriginalScore: true, replacement: null } },

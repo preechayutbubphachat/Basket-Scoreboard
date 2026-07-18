@@ -144,9 +144,10 @@ RM-04 = CURRENT
 RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
-RM-04-P3 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P3 = IMPLEMENTATION COMPLETE
+RM-04-P4 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
-Next safe step: RM-04-P3 - Shot Clock Reset/Set and Manual Correction Safety
+Next safe step: RM-04-P4 - Effective Access, Error/Reconnect, and Accessibility States
 ```
 
 ## 6. Straight-Line Diagram
@@ -266,7 +267,7 @@ There is no parallel top-level path.
 - Objective: deliver the production-grade clock and shot-clock operator dashboard.
 - Visual target: `Clock and Shot Clock Dashboard.png`.
 - Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 and RM-04-P2 are `IMPLEMENTATION COMPLETE`, and RM-04-P3 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 through RM-04-P3 are `IMPLEMENTATION COMPLETE`, and RM-04-P4 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
 - Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
 - API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and clock projections.
@@ -693,7 +694,8 @@ RM-04 = CURRENT
 RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
-RM-04-P3 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P3 = IMPLEMENTATION COMPLETE
+RM-04-P4 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
 ```
 
@@ -1286,6 +1288,34 @@ RM-04-P2 game clock control and manual correction safety closure evidence:
 - Roadmap transition: RM-04 remains `CURRENT`; RM-04-P2 is `IMPLEMENTATION COMPLETE`; RM-04-P3 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
 - Next safe step: `RM-04-P3 - Shot Clock Reset/Set and Manual Correction Safety`. Do not begin it automatically.
+
+RM-04-P3 shot clock reset/set and manual correction safety closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): guard shot clock manual corrections`).
+- Contract: `SHOT_CLOCK_SET` alone now requires a trimmed non-empty reason of at most 500 characters while retaining
+  the canonical 0..24000ms bound. Explicit Reset 14/24 retain their existing 14000/24000 payloads, nullable reason,
+  no correction confirmation, and `match.clock.shot.operate` authorization. Game Clock contracts are unchanged.
+- Operator safety: Shot Set uses a route-owned two-stage correction flow with required validation, explicit target,
+  canonical reason and match-context confirmation. Cancel, Escape and invalid input dispatch nothing; pending and
+  confirmation lifecycle prevent duplicate submission; stale state refreshes without automatic replay. Reset 14/24
+  remain distinct touch-safe operator choices and make no contextual FIBA correctness claim.
+- Event/audit evidence: rejected Shot Set requests append no event and do not mutate projection. Accepted commands
+  append one `SHOT_CLOCK_SET`; event payload, event reason and audit reason share the same canonical trimmed value.
+  Duplicate command IDs append nothing, stale expected sequence returns `SYNC_REQUIRED`, and concurrent Shot Set
+  commands produce one accepted event. Reset remains append-only and unsupported reset values remain rejected.
+- Validation: focused frontend/API tests passed 143/143 and focused DB tests passed 14/14. Canonical lint, 24/24 DB
+  tests with zero skips, 646/646 full tests, production build, single-app build and diff checks passed. DB integration
+  timeout remains 15000ms; global non-DB timeout remains 5000ms; retries and parallelism are unchanged.
+- Browser/GridGeist: all five viewports (1920x1080, 1600x900, 1366x768, 1280x720 and 1024x576) passed Reset 14/24,
+  Shot Set validation/confirmation/cancel/focus-return and confirmed-once interaction checks with no horizontal
+  overflow, critical dialog clipping, console error, page error or failed request. Existing tokens and correction
+  geometry were reused; no CSS redesign was required.
+- Scope guards: no shot-clock start/stop, automatic/contextual reset, socket, schema/migration, new event type,
+  capability, EffectiveAccess P4 refactor, production access, push or deployment occurred.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P3 is `IMPLEMENTATION COMPLETE`; RM-04-P4 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P4 - Effective Access, Error/Reconnect, and Accessibility States`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 

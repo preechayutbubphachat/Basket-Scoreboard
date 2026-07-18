@@ -4269,9 +4269,9 @@ describe("clock control UI policy", () => {
         expectedSeq: 3,
         payload: { remainingMs: 450000, reason: "table correction" }
       });
-    expect(buildShotClockSetPayload(scoreboardProjection, { seconds: 12, reason: "" })).toEqual({
+    expect(buildShotClockSetPayload(scoreboardProjection, { seconds: 12, reason: " shot correction " })).toEqual({
       expectedSeq: 3,
-      payload: { remainingMs: 12000, reason: null }
+      payload: { remainingMs: 12000, reason: "shot correction" }
     });
     expect(buildShotClockResetPayload(scoreboardProjection, 14000, "")).toEqual({
       expectedSeq: 3,

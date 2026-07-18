@@ -1241,7 +1241,7 @@ export const shotClockResetPayloadSchema = z.object({
 
 export const shotClockSetPayloadSchema = z.object({
   remainingMs: z.number().int().min(0).max(24000),
-  reason: z.string().max(500).nullable()
+  reason: z.string().trim().min(1).max(500)
 });
 
 export const timeoutRequestedBySchema = z.enum([

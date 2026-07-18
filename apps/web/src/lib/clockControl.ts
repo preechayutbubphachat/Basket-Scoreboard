@@ -8,6 +8,7 @@ import {
 
 export type ClockCommandKind = "game-start" | "game-stop" | "game-set" | "shot-reset-24" | "shot-reset-14" | "shot-set";
 export const GAME_CLOCK_SET_REASON_MAX_LENGTH = 500;
+export const SHOT_CLOCK_SET_REASON_MAX_LENGTH = 500;
 type DisplayClock = {
   remainingMs: number;
   running: boolean;
@@ -128,13 +129,27 @@ export function buildShotClockSetPayload(
   projection: ScoreboardProjection,
   input: { seconds: number; reason: string }
 ) {
+  const validation = validateShotClockSetInput(input);
+  if (!validation.valid) throw new Error(validation.error);
   return {
     expectedSeq: projection.currentSeq,
     payload: {
-      remainingMs: Math.max(0, input.seconds * 1000),
-      reason: input.reason.trim() ? input.reason.trim() : null
+      remainingMs: validation.remainingMs,
+      reason: validation.reason
     }
   };
+}
+
+export function validateShotClockSetInput(input: { seconds: number; reason: string }) {
+  if (!Number.isInteger(input.seconds) || input.seconds < 0 || input.seconds > 24) {
+    return { valid: false as const, error: "Enter shot-clock seconds from 0 to 24." };
+  }
+  const reason = input.reason.trim();
+  if (!reason) return { valid: false as const, error: "Enter a correction reason before continuing." };
+  if (reason.length > SHOT_CLOCK_SET_REASON_MAX_LENGTH) {
+    return { valid: false as const, error: "Correction reason must be 500 characters or fewer." };
+  }
+  return { valid: true as const, remainingMs: input.seconds * 1000, reason };
 }
 
 export function buildShotClockResetPayload(

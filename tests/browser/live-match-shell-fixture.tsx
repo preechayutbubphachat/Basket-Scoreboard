@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AuthenticatedDashboardShell } from "../../apps/web/src/components/AuthenticatedDashboardShell";
 import { LiveMatchShell, type LiveMatchShellProps } from "../../apps/web/src/components/LiveMatchShell";
 import { ClockWorkspace } from "../../apps/web/src/components/ClockWorkspace";
-import { validateGameClockSetInput } from "../../apps/web/src/lib/clockControl";
+import { validateGameClockSetInput, validateShotClockSetInput } from "../../apps/web/src/lib/clockControl";
 import type { EffectiveMatchAccess } from "@basket-scoreboard/api-contracts";
 import {
   buildLiveMatchNavigation,
@@ -88,6 +88,12 @@ function ClockFixtureWorkspace() {
   const [reason, setReason] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [dispatchCount, setDispatchCount] = React.useState(0);
+  const [shotStage, setShotStage] = React.useState<"closed" | "edit" | "confirm">("closed");
+  const [shotError, setShotError] = React.useState<string | null>(null);
+  const [shotSeconds, setShotSeconds] = React.useState(14);
+  const [shotDispatchCount, setShotDispatchCount] = React.useState(0);
+  const [reset14Count, setReset14Count] = React.useState(0);
+  const [reset24Count, setReset24Count] = React.useState(0);
   const pending = commandState === "pending";
 
   function requestConfirmation() {
@@ -103,6 +109,8 @@ function ClockFixtureWorkspace() {
 
   return <>
     <output data-testid="game-set-dispatch-count" aria-live="polite">Game corrections dispatched: {dispatchCount}</output>
+    <output data-testid="shot-set-dispatch-count" aria-live="polite">Shot corrections dispatched: {shotDispatchCount}</output>
+    <output data-testid="shot-reset-dispatch-count" aria-live="polite">Reset 14: {reset14Count}; Reset 24: {reset24Count}</output>
     <ClockWorkspace
       controls={{
         gameEnabled: fixtureState !== "final",
@@ -115,7 +123,11 @@ function ClockFixtureWorkspace() {
         },
         onGameStart: () => {}, onGameStop: () => {},
         onReasonChange: (event) => setReason(event.currentTarget.value),
-        onShotReset14: () => {}, onShotReset24: () => {}, onShotSecondsChange: () => {}, onShotSet: () => {},
+        onShotReset14: () => setReset14Count((count) => count + 1), onShotReset24: () => setReset24Count((count) => count + 1), onShotSecondsChange: (event) => setShotSeconds(Number(event.currentTarget.value)), onShotSet: () => {
+          if (pending) return;
+          setShotDispatchCount((count) => count + 1);
+          setShotStage("closed");
+        },
         pending, shotEnabled: fixtureState !== "final"
       }}
       gameClock={{ label: "02:41", running: true }}
@@ -127,8 +139,19 @@ function ClockFixtureWorkspace() {
         stage
       }}
       shotClock={{ label: "14", running: false }}
+      shotSetFlow={{
+        error: shotError,
+        onCancel: () => { setShotError(null); setShotStage("closed"); },
+        onOpen: () => { setShotError(null); setShotStage("edit"); },
+        onRequestConfirmation: () => {
+          const result = validateShotClockSetInput({ seconds: shotSeconds, reason });
+          if (!result.valid) { setShotError(result.error); return; }
+          setReason(result.reason); setShotError(null); setShotStage("confirm");
+        },
+        stage: shotStage
+      }}
       status={{ connection: connectionByState[fixtureState]?.label ?? "Arena link connected", match: fixtureState === "final" ? "Final" : "Live", period: 4 }}
-      values={{ gameMinutes: minutes, gameSeconds: seconds, reason, shotSeconds: 14 }}
+      values={{ gameMinutes: minutes, gameSeconds: seconds, reason, shotSeconds }}
     />
   </>;
 }

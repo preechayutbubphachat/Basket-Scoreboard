@@ -119,7 +119,8 @@ import {
   buildShotClockResetPayload,
   buildShotClockSetPayload,
   getClockControlFeedback,
-  validateGameClockSetInput
+  validateGameClockSetInput,
+  validateShotClockSetInput
 } from "./lib/clockControl";
 import {
   buildTimeoutControlPanels,
@@ -3636,6 +3637,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const [reason, setReason] = useState("");
   const [gameSetStage, setGameSetStage] = useState<"closed" | "edit" | "confirm">("closed");
   const [gameSetError, setGameSetError] = useState<string | null>(null);
+  const [shotSetStage, setShotSetStage] = useState<"closed" | "edit" | "confirm">("closed");
+  const [shotSetError, setShotSetError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitGameClock = canOperateGameClock(currentUser, matchId);
   const canSubmitShotClock = canOperateShotClock(currentUser, matchId);
@@ -3757,6 +3760,34 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     setGameSetStage(accepted ? "closed" : "edit");
   }
 
+  function requestShotSetConfirmation() {
+    const validation = validateShotClockSetInput({ seconds: shotSeconds, reason });
+    if (!validation.valid) {
+      setShotSetError(validation.error);
+      return;
+    }
+    setReason(validation.reason);
+    setShotSetError(null);
+    setShotSetStage("confirm");
+  }
+
+  async function confirmShotClockSet() {
+    if (!projection || pendingKey) return;
+    const validation = validateShotClockSetInput({ seconds: shotSeconds, reason });
+    if (!validation.valid) {
+      setShotSetError(validation.error);
+      setShotSetStage("edit");
+      return;
+    }
+    const accepted = await runClockCommand("shot-set", canSubmitShotClock, () =>
+      api.setShotClock(matchId, buildShotClockSetPayload(projection, {
+        seconds: shotSeconds,
+        reason: validation.reason
+      }))
+    );
+    setShotSetStage(accepted ? "closed" : "edit");
+  }
+
   const clockState = projection ? buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }) : null;
 
   return (
@@ -3795,7 +3826,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             onShotReset14: () => void runClockCommand("shot-14", canSubmitShotClock, () => api.resetShotClock(matchId, buildShotClockResetPayload(projection, 14000, reason))),
             onShotReset24: () => void runClockCommand("shot-24", canSubmitShotClock, () => api.resetShotClock(matchId, buildShotClockResetPayload(projection, 24000, reason))),
             onShotSecondsChange: (event) => setShotSeconds(Number(event.target.value)),
-            onShotSet: () => void runClockCommand("shot-set", canSubmitShotClock, () => api.setShotClock(matchId, buildShotClockSetPayload(projection, { seconds: shotSeconds, reason }))),
+            onShotSet: () => void confirmShotClockSet(),
             pending: Boolean(pendingKey),
             shotEnabled: canSubmitShotClock
           }}
@@ -3814,6 +3845,19 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             stage: gameSetStage
           }}
           shotClock={{ label: clockState.shotClockLabel, running: clockState.shotClockRunning }}
+          shotSetFlow={{
+            error: shotSetError,
+            onCancel: () => {
+              setShotSetError(null);
+              setShotSetStage("closed");
+            },
+            onOpen: () => {
+              setShotSetError(null);
+              setShotSetStage("edit");
+            },
+            onRequestConfirmation: requestShotSetConfirmation,
+            stage: shotSetStage
+          }}
           status={{ connection: getRealtimeConnectionLabel(realtimeState), match: projection.status, period: projection.periodNumber }}
           values={{ gameMinutes, gameSeconds, reason, shotSeconds }}
         />

@@ -21,7 +21,7 @@ describe("RM-04 P2 game-clock set contract", () => {
 
   test("retains existing time bounds and independent clock contracts", () => {
     expect(gameClockSetPayloadSchema.safeParse({ remainingMs: 600001, reason: "valid" }).success).toBe(false);
-    expect(shotClockSetPayloadSchema.safeParse({ remainingMs: 14000, reason: null }).success).toBe(true);
+    expect(shotClockSetPayloadSchema.safeParse({ remainingMs: 14000, reason: "shot correction" }).success).toBe(true);
     expect(shotClockResetPayloadSchema.safeParse({ resetToMs: 24000, reason: null }).success).toBe(true);
 
     const envelope = {
@@ -34,5 +34,16 @@ describe("RM-04 P2 game-clock set contract", () => {
     };
     expect(gameClockStartCommandSchema.safeParse(envelope).success).toBe(true);
     expect(gameClockStopCommandSchema.safeParse(envelope).success).toBe(true);
+  });
+
+  test("requires and canonicalizes only the shot-set correction reason", () => {
+    for (const reason of [undefined, null, "", "   ", "x".repeat(501)]) {
+      expect(shotClockSetPayloadSchema.safeParse({ remainingMs: 14000, reason }).success).toBe(false);
+    }
+    expect(shotClockSetPayloadSchema.parse({ remainingMs: 0, reason: "  shot correction  " })).toEqual({ remainingMs: 0, reason: "shot correction" });
+    expect(shotClockSetPayloadSchema.safeParse({ remainingMs: 24000, reason: "x".repeat(500) }).success).toBe(true);
+    expect(shotClockSetPayloadSchema.safeParse({ remainingMs: 24001, reason: "valid" }).success).toBe(false);
+    expect(shotClockResetPayloadSchema.safeParse({ resetToMs: 14000, reason: null }).success).toBe(true);
+    expect(shotClockResetPayloadSchema.safeParse({ resetToMs: 12000, reason: null }).success).toBe(false);
   });
 });

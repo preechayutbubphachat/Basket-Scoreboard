@@ -105,6 +105,43 @@ async function measure(page, viewport, state, workspaceName) {
   }, { compact: viewport.width <= 1100, expectedState: state.shellState, hasRail: state.rail, workspace: workspaceName });
 }
 
+async function verifyShotCorrectionFlow(page, viewport) {
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}${fixturePath}?state=ready&rail=0&workspace=clock`, { waitUntil: "networkidle" });
+  const reset14 = page.getByRole("button", { name: "Reset Shot 14" });
+  const reset24 = page.getByRole("button", { name: "Reset Shot 24" });
+  const trigger = page.getByRole("button", { name: "Set / Adjust Shot Clock" });
+  await reset14.click();
+  await reset24.click();
+  assert((await page.getByTestId("shot-reset-dispatch-count").textContent()).includes("Reset 14: 1; Reset 24: 1"));
+  assert.equal(await page.locator("dialog[open]").count(), 0, `${viewport.width} reset opened correction dialog`);
+
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Set / Adjust Shot Clock" });
+  await dialog.getByLabel("Seconds").fill("14");
+  await dialog.getByLabel("Correction reason").fill("   ");
+  await dialog.getByRole("button", { name: "Review correction" }).click();
+  assert(await dialog.getByRole("alert").isVisible(), `${viewport.width} blank reason did not show non-color error`);
+  assert((await page.getByTestId("shot-set-dispatch-count").textContent()).includes("0"));
+  await dialog.getByLabel("Correction reason").fill("  fixture shot correction  ");
+  await dialog.getByRole("button", { name: "Review correction" }).click();
+  const confirm = page.getByRole("dialog", { name: "Confirm Shot Clock Correction" });
+  assert((await confirm.textContent()).includes("fixture shot correction"));
+  const rect = await confirm.boundingBox();
+  assert(rect && rect.y >= 0 && rect.y + rect.height <= viewport.height + 1, `${viewport.width} confirmation dialog clipped vertically`);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("dialog[open]").count(), 0);
+  assert.equal(await trigger.evaluate((element) => document.activeElement === element), true, `${viewport.width} focus did not return`);
+
+  await trigger.click();
+  await page.getByRole("dialog", { name: "Set / Adjust Shot Clock" }).getByRole("button", { name: "Review correction" }).click();
+  await page.getByRole("dialog", { name: "Confirm Shot Clock Correction" }).getByRole("button", { name: "Confirm shot clock correction" }).dblclick();
+  assert((await page.getByTestId("shot-set-dispatch-count").textContent()).includes("1"), `${viewport.width} confirmation did not dispatch exactly once`);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth);
+  assert.equal(overflow, true, `${viewport.width} shot correction flow overflowed horizontally`);
+  return { viewport, reset14: true, reset24: true, validation: true, cancel: true, focusReturn: true, confirmedOnce: true, overflow };
+}
+
 async function main() {
   mkdirSync(outputDirectory, { recursive: true });
   const server = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
@@ -147,7 +184,7 @@ async function main() {
         assert.equal(result.teamNamesBounded, true, `${viewport.width} ${state.name} team label overflow`);
         assert(result.workspaceButtonCount >= 2, `${viewport.width} ${workspace} ${state.name} controls missing`);
         if (workspace === "clock") {
-          assert.deepEqual(result.clockControls, ["Start Game Clock", "Stop Game Clock", "Reset Shot 24", "Reset Shot 14", "Set / Adjust Game Clock", "Set Shot Clock"]);
+          assert.deepEqual(result.clockControls, ["Start Game Clock", "Stop Game Clock", "Reset Shot 24", "Reset Shot 14", "Set / Adjust Game Clock", "Set / Adjust Shot Clock"]);
           assert.equal(result.clockTimersVisible, true, `${viewport.width} ${state.name} clock timer is not visible`);
         }
         if (state.command === "pending") assert(result.commandText.includes(`Saving ${workspace}`), `${viewport.width} ${workspace} pending status missing`);
@@ -179,6 +216,9 @@ async function main() {
       }
     }
 
+    const shotCorrectionFlows = [];
+    for (const viewport of viewports) shotCorrectionFlows.push(await verifyShotCorrectionFlow(page, viewport));
+
     await page.emulateMedia({ forcedColors: "active" });
     await page.goto(`${baseUrl}${fixturePath}?state=degraded&rail=1`, { waitUntil: "networkidle" });
     await page.locator(".live-match-shell__navigation a").first().focus();
@@ -200,7 +240,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `Page errors: ${pageErrors.join(" | ")}`);
     assert.equal(failedRequests.length, 0, `Failed resources: ${failedRequests.join(" | ")}`);
 
-    const result = { consoleMessages, failedRequests, forcedColors, matrix, pageErrors, reducedMotion };
+    const result = { consoleMessages, failedRequests, forcedColors, matrix, pageErrors, reducedMotion, shotCorrectionFlows };
     writeFileSync(resolve(outputDirectory, "rm03-p1-live-match-shell-browser.json"), JSON.stringify(result, null, 2));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {

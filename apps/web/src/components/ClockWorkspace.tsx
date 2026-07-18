@@ -36,6 +36,13 @@ export type ClockWorkspaceProps = {
     onRequestConfirmation: () => void;
     stage: "closed" | "edit" | "confirm";
   };
+  shotSetFlow: {
+    error: string | null;
+    onCancel: () => void;
+    onOpen: () => void;
+    onRequestConfirmation: () => void;
+    stage: "closed" | "edit" | "confirm";
+  };
   values: {
     gameMinutes: number;
     gameSeconds: number;
@@ -48,11 +55,13 @@ function ClockState({ running }: { running: boolean }) {
   return <span className={`clock-workspace__state clock-workspace__state--${running ? "running" : "stopped"}`}>{running ? "Running" : "Stopped"}</span>;
 }
 
-export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, status, values }: ClockWorkspaceProps) {
+export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, shotSetFlow, status, values }: ClockWorkspaceProps) {
   const gameDisabled = !controls.gameEnabled || controls.pending;
   const shotDisabled = !controls.shotEnabled || controls.pending;
   const dialogRef = useRef<HTMLDialogElement>(null);
   const gameSetTriggerRef = useRef<HTMLButtonElement>(null);
+  const shotDialogRef = useRef<HTMLDialogElement>(null);
+  const shotSetTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -65,6 +74,16 @@ export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, st
       gameSetTriggerRef.current?.focus();
     }
   }, [gameSetFlow.stage]);
+
+  useEffect(() => {
+    const dialog = shotDialogRef.current;
+    if (!dialog) return;
+    if (shotSetFlow.stage !== "closed" && !dialog.open) dialog.showModal();
+    else if (shotSetFlow.stage === "closed" && dialog.open) {
+      dialog.close();
+      shotSetTriggerRef.current?.focus();
+    }
+  }, [shotSetFlow.stage]);
 
   function cancelGameSet() {
     gameSetFlow.onCancel();
@@ -125,9 +144,8 @@ export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, st
           </fieldset>
           <fieldset>
             <legend>Shot Clock</legend>
-            <label>Seconds<input type="number" min="0" max="24" value={values.shotSeconds} onChange={controls.onShotSecondsChange} /></label>
-            <label>Reason (optional)<input value={values.reason} onChange={controls.onReasonChange} /></label>
-            <button type="button" disabled={shotDisabled} onClick={controls.onShotSet}>Set Shot Clock</button>
+            <p>Open the guarded correction flow to adjust authoritative shot time.</p>
+            <button ref={shotSetTriggerRef} type="button" disabled={shotDisabled} onClick={shotSetFlow.onOpen}>Set / Adjust Shot Clock</button>
           </fieldset>
         </div>
       </section>
@@ -182,6 +200,50 @@ export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, st
               <button type="button" className="clock-workspace__secondary-action" disabled={controls.pending} onClick={cancelGameSet}>Cancel correction</button>
               <button type="button" className="clock-workspace__confirm-action" disabled={controls.pending} onClick={controls.onGameSet}>
                 {controls.pending ? "Applying correction..." : "Confirm clock correction"}
+              </button>
+            </div>
+          </section>
+        ) : null}
+      </dialog>
+
+      <dialog
+        aria-labelledby="shot-clock-correction-title"
+        className="clock-workspace__dialog"
+        onCancel={(event) => { event.preventDefault(); shotSetFlow.onCancel(); }}
+        ref={shotDialogRef}
+      >
+        {shotSetFlow.stage === "edit" ? (
+          <form className="clock-workspace__dialog-form" onSubmit={(event) => { event.preventDefault(); shotSetFlow.onRequestConfirmation(); }}>
+            <header>
+              <span className="clock-workspace__eyebrow">Correction workflow</span>
+              <h2 id="shot-clock-correction-title">Set / Adjust Shot Clock</h2>
+              <p>Enter the authoritative target and document why shot time is being corrected.</p>
+            </header>
+            <label>Seconds<input autoFocus inputMode="numeric" type="number" min="0" max="24" value={values.shotSeconds} onChange={controls.onShotSecondsChange} /></label>
+            <label>Correction reason<textarea maxLength={500} required value={values.reason} onChange={controls.onReasonChange} /></label>
+            <p className="clock-workspace__field-help">Required. Maximum 500 characters.</p>
+            {shotSetFlow.error ? <p className="clock-workspace__form-error" role="alert">{shotSetFlow.error}</p> : null}
+            <div className="clock-workspace__dialog-actions">
+              <button type="button" className="clock-workspace__secondary-action" onClick={shotSetFlow.onCancel}>Cancel</button>
+              <button type="submit">Review correction</button>
+            </div>
+          </form>
+        ) : shotSetFlow.stage === "confirm" ? (
+          <section className="clock-workspace__dialog-form">
+            <header>
+              <span className="clock-workspace__eyebrow">Explicit confirmation</span>
+              <h2 id="shot-clock-correction-title">Confirm Shot Clock Correction</h2>
+              <p>Verify this match context before changing authoritative shot time.</p>
+            </header>
+            <dl className="clock-workspace__confirmation-summary">
+              <div><dt>Target clock</dt><dd>{values.shotSeconds} seconds</dd></div>
+              <div><dt>Reason</dt><dd>{values.reason.trim()}</dd></div>
+              <div><dt>Match context</dt><dd>{status.match}, period {status.period}</dd></div>
+            </dl>
+            <div className="clock-workspace__dialog-actions">
+              <button type="button" className="clock-workspace__secondary-action" disabled={controls.pending} onClick={shotSetFlow.onCancel}>Cancel correction</button>
+              <button type="button" className="clock-workspace__confirm-action" disabled={controls.pending} onClick={controls.onShotSet}>
+                {controls.pending ? "Applying correction..." : "Confirm shot clock correction"}
               </button>
             </div>
           </section>
