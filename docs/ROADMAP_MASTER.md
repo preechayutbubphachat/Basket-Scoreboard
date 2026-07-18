@@ -1377,6 +1377,36 @@ RM-04-P5 responsive and full regression closure evidence:
   `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
 - Next safe step: `RM-04-I - Integration Gate`. Do not begin it automatically.
 
+RM-04-I integration-governance evidence:
+
+- Decision: `READY_FOR_RM04_FAST_FORWARD_INTEGRATION`; this Roadmap-only governance commit is the final audited
+  feature target for a local fast-forward of `feature/rm04-clock-dashboard` into `main`.
+- Baseline and ancestry: starting feature head `785d6b901903d8347bcbfa213ab2b84c4b8ac51d`; starting local `main`
+  `29688ac6f1a5da37da538e0347f720dca97b303e`; starting `origin/main`
+  `0b29e354c40fbac156fd2f658675ff5a5a19177f`. The tree was clean, local `main` is the merge base and an
+  ancestor of the feature branch, and the range is seven commits ahead with zero behind.
+- Commit and scope audit: all seven commits are authorized RM-04 browser/test tooling, DB-timeout correction, P1
+  Clock hierarchy, P2 Game correction safety, P3 Shot correction safety, P4 EffectiveAccess/resilient states, and
+  P5 regression closure work. The 24 changed files comprise frontend production source, one API-contract reason
+  validation file, tests/browser tooling, and Roadmap evidence. Unauthorized commits, migrations/schema changes,
+  backend runtime changes, generated artifacts, secret-bearing files, production configuration changes, socket
+  protocol changes, new event types, and new capabilities are zero.
+- Contract/security/integrity: Game Start/Stop/guarded Set and explicit Shot Reset 14/24/guarded Set remain the
+  supported surface; Shot Start/Stop and contextual reset remain absent. EffectiveMatchAccess is the Clock frontend
+  command authority and server RBAC remains final. Route-level ownership, private effective access, public allowlist,
+  append-only `match_events`, projection-derived expected sequence, idempotency, and no-replay resync remain intact.
+- Verification decision: immutable P5 evidence at the exact starting feature head is reused. It records five
+  viewports, 125/150/200 percent zoom equivalents, accessibility and reconnect matrices, lint, 24/24 DB tests,
+  649/649 full tests, `db:check`, `migrate:status`, production build, single-app build, and diff checks passing with
+  zero mandatory failures or skips. This integration gate adds only governance evidence and no application behavior,
+  so duplicate expensive verification and browser runs are not required.
+- Integration method: local fast-forward only; no merge commit, squash, rebase, cherry-pick, reset, force operation,
+  fetch, push, deployment, production operation, or feature-branch cleanup is authorized in this task.
+- Status boundary: RM-04 remains `CURRENT` and RM-04-I remains incomplete until the local fast-forward is established.
+  Canonical `INTEGRATED` status also requires `origin/main` synchronization; because push is prohibited, this task
+  must stop after local integration with origin synchronization pending.
+- Next safe step: fast-forward local `main` to this governance commit, then re-anchor Guardian. Do not begin RM-05.
+
 RM-04-P1 clock workspace hierarchy closure evidence:
 
 - Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
