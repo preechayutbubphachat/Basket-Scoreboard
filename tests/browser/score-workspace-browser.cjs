@@ -89,6 +89,10 @@ async function verifyRapidQueue(page, viewport) {
   await page.setViewportSize(viewport);
   await page.goto(`${baseUrl}${fixturePath}`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();
+  const correctionLink = page.getByRole("link", { name: "Open Corrections" });
+  await page.waitForFunction(() => document.querySelector('[aria-label="Score correction entry"] a')?.getAttribute("aria-disabled") === "true");
+  await correctionLink.click({ force: true });
+  assert.equal(await page.getByTestId("correction-navigations").textContent(), "0");
   await page.getByRole("button", { name: "HOME add 2 points", exact: true }).click();
   await page.getByRole("button", { name: "AWAY add 3 points", exact: true }).click();
   await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();

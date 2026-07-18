@@ -179,6 +179,25 @@ function rejectCorrectionCommand(
   };
 }
 
+function alphaScoreUndoCommand(matchId: string, expectedSeq: number, correctedEventSeq: number) {
+  return {
+    commandId: randomUUID(),
+    matchId,
+    expectedSeq,
+    correlationId: randomUUID(),
+    clientTimestamp: new Date().toISOString(),
+    correctedEventSeq,
+    correctionKind: "SCORE_UNDO",
+    reason: "Verified scorer table correction",
+    payload: {
+      correctionKind: "SCORE_UNDO",
+      target: { seqNo: correctedEventSeq, eventType: "SCORE_ADDED" },
+      delta: { points: -2, teamSide: "HOME" },
+      newValue: null
+    }
+  };
+}
+
 describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("appends clock events, updates projection, deduplicates commands, and rejects stale expectedSeq", async () => {
     const { app, pool } = await buildMigratedApp();
@@ -1132,6 +1151,46 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         awayScore: beforeRejectState.json<{ awayScore: number }>().awayScore,
         currentSeq: 3
       });
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
+  it("allows at most one concurrent direct score compensation and rejects a cross-match target", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const createMatch = async () => (await app.inject({
+        method: "POST", url: "/api/v1/matches", headers: adminHeaders,
+        payload: { matchCode: `CORRECTION-${randomUUID()}`, ruleProfileId: "FIBA_2024" }
+      })).json<{ matchId: string }>();
+      const matchA = await createMatch();
+      const matchB = await createMatch();
+      const score = await app.inject({
+        method: "POST", url: `/api/v1/matches/${matchA.matchId}/commands/score/add`, headers: adminHeaders,
+        payload: scoreCommand(matchA.matchId, 0)
+      });
+      expect(score.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
+
+      const [left, right] = await Promise.all([
+        app.inject({ method: "POST", url: `/api/v1/matches/${matchA.matchId}/corrections`, headers: adminHeaders, payload: alphaScoreUndoCommand(matchA.matchId, 1, 1) }),
+        app.inject({ method: "POST", url: `/api/v1/matches/${matchA.matchId}/corrections`, headers: adminHeaders, payload: alphaScoreUndoCommand(matchA.matchId, 1, 1) })
+      ]);
+      expect([left.json().status, right.json().status]).toEqual(expect.arrayContaining(["ACCEPTED", "SYNC_REQUIRED"]));
+      const [rows] = await pool.query<RowDataPacket[]>(
+        "SELECT event_type, COUNT(*) AS event_count FROM match_events WHERE match_id = ? AND event_type = 'SCORE_CORRECTED' GROUP BY event_type",
+        [matchA.matchId]
+      );
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0]!.event_count)).toBe(1);
+
+      const crossMatch = await app.inject({
+        method: "POST", url: `/api/v1/matches/${matchB.matchId}/corrections`, headers: adminHeaders,
+        payload: alphaScoreUndoCommand(matchB.matchId, 0, 1)
+      });
+      expect(crossMatch.json()).toMatchObject({ status: "REJECTED", reasonCode: "MATCH_NOT_FOUND", currentSeq: 0 });
+      const [crossRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS event_count FROM match_events WHERE match_id = ?", [matchB.matchId]);
+      expect(Number(crossRows[0]!.event_count)).toBe(0);
     } finally {
       await app.close();
       await pool.end();

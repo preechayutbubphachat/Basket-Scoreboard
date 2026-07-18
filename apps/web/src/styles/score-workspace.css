@@ -137,6 +137,7 @@
   padding: var(--space-3) var(--space-4);
   text-decoration: none;
 }
+.score-workspace__correction-link--blocked { cursor: not-allowed; opacity: .62; }
 
 .score-workspace__score-actions button { font-family: var(--font-mono); font-size: clamp(1.45rem, 2.5vw, 2rem); }
 .score-workspace__domain--home .score-workspace__score-actions button { border-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-border)); }

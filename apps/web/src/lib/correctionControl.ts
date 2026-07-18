@@ -46,6 +46,63 @@ export function canSubmitCorrectionReason(reason: string) {
   return trimmed.length >= 5 && trimmed.length <= 500;
 }
 
+export type ScoreCorrectionReview = {
+  correctionKind: CorrectionEligibleEvent["correctionKind"];
+  effectLabel: string;
+  eventType: string;
+  expectedSeq: number;
+  matchContext: string;
+  playerLabel: string;
+  reason: string;
+  seqNo: number;
+  summary: string;
+  teamLabel: string;
+};
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function buildScoreCorrectionReview(
+  projection: ScoreboardProjection,
+  event: CorrectionEligibleEvent,
+  reason: string
+): ScoreCorrectionReview {
+  const teamSide = stringValue(event.currentValue.teamSide);
+  const points = numberValue(event.currentValue.points);
+  const currentScore = teamSide === "HOME" ? projection.homeScore : teamSide === "AWAY" ? projection.awayScore : null;
+  const teamName = teamSide === "HOME" ? projection.homeTeamName : teamSide === "AWAY" ? projection.awayTeamName : null;
+  const playerName = stringValue(event.currentValue.playerName);
+  const jerseyNumber = stringValue(event.currentValue.jerseyNumber);
+  const playerId = stringValue(event.currentValue.playerId);
+
+  return {
+    correctionKind: event.correctionKind,
+    effectLabel: currentScore !== null && points !== null
+      ? `${currentScore} to ${Math.max(0, currentScore - points)} (preview only)`
+      : "Authoritative effect will be derived by the server",
+    eventType: event.eventType,
+    expectedSeq: projection.currentSeq,
+    matchContext: `${projection.homeTeamName ?? "HOME"} ${projection.homeScore} - ${projection.awayScore} ${projection.awayTeamName ?? "AWAY"}, period ${projection.periodNumber}`,
+    playerLabel: playerName ? `${jerseyNumber ? `#${jerseyNumber} ` : ""}${playerName}` : playerId ?? "No player attribution",
+    reason: reason.trim(),
+    seqNo: event.seqNo,
+    summary: event.summary,
+    teamLabel: teamSide ? `${teamSide}${teamName ? ` - ${teamName}` : ""}` : "See target summary"
+  };
+}
+
+export function isSameCorrectionTarget(event: CorrectionEligibleEvent, review: ScoreCorrectionReview) {
+  return event.eligible
+    && event.seqNo === review.seqNo
+    && event.eventType === review.eventType
+    && event.correctionKind === review.correctionKind;
+}
+
 export function buildCorrectionCommandPayload(
   projection: ScoreboardProjection,
   event: CorrectionEligibleEvent,

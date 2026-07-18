@@ -20,6 +20,8 @@ export type ScoreWorkspaceProps = {
   connectionLabel: string;
   controlsEnabled: boolean;
   correctionEntry?: {
+    blocked?: boolean;
+    blockedDetail?: string;
     href: string;
     onNavigate: () => void;
   } | null;
@@ -158,14 +160,17 @@ export function ScoreWorkspace({
               <p>Corrections target a prior event. They are not negative scoring controls.</p>
             </div>
             <a
+              aria-disabled={correctionEntry.blocked || undefined}
+              className={correctionEntry.blocked ? "score-workspace__correction-link--blocked" : undefined}
               href={correctionEntry.href}
               onClick={(event) => {
                 event.preventDefault();
-                correctionEntry.onNavigate();
+                if (!correctionEntry.blocked) correctionEntry.onNavigate();
               }}
             >
               Open Corrections
             </a>
+            {correctionEntry.blocked ? <p role="status">{correctionEntry.blockedDetail ?? "Finish or discard queued score actions before opening corrections."}</p> : null}
           </aside>
         ) : null}
       </div>

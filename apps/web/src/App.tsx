@@ -41,11 +41,13 @@ import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem 
 import { ClockWorkspace } from "./components/ClockWorkspace";
 import { LiveMatchShell } from "./components/LiveMatchShell";
 import { ScoreWorkspace } from "./components/ScoreWorkspace";
+import { ScoreCorrectionWorkspace } from "./components/ScoreCorrectionWorkspace";
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
 import { UiCommandSafetyPanel, UiConnectionStatus } from "./components/ui";
 import "./styles/authenticated-dashboard.css";
+import "./styles/score-correction-workspace.css";
 import { ApiClientError, createClientCommandId, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
 import {
@@ -178,8 +180,11 @@ import {
   buildCorrectionCommandPayload,
   buildCorrectionEventMeta,
   buildCorrectionNavItems,
+  buildScoreCorrectionReview,
   canSubmitCorrectionReason,
-  getCorrectionControlFeedback
+  getCorrectionControlFeedback,
+  isSameCorrectionTarget,
+  type ScoreCorrectionReview
 } from "./lib/correctionControl";
 import {
   buildAdminTournamentScheduleLink,
@@ -3419,6 +3424,8 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                 connectionLabel={getRealtimeConnectionLabel(realtimeState)}
                 controlsEnabled={canUseLiveMatchControls(projection, canSubmitScore, false) && !scoreQueue.pauseReason}
                 correctionEntry={correctionNavigationItem ? {
+                  blocked: Boolean(scoreQueue.activeIntent || scoreQueue.queuedIntents.length > 0 || scoreQueue.pauseReason),
+                  blockedDetail: "Score actions are active or queued. Finish, resume, or discard them before opening corrections.",
                   href: correctionNavigationItem.href,
                   onNavigate: () => navigate(correctionNavigationItem.href)
                 } : null}
@@ -4406,13 +4413,18 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
   const [events, setEvents] = useState<CorrectionEligibleEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CorrectionEligibleEvent | null>(null);
   const [reason, setReason] = useState("");
+  const [stage, setStage] = useState<"closed" | "edit" | "confirm">("closed");
+  const [review, setReview] = useState<ScoreCorrectionReview | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const correctionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const correctionDispatchRef = useRef(false);
 
-  async function loadCorrections() {
+  async function loadCorrections(clearMessage = true) {
     setLoading(true);
-    setMessage(null);
+    if (clearMessage) setMessage(null);
     try {
       const [nextProjection, eligible] = await Promise.all([
         api.getMatchProjection(matchId),
@@ -4431,30 +4443,83 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
   }
 
   useEffect(() => {
+    setStage("closed");
+    setReview(null);
+    setReason("");
     void loadCorrections();
   }, [matchId]);
 
-  async function applyCorrection() {
-    if (!projection || !selectedEvent || !canSubmitCorrectionReason(reason)) {
+  function openCorrection(event: CorrectionEligibleEvent, trigger: HTMLButtonElement) {
+    correctionTriggerRef.current = trigger;
+    setSelectedEvent(event);
+    setReason("");
+    setReview(null);
+    setFormError(null);
+    setStage("edit");
+  }
+
+  function cancelCorrection() {
+    if (pending) return;
+    setStage("closed");
+    setReview(null);
+    setFormError(null);
+  }
+
+  function requestCorrectionReview() {
+    if (!projection || !selectedEvent) return;
+    if (!canSubmitCorrectionReason(reason)) {
+      setFormError("Enter a correction reason using 5–500 characters before continuing.");
       return;
     }
+    setFormError(null);
+    setReview(buildScoreCorrectionReview(projection, selectedEvent, reason));
+    setStage("confirm");
+  }
+
+  async function confirmCorrection() {
+    if (!review || correctionDispatchRef.current) return;
+    correctionDispatchRef.current = true;
 
     setPending(true);
     setMessage(null);
     try {
+      const [latestProjection, eligible] = await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getEligibleCorrectionEvents(matchId, { limit: 20 })
+      ]);
+      setProjection(latestProjection);
+      setEvents(eligible.events);
+      const authoritativeTarget = eligible.events.find((event) => event.seqNo === review.seqNo) ?? null;
+      if (latestProjection.currentSeq !== review.expectedSeq || !authoritativeTarget || !isSameCorrectionTarget(authoritativeTarget, review)) {
+        setStage("closed");
+        setReview(null);
+        setReason("");
+        setSelectedEvent(authoritativeTarget);
+        setMessage({ tone: "error", code: "INVALID_EXPECTED_SEQ", text: "Match or correction target changed. Select the event and review the correction again." });
+        return;
+      }
+
       const result = await api.applyAlphaCorrection(
         matchId,
-        buildCorrectionCommandPayload(projection, selectedEvent, reason)
+        buildCorrectionCommandPayload(latestProjection, authoritativeTarget, review.reason)
       );
-      setMessage(getCorrectionControlFeedback(result));
+      const feedback = getCorrectionControlFeedback(result);
       if ("ok" in result && result.projection) {
         setProjection(result.projection);
       }
+      setStage("closed");
+      setReview(null);
       setReason("");
-      await loadCorrections();
+      await loadCorrections(false);
+      setMessage(feedback);
     } catch (error) {
+      setStage("closed");
+      setReview(null);
+      setReason("");
+      await loadCorrections(false);
       setMessage(toUiMessage(error));
     } finally {
+      correctionDispatchRef.current = false;
       setPending(false);
     }
   }
@@ -4517,7 +4582,7 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
                   <td>
                     <button
                       type="button"
-                      onClick={() => setSelectedEvent(event)}
+                      onClick={(clickEvent) => openCorrection(event, clickEvent.currentTarget)}
                       disabled={!event.eligible}
                     >
                       {meta.actionLabel}
@@ -4530,24 +4595,19 @@ function OperatorCorrectionsPage({ matchId }: { matchId: string }) {
         </table>
       </div>
       {!loading && events.length === 0 ? <p className="muted">No eligible recent events.</p> : null}
-      {selectedEvent ? (
-        <div className="control-panel">
-          <h2>Selected Event</h2>
-          <p>{selectedEvent.summary}</p>
-          <label className="form-grid compact">
-            Reason
-            <textarea value={reason} onChange={(event) => setReason(event.target.value)} />
-          </label>
-          <button
-            type="button"
-            disabled={!canSubmitCorrectionReason(reason) || pending}
-            onClick={() => void applyCorrection()}
-          >
-            {pending ? "Saving..." : "Append Correction"}
-          </button>
-          <p className="muted">Original event remains in replay and audit log.</p>
-        </div>
-      ) : null}
+      <ScoreCorrectionWorkspace
+        error={formError}
+        onCancel={cancelCorrection}
+        onConfirm={() => void confirmCorrection()}
+        onFocusReturn={() => correctionTriggerRef.current?.focus()}
+        onReasonChange={(nextReason) => { setReason(nextReason); setFormError(null); }}
+        onReview={requestCorrectionReview}
+        pending={pending}
+        reason={reason}
+        review={review}
+        selectedSummary={selectedEvent?.summary ?? "No correction target selected"}
+        stage={stage}
+      />
     </section>
   );
 }

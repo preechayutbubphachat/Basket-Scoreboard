@@ -16,6 +16,7 @@ import "../../apps/web/src/styles.css";
 function Fixture() {
   const [selectedPlayers, setSelectedPlayers] = useState<Record<ScoreControlTeamSide, string>>({ HOME: "", AWAY: "" });
   const [dispatches, setDispatches] = useState<string[]>([]);
+  const [correctionNavigations, setCorrectionNavigations] = useState(0);
   const [projectionSeq, setProjectionSeq] = useState(1284);
   const [queue, dispatchQueue] = useReducer(scoreIntentQueueReducer, initialScoreIntentQueueState);
   const identityRef = useRef(0);
@@ -85,7 +86,11 @@ function Fixture() {
         commandPending={false}
         connectionLabel="Realtime connected"
         controlsEnabled={!queue.pauseReason}
-        correctionEntry={{ href: "#corrections", onNavigate: () => undefined }}
+        correctionEntry={{
+          blocked: Boolean(queue.activeIntent || queue.queuedIntents.length > 0 || queue.pauseReason),
+          href: "#corrections",
+          onNavigate: () => setCorrectionNavigations((count) => count + 1)
+        }}
         currentSeq={1284}
         matchStatus="LIVE"
         onPlayerChange={(teamSide, playerId) => setSelectedPlayers((current) => ({ ...current, [teamSide]: playerId }))}
@@ -101,6 +106,7 @@ function Fixture() {
         } : null}
       />
       <output data-testid="dispatches">{dispatches.join(",")}</output>
+      <output data-testid="correction-navigations">{correctionNavigations}</output>
       <output data-testid="max-network-active">{maxNetworkActive}</output>
       <output data-testid="projection-seq">{projectionSeq}</output>
       <output data-testid="queue-state">{queue.pauseReason ?? "RUNNING"}:{queue.queuedIntents.length}:{queue.activeIntent ? "ACTIVE" : "IDLE"}</output>

@@ -152,9 +152,10 @@ RM-05 = CURRENT
 RM-05-D1 = DISCOVERY COMPLETE
 RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
-RM-05-P3 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P3 = IMPLEMENTATION COMPLETE
+RM-05-P4 = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
-Next safe step: RM-05-P3 - Score Correction and Compensating-Event Safety
+Next safe step: RM-05-P4 - Effective Access, Reconnect, Error, and Accessibility States
 ```
 
 ## 6. Straight-Line Diagram
@@ -291,7 +292,7 @@ There is no parallel top-level path.
 - Objective: deliver fast, safe, production-grade score operation.
 - Visual target: `UI Score Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 and RM-05-P2 are `IMPLEMENTATION COMPLETE`, and RM-05-P3 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; correction safety, effective-access migration, and full regression closure remain pending in their authorized linear slices.
+- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P3 are `IMPLEMENTATION COMPLETE`, and RM-05-P4 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; effective-access migration and full regression closure remain pending in their authorized linear slices.
 - Domain dependencies: score events, optional player attribution, correction workflow.
 - API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and operator/public projections.
@@ -709,7 +710,8 @@ RM-05 = CURRENT
 RM-05-D1 = DISCOVERY COMPLETE
 RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
-RM-05-P3 = PENDING (AUTHORIZED TO BEGIN)
+RM-05-P3 = IMPLEMENTATION COMPLETE
+RM-05-P4 = PENDING (AUTHORIZED TO BEGIN)
 RM-06 through RM-18 = PENDING
 ```
 
@@ -1546,6 +1548,38 @@ RM-05-P2 rapid scoring and duplicate-entry safety closure evidence:
 - Roadmap transition: RM-05 remains `CURRENT`; RM-05-P2 is `IMPLEMENTATION COMPLETE`; RM-05-P3 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
 - Next safe step: `RM-05-P3 - Score Correction and Compensating-Event Safety`. Do not begin it automatically.
+
+RM-05-P3 score correction and compensating-event safety closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): guard score correction workflow`).
+- Proven UI contract: the Score workspace enters `/operator/matches/:matchId/corrections`, reads the existing eligible
+  target endpoint, and submits the existing direct Alpha correction endpoint with `correctedEventSeq`,
+  `correctionKind=SCORE_UNDO`, a trimmed 5-500 character reason, and projection-derived `expectedSeq`. The server
+  appends `SCORE_CORRECTED`; the separate request/apply/reject workflow remains unchanged.
+- Confirmation safety: correction now requires prepare, review, and explicit confirm stages. The modal identifies the
+  exact sequence/event, team, scoring action, optional player, reason, match context, and a non-authoritative old/new
+  preview. Native dialog cancellation, Escape, visible focus, focus return, and a synchronous double-submit guard are
+  covered.
+- Target and queue safety: the route re-fetches authoritative projection and eligible targets immediately before
+  dispatch and fails closed when sequence, eligibility, type, kind, or target changes. It never auto-replays a stale
+  correction. Score-to-correction navigation is blocked while the P2 queue is active, queued, or paused, preserving
+  queued intents without changing P2 semantics.
+- Event-store integrity: original `SCORE_ADDED` rows remain untouched; `SCORE_CORRECTED` is append-only, audited, and
+  replayable. Duplicate and concurrent same-target commands produce at most one effective compensation; stale,
+  invalid, unauthorized, and cross-match targets do not mutate projection/history.
+- Browser/GridGeist: prepare/cancel/review/confirm, Escape, double-confirm, duplicate-target, invalidated-target, focus
+  return, clipping, and overflow passed at 1920x1080, 1366x768, and 1024x576. The existing P2 five-viewport and
+  125%/150%/200% zoom, FIFO rapid scoring, single-dispatch, pause/resume/discard matrix also passed.
+- Verification: focused frontend/P2 22/22, focused correction/API/DB/audit/replay 21/21, `npm run lint`,
+  `npm run test:db` 25/25, `npm test` 668/668, `npm run build`, `npm run build:single`, and `git diff --check` passed.
+  The existing Vite chunk-size warning is unchanged.
+- Scope guards: API wire contract, socket contract, event model, database/schema, event type, capability, direct score
+  setter/subtract behavior, EffectiveAccess P4 behavior, production access, push, and deployment changes are zero.
+  `match_events` remains append-only and no destructive event-store operation was introduced.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P3 is `IMPLEMENTATION COMPLETE`; RM-05-P4 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P4 - Effective Access, Reconnect, Error, and Accessibility States`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 

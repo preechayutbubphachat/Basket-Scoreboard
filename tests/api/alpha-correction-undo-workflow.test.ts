@@ -193,21 +193,22 @@ describe("alpha correction undo workflow", () => {
     }
   });
 
-  it("requires a reason before appending a correction event", async () => {
+  it("rejects missing, null, empty and whitespace-only reasons before appending", async () => {
     process.env.AUTH_TEST_DISABLE_CSRF = "true";
     const fake = createCorrectionPool();
     const app = buildApiApp({ pool: fake.pool as never });
 
     try {
-      const response = await app.inject({
-        method: "POST",
-        url: `/api/v1/matches/${matchId}/corrections`,
-        headers: { "x-dev-user-role": "ADMIN" },
-        payload: correctionCommand({ reason: "   " })
-      });
-
-      expect(response.statusCode).toBe(400);
-      expect(response.json()).toMatchObject({ error: { reasonCode: "VALIDATION_ERROR" } });
+      for (const reason of [undefined, null, "", "   "]) {
+        const response = await app.inject({
+          method: "POST",
+          url: `/api/v1/matches/${matchId}/corrections`,
+          headers: { "x-dev-user-role": "ADMIN" },
+          payload: correctionCommand({ reason })
+        });
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({ error: { reasonCode: "VALIDATION_ERROR" } });
+      }
       expect(fake.appendedEvents).toHaveLength(0);
     } finally {
       await app.close();
