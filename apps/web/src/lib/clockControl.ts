@@ -1,4 +1,4 @@
-import type { CommandResult, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
+import type { CommandResult, EffectiveMatchAccess, ScoreboardProjection } from "@basket-scoreboard/api-contracts";
 import {
   buildOperatorMatchCorrectionsLink,
   buildOperatorMatchFoulsLink,
@@ -9,6 +9,39 @@ import {
 export type ClockCommandKind = "game-start" | "game-stop" | "game-set" | "shot-reset-24" | "shot-reset-14" | "shot-set";
 export const GAME_CLOCK_SET_REASON_MAX_LENGTH = 500;
 export const SHOT_CLOCK_SET_REASON_MAX_LENGTH = 500;
+export type ClockAccessLifecycle = "ACCESS_LOADING" | "ACCESS_READY" | "ACCESS_DENIED" | "ACCESS_ERROR" | "ACCESS_MATCH_MISMATCH";
+export type ClockEffectiveAccessState = {
+  lifecycle: ClockAccessLifecycle;
+  access: EffectiveMatchAccess | null;
+  canRead: boolean;
+  canOperateGameClock: boolean;
+  canOperateShotClock: boolean;
+};
+
+function isEffectiveMatchAccess(value: unknown): value is EffectiveMatchAccess {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<EffectiveMatchAccess>;
+  const capabilities = candidate.capabilities as Partial<EffectiveMatchAccess["capabilities"]> | undefined;
+  return typeof candidate.matchId === "string" && Boolean(capabilities) &&
+    typeof capabilities?.matchRead === "boolean" &&
+    typeof capabilities.gameClockOperate === "boolean" &&
+    typeof capabilities.shotClockOperate === "boolean";
+}
+
+export function resolveClockEffectiveAccess(matchId: string, phase: "loading" | "ready" | "error", value: unknown): ClockEffectiveAccessState {
+  const closed = (lifecycle: ClockAccessLifecycle): ClockEffectiveAccessState => ({ lifecycle, access: null, canRead: false, canOperateGameClock: false, canOperateShotClock: false });
+  if (phase === "loading") return closed("ACCESS_LOADING");
+  if (phase === "error" || !isEffectiveMatchAccess(value)) return closed("ACCESS_ERROR");
+  if (value.matchId !== matchId) return closed("ACCESS_MATCH_MISMATCH");
+  if (!value.capabilities.matchRead) return closed("ACCESS_DENIED");
+  return {
+    lifecycle: "ACCESS_READY",
+    access: value,
+    canRead: true,
+    canOperateGameClock: value.capabilities.gameClockOperate,
+    canOperateShotClock: value.capabilities.shotClockOperate
+  };
+}
 type DisplayClock = {
   remainingMs: number;
   running: boolean;

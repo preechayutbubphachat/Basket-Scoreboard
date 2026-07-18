@@ -3,18 +3,19 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { ClockWorkspace } from "../../apps/web/src/components/ClockWorkspace";
-import { buildGameClockSetPayload, buildShotClockSetPayload, validateGameClockSetInput, validateShotClockSetInput } from "../../apps/web/src/lib/clockControl";
+import { buildGameClockSetPayload, buildShotClockSetPayload, resolveClockEffectiveAccess, validateGameClockSetInput, validateShotClockSetInput } from "../../apps/web/src/lib/clockControl";
 
 const workspaceSource = readFileSync("apps/web/src/components/ClockWorkspace.tsx", "utf8");
 const workspaceStyles = readFileSync("apps/web/src/styles/clock-workspace.css", "utf8");
 const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
 
-function renderWorkspace(stage: "closed" | "edit" | "confirm" = "closed", shotStage: "closed" | "edit" | "confirm" = "closed") {
+function renderWorkspace(stage: "closed" | "edit" | "confirm" = "closed", shotStage: "closed" | "edit" | "confirm" = "closed", visibility = { game: true, shot: true }) {
   return renderToStaticMarkup(createElement(ClockWorkspace, {
     controls: {
       gameEnabled: true,
+      gameVisible: visibility.game,
       onGameMinutesChange: () => {}, onGameSecondsChange: () => {}, onGameSet: () => {}, onGameStart: () => {}, onGameStop: () => {}, onReasonChange: () => {}, onShotReset14: () => {}, onShotReset24: () => {}, onShotSecondsChange: () => {}, onShotSet: () => {},
-      pending: false, shotEnabled: true
+      pending: false, shotEnabled: true, shotVisible: visibility.shot
     },
     gameClock: { label: "02:41", running: true },
     gameSetFlow: { error: null, onCancel: () => {}, onOpen: () => {}, onRequestConfirmation: () => {}, stage },
@@ -91,5 +92,41 @@ describe("RM-04 P2 ClockWorkspace", () => {
     for (const ownerSignal of ["getMatchProjection", "getEffectiveMatchAccess", "usePublicProjectionRealtime", "window.setInterval", "useLiveClockNow", "runClockCommand", "projection.currentSeq", "<ClockWorkspace"]) {
       expect(route).toContain(ownerSignal);
     }
+  });
+
+  test("fails closed across access lifecycle and capability matrix", () => {
+    const access = (matchId: string, matchRead: boolean, game: boolean, shot: boolean) => ({ matchId, capabilities: { matchRead, gameClockOperate: game, shotClockOperate: shot } });
+    for (const state of [
+      resolveClockEffectiveAccess("match-1", "loading", null),
+      resolveClockEffectiveAccess("match-1", "error", null),
+      resolveClockEffectiveAccess("match-1", "ready", { malformed: true }),
+      resolveClockEffectiveAccess("match-1", "ready", access("match-2", true, true, true)),
+      resolveClockEffectiveAccess("match-1", "ready", access("match-1", false, true, true))
+    ]) expect(state).toMatchObject({ canRead: false, canOperateGameClock: false, canOperateShotClock: false });
+    expect(resolveClockEffectiveAccess("match-1", "ready", access("match-1", true, true, false))).toMatchObject({ canRead: true, canOperateGameClock: true, canOperateShotClock: false });
+    expect(resolveClockEffectiveAccess("match-1", "ready", access("match-1", true, false, true))).toMatchObject({ canRead: true, canOperateGameClock: false, canOperateShotClock: true });
+  });
+
+  test("renders only authorized command domains while retaining read-only clocks", () => {
+    const gameOnly = renderWorkspace("closed", "closed", { game: true, shot: false });
+    expect(gameOnly).toContain("Start Game Clock");
+    expect(gameOnly).not.toContain("Reset Shot 24");
+    const shotOnly = renderWorkspace("closed", "closed", { game: false, shot: true });
+    expect(shotOnly).not.toContain("Start Game Clock");
+    expect(shotOnly).toContain("Reset Shot 24");
+    const readOnly = renderWorkspace("closed", "closed", { game: false, shot: false });
+    expect(readOnly).toContain("Game Clock");
+    expect(readOnly).toContain("Shot Clock");
+    expect(readOnly).not.toContain("Set Clock Values");
+  });
+
+  test("Clock route does not grant commands from legacy user or assignment helpers", () => {
+    const clockStart = appSource.indexOf("function OperatorClockPage");
+    const nextRoute = appSource.indexOf("function OperatorTimeoutPage", clockStart);
+    const route = appSource.slice(clockStart, nextRoute);
+    expect(route).toContain("resolveClockEffectiveAccess");
+    expect(route).not.toMatch(/\bcurrentUser\b|canOperateGameClock\(|canOperateShotClock\(/);
+    expect(route).toContain("if (!projection || !permitted || pendingCommandRef.current) return false");
+    expect(route).toContain("pendingCommandRef.current = true");
   });
 });

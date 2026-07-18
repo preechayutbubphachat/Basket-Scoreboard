@@ -16,6 +16,7 @@ export type ClockWorkspaceProps = {
   };
   controls: {
     gameEnabled: boolean;
+    gameVisible: boolean;
     onGameMinutesChange: ChangeEventHandler<HTMLInputElement>;
     onGameSecondsChange: ChangeEventHandler<HTMLInputElement>;
     onGameSet: () => void;
@@ -28,6 +29,7 @@ export type ClockWorkspaceProps = {
     onShotSet: () => void;
     pending: boolean;
     shotEnabled: boolean;
+    shotVisible: boolean;
   };
   gameSetFlow: {
     error: string | null;
@@ -94,7 +96,7 @@ export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, sh
       <dl className="clock-workspace__status-rail" aria-label="Authoritative clock status">
         <div><dt>Match status</dt><dd>{status.match}</dd></div>
         <div><dt>Period</dt><dd>{status.period}</dd></div>
-        <div><dt>Synchronization</dt><dd>{status.connection}</dd></div>
+        <div><dt>Synchronization</dt><dd aria-atomic="true" aria-live="polite" role="status">{status.connection}</dd></div>
       </dl>
 
       <div className="clock-workspace__domains">
@@ -107,10 +109,10 @@ export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, sh
             <ClockState running={gameClock.running} />
           </header>
           <output className="clock-workspace__timer clock-workspace__timer--game" aria-label={`Game clock ${gameClock.label}, ${gameClock.running ? "running" : "stopped"}`}>{gameClock.label}</output>
-          <div className="clock-workspace__primary-actions" aria-label="Game clock controls">
+          {controls.gameVisible ? <div className="clock-workspace__primary-actions" aria-label="Game clock controls">
             <button type="button" disabled={gameDisabled} onClick={controls.onGameStart}>Start Game Clock</button>
             <button type="button" className="clock-workspace__secondary-action" disabled={gameDisabled} onClick={controls.onGameStop}>Stop Game Clock</button>
-          </div>
+          </div> : null}
         </section>
 
         <section className="clock-workspace__domain clock-workspace__domain--shot" aria-labelledby="shot-clock-heading">
@@ -122,33 +124,33 @@ export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, sh
             <ClockState running={shotClock.running} />
           </header>
           <output className="clock-workspace__timer clock-workspace__timer--shot" aria-label={`Shot clock ${shotClock.label}, ${shotClock.running ? "running" : "stopped"}`}>{shotClock.label}</output>
-          <div className="clock-workspace__reset-actions" aria-label="Shot clock reset controls">
+          {controls.shotVisible ? <div className="clock-workspace__reset-actions" aria-label="Shot clock reset controls">
             <button type="button" disabled={shotDisabled} onClick={controls.onShotReset24}>Reset Shot 24</button>
             <button type="button" disabled={shotDisabled} onClick={controls.onShotReset14}>Reset Shot 14</button>
-          </div>
-          <p className="clock-workspace__note">Select 14 or 24 explicitly. This interface does not determine a contextual reset.</p>
+          </div> : null}
+          {controls.shotVisible ? <p className="clock-workspace__note">Select 14 or 24 explicitly. This interface does not determine a contextual reset.</p> : null}
         </section>
       </div>
 
-      <section className="clock-workspace__adjustments" aria-labelledby="clock-adjustments-heading">
+      {controls.gameVisible || controls.shotVisible ? <section className="clock-workspace__adjustments" aria-labelledby="clock-adjustments-heading">
         <header>
           <span className="clock-workspace__eyebrow">Manual adjustment</span>
           <h2 id="clock-adjustments-heading">Set Clock Values</h2>
           <p>Game-clock corrections require a reason and explicit confirmation. Shot-clock behavior remains separate.</p>
         </header>
         <div className="clock-workspace__adjustment-grid">
-          <fieldset>
+          {controls.gameVisible ? <fieldset>
             <legend>Game Clock</legend>
             <p>Open the guarded correction flow to adjust authoritative match time.</p>
             <button ref={gameSetTriggerRef} type="button" disabled={gameDisabled} onClick={gameSetFlow.onOpen}>Set / Adjust Game Clock</button>
-          </fieldset>
-          <fieldset>
+          </fieldset> : null}
+          {controls.shotVisible ? <fieldset>
             <legend>Shot Clock</legend>
             <p>Open the guarded correction flow to adjust authoritative shot time.</p>
             <button ref={shotSetTriggerRef} type="button" disabled={shotDisabled} onClick={shotSetFlow.onOpen}>Set / Adjust Shot Clock</button>
-          </fieldset>
+          </fieldset> : null}
         </div>
-      </section>
+      </section> : null}
 
       <dialog
         aria-labelledby="game-clock-correction-title"

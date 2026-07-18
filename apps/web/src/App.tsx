@@ -77,8 +77,6 @@ import {
   canAccessOperatorMatches,
   canOperateScore,
   canOperateFoul,
-  canOperateGameClock,
-  canOperateShotClock,
   canOperateTimeout,
   canOperateLifecycle,
   createEmptyOperatorMatchesMessage,
@@ -119,6 +117,7 @@ import {
   buildShotClockResetPayload,
   buildShotClockSetPayload,
   getClockControlFeedback,
+  resolveClockEffectiveAccess,
   validateGameClockSetInput,
   validateShotClockSetInput
 } from "./lib/clockControl";
@@ -3625,9 +3624,10 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
 }
 
 function OperatorClockPage({ matchId }: { matchId: string }) {
-  const { api, currentUser } = useCurrentUser();
+  const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
+  const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
   const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -3640,32 +3640,33 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const [shotSetStage, setShotSetStage] = useState<"closed" | "edit" | "confirm">("closed");
   const [shotSetError, setShotSetError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitGameClock = canOperateGameClock(currentUser, matchId);
-  const canSubmitShotClock = canOperateShotClock(currentUser, matchId);
+  const accessState = resolveClockEffectiveAccess(matchId, accessPhase, effectiveAccess);
+  const canSubmitGameClock = accessState.canOperateGameClock;
+  const canSubmitShotClock = accessState.canOperateShotClock;
+  const accessStatusRef = useRef<HTMLElement>(null);
+  const previousAccessRef = useRef({ game: false, shot: false });
+  const pendingCommandRef = useRef(false);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
-  }, refreshProjectionSilently);
+  }, refreshAuthoritativeClockState);
 
   async function loadState() {
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
+    setAccessPhase("loading");
     try {
-      const [nextProjection, nextEffectiveAccess] = await Promise.all([
-        api.getMatchProjection(matchId),
-        api.getEffectiveMatchAccess(matchId).catch((error) => {
-          setMessage(toUiMessage(error));
-          return null;
-        })
-      ]);
+      const [nextProjection, nextEffectiveAccess] = await Promise.all([api.getMatchProjection(matchId), api.getEffectiveMatchAccess(matchId)]);
       setProjection(nextProjection);
-      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
+      setEffectiveAccess(nextEffectiveAccess);
+      setAccessPhase("ready");
       setProjectionReceivedAtMs(Date.now());
       setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
       setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
       setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
     } catch (error) {
+      setAccessPhase("error");
       setMessage(toUiMessage(error));
     } finally {
       setLoading(false);
@@ -3705,7 +3706,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   }
 
   async function runClockCommand(key: string, permitted: boolean, command: () => Promise<CommandResult>) {
-    if (!projection || !permitted) return false;
+    if (!projection || !permitted || pendingCommandRef.current) return false;
+    pendingCommandRef.current = true;
     setPendingKey(key);
     setMessage(null);
     const previousSeq = projection.currentSeq;
@@ -3727,9 +3729,33 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
       setMessage(toUiMessage(error));
       return false;
     } finally {
+      pendingCommandRef.current = false;
       setPendingKey(null);
     }
   }
+
+  async function refreshAuthoritativeClockState() {
+    try {
+      const [nextProjection, nextEffectiveAccess] = await Promise.all([api.getMatchProjection(matchId), api.getEffectiveMatchAccess(matchId)]);
+      setProjection(nextProjection);
+      setProjectionReceivedAtMs(Date.now());
+      setEffectiveAccess(nextEffectiveAccess);
+      setAccessPhase("ready");
+    } catch (error) {
+      setEffectiveAccess(null);
+      setAccessPhase("error");
+      setMessage(toUiMessage(error));
+    }
+  }
+
+  useEffect(() => {
+    const previous = previousAccessRef.current;
+    const capabilityLost = (previous.game && !canSubmitGameClock) || (previous.shot && !canSubmitShotClock);
+    if (previous.game && !canSubmitGameClock) setGameSetStage("closed");
+    if (previous.shot && !canSubmitShotClock) setShotSetStage("closed");
+    if (capabilityLost) accessStatusRef.current?.focus();
+    previousAccessRef.current = { game: canSubmitGameClock, shot: canSubmitShotClock };
+  }, [canSubmitGameClock, canSubmitShotClock]);
 
   function requestGameSetConfirmation() {
     const validation = validateGameClockSetInput({ minutes: gameMinutes, seconds: gameSeconds, reason });
@@ -3794,7 +3820,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     <OperatorLiveMatchFrame
       commandLabel="Saving clock"
       currentView="clock"
-      effectiveAccess={effectiveAccess}
+      effectiveAccess={accessState.access}
       matchId={matchId}
       message={message}
       pendingKey={pendingKey}
@@ -3804,19 +3830,25 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
       title="Clock Control"
     >
       <section className="stack" aria-label="Clock workspace">
-      <div className="panel">
-        {!canSubmitGameClock && !canSubmitShotClock ? <ErrorMessage code="FORBIDDEN" message="Clock operation permission is required." /> : null}
+      <div className="panel" aria-atomic="true" aria-live="polite">
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
       </div>
+      <section className="panel" ref={accessStatusRef} tabIndex={-1} aria-atomic="true" aria-live="polite" role="status">
+        {accessState.lifecycle === "ACCESS_LOADING" ? <p>Loading access…</p> : null}
+        {accessState.lifecycle === "ACCESS_DENIED" ? <p>Permission denied. Clock workspace is unavailable.</p> : null}
+        {accessState.lifecycle === "ACCESS_ERROR" || accessState.lifecycle === "ACCESS_MATCH_MISMATCH" ? <p>Access unavailable. Clock commands are disabled.</p> : null}
+        {accessState.lifecycle === "ACCESS_READY" ? <p>{canSubmitGameClock && canSubmitShotClock ? "Both clock-control domains available." : canSubmitGameClock ? "Game-clock control available." : canSubmitShotClock ? "Shot-clock control available." : "Read-only access. Clock controls are unavailable."}</p> : null}
+      </section>
       {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
       {!loading && !projection ? (
         <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
       ) : null}
-      {projection && clockState ? (
+      {projection && clockState && accessState.canRead ? (
         <ClockWorkspace
           controls={{
             gameEnabled: canSubmitGameClock,
+            gameVisible: canSubmitGameClock,
             onGameMinutesChange: (event) => setGameMinutes(Number(event.target.value)),
             onGameSecondsChange: (event) => setGameSeconds(Number(event.target.value)),
             onGameSet: () => void confirmGameClockSet(),
@@ -3828,7 +3860,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             onShotSecondsChange: (event) => setShotSeconds(Number(event.target.value)),
             onShotSet: () => void confirmShotClockSet(),
             pending: Boolean(pendingKey),
-            shotEnabled: canSubmitShotClock
+            shotEnabled: canSubmitShotClock,
+            shotVisible: canSubmitShotClock
           }}
           gameClock={{ label: clockState.gameClockLabel, running: clockState.gameClockRunning }}
           gameSetFlow={{

@@ -145,9 +145,10 @@ RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
 RM-04-P3 = IMPLEMENTATION COMPLETE
-RM-04-P4 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P4 = IMPLEMENTATION COMPLETE
+RM-04-P5 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
-Next safe step: RM-04-P4 - Effective Access, Error/Reconnect, and Accessibility States
+Next safe step: RM-04-P5 - Responsive and Full Regression Closure
 ```
 
 ## 6. Straight-Line Diagram
@@ -267,7 +268,7 @@ There is no parallel top-level path.
 - Objective: deliver the production-grade clock and shot-clock operator dashboard.
 - Visual target: `Clock and Shot Clock Dashboard.png`.
 - Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 through RM-04-P3 are `IMPLEMENTATION COMPLETE`, and RM-04-P4 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 through RM-04-P4 are `IMPLEMENTATION COMPLETE`, and RM-04-P5 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
 - Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
 - API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and clock projections.
@@ -695,7 +696,8 @@ RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
 RM-04-P3 = IMPLEMENTATION COMPLETE
-RM-04-P4 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P4 = IMPLEMENTATION COMPLETE
+RM-04-P5 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
 ```
 
@@ -1316,6 +1318,34 @@ RM-04-P3 shot clock reset/set and manual correction safety closure evidence:
 - Roadmap transition: RM-04 remains `CURRENT`; RM-04-P3 is `IMPLEMENTATION COMPLETE`; RM-04-P4 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
 - Next safe step: `RM-04-P4 - Effective Access, Error/Reconnect, and Accessibility States`. Do not begin it automatically.
+
+RM-04-P4 effective access, resilient state, and accessibility closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): enforce effective access and resilient states`).
+- Authority: `OperatorClockPage` now derives its entire Clock command surface from validated, match-bound
+  `EffectiveMatchAccess`. Loading, errors, malformed data, denied read access, and match mismatch fail closed;
+  legacy current-user and assignment helpers cannot grant Clock commands. Server RBAC remains final authority.
+- Capability presentation: match-read denial removes the operational workspace; read-only access preserves both
+  clocks without commands; game-only, shot-only, and dual access expose exactly their supported command domains.
+  Capability loss closes an open correction flow, moves focus to stable access status, and callbacks re-check the
+  current effective capability before dispatch.
+- Reconnect/accessibility: existing socket notifications retain route-owned authoritative resync and now refresh
+  projection plus effective access; polling remains route-owned and socket payloads remain non-authoritative.
+  Access, connection, and command transitions use concise non-color status text and polite atomic live regions,
+  while interpolated timers remain outside live regions.
+- Validation: focused Clock tests passed 9/9; canonical lint, 24/24 DB tests with zero skips, 649/649 full tests,
+  production build, single-app build, and diff checks passed. DB integration timeout remains 15000ms; global non-DB
+  timeout remains 5000ms; retries and parallelism are unchanged.
+- Browser/GridGeist: read-only, game-only, shot-only, dual, loading, error, denied, mismatch, reconnect/degraded,
+  pending, rejected and synchronization-required states passed at 1920x1080, 1600x900, 1366x768, 1280x720 and
+  1024x576 with no horizontal overflow. Keyboard dialog cancellation/focus return, non-color errors, forced colors,
+  reduced motion, touch target sizing, and the timer-announcement guard passed without console/page/request errors.
+- Scope guards: no API, socket, event model, schema/migration, capability, event type, production access, push, or
+  deployment change occurred; the event store remains append-only.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P4 is `IMPLEMENTATION COMPLETE`; RM-04-P5 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P5 - Responsive and Full Regression Closure`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 

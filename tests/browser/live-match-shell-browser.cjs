@@ -142,6 +142,34 @@ async function verifyShotCorrectionFlow(page, viewport) {
   return { viewport, reset14: true, reset24: true, validation: true, cancel: true, focusReturn: true, confirmedOnce: true, overflow };
 }
 
+async function verifyClockAccessMatrix(page, viewport) {
+  const expected = {
+    readonly: [], game: ["Start Game Clock", "Stop Game Clock", "Set / Adjust Game Clock"],
+    shot: ["Reset Shot 24", "Reset Shot 14", "Set / Adjust Shot Clock"],
+    both: ["Start Game Clock", "Stop Game Clock", "Reset Shot 24", "Reset Shot 14", "Set / Adjust Game Clock", "Set / Adjust Shot Clock"],
+    loading: [], error: [], denied: [], mismatch: []
+  };
+  const results = [];
+  for (const [access, controls] of Object.entries(expected)) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${baseUrl}${fixturePath}?state=ready&rail=0&workspace=clock&access=${access}`, { waitUntil: "networkidle" });
+    const result = await page.evaluate(() => ({
+      controls: [...document.querySelectorAll(".clock-workspace button")].map((button) => button.textContent?.trim()),
+      hasWorkspace: Boolean(document.querySelector(".clock-workspace")),
+      status: document.querySelector('[role="status"]')?.textContent ?? "",
+      noOverflow: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      timerLiveRegions: document.querySelectorAll('.clock-workspace__timer[aria-live]').length
+    }));
+    assert.deepEqual(result.controls, controls, `${viewport.width} ${access} controls mismatch`);
+    assert.equal(result.hasWorkspace, !["loading", "error", "denied", "mismatch"].includes(access));
+    assert.equal(result.noOverflow, true, `${viewport.width} ${access} overflowed`);
+    assert.equal(result.timerLiveRegions, 0, `${viewport.width} ${access} timer must remain quiet`);
+    assert(result.status.length > 0, `${viewport.width} ${access} status missing`);
+    results.push({ access, viewport, ...result });
+  }
+  return results;
+}
+
 async function main() {
   mkdirSync(outputDirectory, { recursive: true });
   const server = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
@@ -218,6 +246,8 @@ async function main() {
 
     const shotCorrectionFlows = [];
     for (const viewport of viewports) shotCorrectionFlows.push(await verifyShotCorrectionFlow(page, viewport));
+    const clockAccessMatrix = [];
+    for (const viewport of viewports) clockAccessMatrix.push(...await verifyClockAccessMatrix(page, viewport));
 
     await page.emulateMedia({ forcedColors: "active" });
     await page.goto(`${baseUrl}${fixturePath}?state=degraded&rail=1`, { waitUntil: "networkidle" });
@@ -240,7 +270,7 @@ async function main() {
     assert.equal(pageErrors.length, 0, `Page errors: ${pageErrors.join(" | ")}`);
     assert.equal(failedRequests.length, 0, `Failed resources: ${failedRequests.join(" | ")}`);
 
-    const result = { consoleMessages, failedRequests, forcedColors, matrix, pageErrors, reducedMotion, shotCorrectionFlows };
+    const result = { clockAccessMatrix, consoleMessages, failedRequests, forcedColors, matrix, pageErrors, reducedMotion, shotCorrectionFlows };
     writeFileSync(resolve(outputDirectory, "rm03-p1-live-match-shell-browser.json"), JSON.stringify(result, null, 2));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {

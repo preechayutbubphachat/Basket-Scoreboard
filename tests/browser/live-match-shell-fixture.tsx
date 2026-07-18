@@ -24,6 +24,7 @@ const navigationState = parameters.get("navigation") ?? "full";
 const omitMetadata = parameters.get("metadata") === "none";
 const commandState = parameters.get("command") ?? "idle";
 const workspace = parameters.get("workspace") ?? "score";
+const accessFixture = parameters.get("access") ?? "both";
 
 const connectionByState: Record<string, LiveMatchShellProps["connection"]> = {
   degraded: { label: "Arena link degraded", state: "reconnecting" },
@@ -95,6 +96,16 @@ function ClockFixtureWorkspace() {
   const [reset14Count, setReset14Count] = React.useState(0);
   const [reset24Count, setReset24Count] = React.useState(0);
   const pending = commandState === "pending";
+  const gameVisible = accessFixture === "both" || accessFixture === "game";
+  const shotVisible = accessFixture === "both" || accessFixture === "shot";
+  const canRead = !["loading", "error", "denied", "mismatch"].includes(accessFixture);
+  const accessMessage = accessFixture === "loading" ? "Loading access…"
+    : accessFixture === "error" || accessFixture === "mismatch" ? "Access unavailable. Clock commands are disabled."
+      : accessFixture === "denied" ? "Permission denied. Clock workspace is unavailable."
+        : accessFixture === "readonly" ? "Read-only access. Clock controls are unavailable."
+          : accessFixture === "game" ? "Game-clock control available."
+            : accessFixture === "shot" ? "Shot-clock control available."
+              : "Both clock-control domains available.";
 
   function requestConfirmation() {
     const result = validateGameClockSetInput({ minutes, seconds, reason });
@@ -108,12 +119,14 @@ function ClockFixtureWorkspace() {
   }
 
   return <>
+    <section className="panel" tabIndex={-1} aria-atomic="true" aria-live="polite" role="status">{accessMessage}</section>
     <output data-testid="game-set-dispatch-count" aria-live="polite">Game corrections dispatched: {dispatchCount}</output>
     <output data-testid="shot-set-dispatch-count" aria-live="polite">Shot corrections dispatched: {shotDispatchCount}</output>
     <output data-testid="shot-reset-dispatch-count" aria-live="polite">Reset 14: {reset14Count}; Reset 24: {reset24Count}</output>
-    <ClockWorkspace
+    {canRead ? <ClockWorkspace
       controls={{
-        gameEnabled: fixtureState !== "final",
+        gameEnabled: fixtureState !== "final" && gameVisible,
+        gameVisible,
         onGameMinutesChange: (event) => setMinutes(Number(event.currentTarget.value)),
         onGameSecondsChange: (event) => setSeconds(Number(event.currentTarget.value)),
         onGameSet: () => {
@@ -128,7 +141,7 @@ function ClockFixtureWorkspace() {
           setShotDispatchCount((count) => count + 1);
           setShotStage("closed");
         },
-        pending, shotEnabled: fixtureState !== "final"
+        pending, shotEnabled: fixtureState !== "final" && shotVisible, shotVisible
       }}
       gameClock={{ label: "02:41", running: true }}
       gameSetFlow={{
@@ -152,7 +165,7 @@ function ClockFixtureWorkspace() {
       }}
       status={{ connection: connectionByState[fixtureState]?.label ?? "Arena link connected", match: fixtureState === "final" ? "Final" : "Live", period: 4 }}
       values={{ gameMinutes: minutes, gameSeconds: seconds, reason, shotSeconds }}
-    />
+    /> : null}
   </>;
 }
 
