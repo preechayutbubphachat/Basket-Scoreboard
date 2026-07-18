@@ -10,6 +10,7 @@ import {
   getDefaultMigrationsDir,
   runMigrations
 } from "../../apps/api/src/migrations";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
@@ -232,7 +233,7 @@ function scoreCommand(matchId: string, expectedSeq: number) {
   };
 }
 
-describeDb("match official assignment workflow", () => {
+describeDb("match official assignment workflow", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("lets admin assign, list, expose /me assignments, authorize assigned scorer, audit and revoke", async () => {
     process.env.AUTH_COOKIE_SECURE = "false";
     const { app, pool } = await buildMigratedApp();

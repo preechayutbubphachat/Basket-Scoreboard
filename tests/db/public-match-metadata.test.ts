@@ -8,6 +8,10 @@ import { createDatabasePool } from "../../apps/api/src/db";
 import { MariaDbMigrationConnection, getDefaultMigrationsDir, runMigrations } from "../../apps/api/src/migrations";
 import { resolvePublicMatchMetadata } from "../../apps/api/src/publicScoreboard/publicMatchMetadata";
 import type { PublicMatchSnapshotPayload } from "../../packages/api-contracts/src";
+import {
+  DB_INTEGRATION_HOOK_TIMEOUT_MS,
+  DB_INTEGRATION_TEST_TIMEOUT_MS
+} from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 const forbiddenPublicKeys = new Set([
@@ -17,7 +21,7 @@ const forbiddenPublicKeys = new Set([
   "venue_name", "metadata"
 ]);
 
-describeDb.sequential("DB-backed public match metadata", () => {
+describeDb.sequential("DB-backed public match metadata", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   let pool: Pool;
 
   beforeAll(async () => {
@@ -32,11 +36,11 @@ describeDb.sequential("DB-backed public match metadata", () => {
       connection.release();
     }
     await waitForMigratedMatchesTable(pool);
-  });
+  }, DB_INTEGRATION_HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await pool?.end();
-  });
+  }, DB_INTEGRATION_HOOK_TIMEOUT_MS);
 
   it("resolves complete, partial and missing metadata without cross-match leakage", async () => {
     const roundLabel = uniqueMatchCode("Round 2");

@@ -11,6 +11,7 @@ import {
   getDefaultMigrationsDir,
   runMigrations
 } from "../../apps/api/src/migrations";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 import { insertAuditLog, listAuditLogsForMatch } from "../../apps/api/src/matchEventStore/auditRepository";
 import { correctionEventTypes } from "../../packages/event-model/src";
 
@@ -178,7 +179,7 @@ function rejectCorrectionCommand(
   };
 }
 
-describeDb("match event store MVP", () => {
+describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("appends clock events, updates projection, deduplicates commands, and rejects stale expectedSeq", async () => {
     const { app, pool } = await buildMigratedApp();
 

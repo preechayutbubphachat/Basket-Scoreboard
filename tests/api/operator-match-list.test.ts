@@ -11,6 +11,7 @@ import {
   getDefaultMigrationsDir,
   runMigrations
 } from "../../apps/api/src/migrations";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
@@ -196,7 +197,7 @@ describe("operator match list route auth", () => {
   });
 });
 
-describeDb("operator and admin match listing", () => {
+describeDb("operator and admin match listing", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("returns only active assigned matches to scorer and hides revoked or unassigned matches", async () => {
     process.env.AUTH_COOKIE_SECURE = "false";
     const { app, pool } = await buildMigratedApp();

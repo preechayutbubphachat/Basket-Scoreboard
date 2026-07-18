@@ -12,6 +12,7 @@ import {
   getDefaultMigrationsDir,
   runMigrations
 } from "../../apps/api/src/migrations";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
@@ -192,7 +193,7 @@ describe("production auth safety", () => {
   });
 });
 
-describeDb("production session authentication", () => {
+describeDb("production session authentication", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("logs in, returns /me roles and permissions, protects writes with CSRF, and logs out", async () => {
     const previousNodeEnv = process.env.NODE_ENV;
     const previousCookieSecure = process.env.AUTH_COOKIE_SECURE;

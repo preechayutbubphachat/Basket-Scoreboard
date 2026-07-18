@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 import {
   MariaDbMigrationConnection,
   discoverMigrationFiles,
@@ -14,7 +15,7 @@ import {
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 
-describeDb("MariaDB integration verification", () => {
+describeDb("MariaDB integration verification", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("connects, reports status, runs migrations, is idempotent, and detects checksum mismatch", async () => {
     const pool = createDatabasePool();
     const rawConnection = await pool.getConnection();

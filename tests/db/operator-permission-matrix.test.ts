@@ -11,6 +11,7 @@ import {
   getDefaultMigrationsDir,
   runMigrations
 } from "../../apps/api/src/migrations";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 type App = ReturnType<typeof buildApiApp>;
@@ -156,7 +157,7 @@ async function getEffectiveAccess(app: App, session: Session, matchId: string) {
   });
 }
 
-describeDb.sequential("DB-backed granular operator permission matrix", () => {
+describeDb.sequential("DB-backed granular operator permission matrix", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("returns canonical effective access for an ADMIN without a match assignment", async () => {
     const { app, pool } = await buildMigratedApp();
     try {

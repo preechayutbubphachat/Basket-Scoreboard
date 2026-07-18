@@ -11,6 +11,10 @@ import {
   runMigrations
 } from "../../apps/api/src/migrations";
 import type { PublicMatchSnapshotPayload } from "../../packages/api-contracts/src";
+import {
+  DB_INTEGRATION_HOOK_TIMEOUT_MS,
+  DB_INTEGRATION_TEST_TIMEOUT_MS
+} from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 const forbiddenKeys = new Set([
@@ -21,7 +25,7 @@ const forbiddenKeys = new Set([
   "eventSeq", "streamVersion"
 ]);
 
-describeDb.sequential("DB-backed public recent actions", () => {
+describeDb.sequential("DB-backed public recent actions", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   let pool: Pool;
 
   beforeAll(async () => {
@@ -35,11 +39,11 @@ describeDb.sequential("DB-backed public recent actions", () => {
     } finally {
       connection.release();
     }
-  });
+  }, DB_INTEGRATION_HOOK_TIMEOUT_MS);
 
   afterAll(async () => {
     await pool?.end();
-  });
+  }, DB_INTEGRATION_HOOK_TIMEOUT_MS);
 
   it("maps legacy absence to empty without event-history reads", async () => {
     const matchId = await insertMatchAndProjection(pool, undefined);

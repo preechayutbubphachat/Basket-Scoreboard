@@ -5,6 +5,7 @@ import { buildApiApp } from "../../apps/api/src/app";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { MariaDbMigrationConnection, getDefaultMigrationsDir, runMigrations } from "../../apps/api/src/migrations";
+import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 const adminHeaders = {
@@ -12,7 +13,7 @@ const adminHeaders = {
   "x-dev-user-id": "00000000-0000-4000-8000-0000000000aa"
 };
 
-describeDb("internal recent-action projection persistence", () => {
+describeDb("internal recent-action projection persistence", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS }, () => {
   it("persists new and prospective legacy state while keeping public output unchanged", async () => {
     const { app, pool } = await buildMigratedApp();
     try {
