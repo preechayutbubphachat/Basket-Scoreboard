@@ -94,7 +94,7 @@ Use only these status values:
 | RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
 | RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
 | RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
-| RM-04 | Clock & Shot Clock Dashboard | `CURRENT` |
+| RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
 | RM-05 | Score Control Dashboard | `PENDING` |
 | RM-06 | Foul Control Dashboard | `PENDING` |
 | RM-07 | Timeout Dashboard | `PENDING` |
@@ -140,16 +140,16 @@ DB COVERAGE GAP = CLOSED
 DB ENVIRONMENT / EXECUTION GATE = CLOSED
 DB AUTHORIZATION CLOSURE GATE = CLOSED
 RM-03-I = INTEGRATED
-RM-04 = CURRENT
+RM-04 = INTEGRATED
 RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
 RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
 RM-04-P5 = REGRESSION CLOSURE COMPLETE
-RM-04-I = PENDING (AUTHORIZED TO BEGIN)
+RM-04-I = INTEGRATED
 RM-05 through RM-18 = PENDING
-Next safe step: RM-04-I - Integration Gate
+Next safe step: RM-05 - Score Control Dashboard authorization gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -692,14 +692,14 @@ RM-03-P4 = IMPLEMENTATION COMPLETE
 RM-03-P5 = REGRESSION CLOSURE COMPLETE
 RM-03-P5-F1 = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
 RM-03-I = INTEGRATED
-RM-04 = CURRENT
+RM-04 = INTEGRATED
 RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
 RM-04-P2 = IMPLEMENTATION COMPLETE
 RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
 RM-04-P5 = REGRESSION CLOSURE COMPLETE
-RM-04-I = PENDING (AUTHORIZED TO BEGIN)
+RM-04-I = INTEGRATED
 RM-05 through RM-18 = PENDING
 ```
 
@@ -1406,6 +1406,29 @@ RM-04-I integration-governance evidence:
   Canonical `INTEGRATED` status also requires `origin/main` synchronization; because push is prohibited, this task
   must stop after local integration with origin synchronization pending.
 - Next safe step: fast-forward local `main` to this governance commit, then re-anchor Guardian. Do not begin RM-05.
+
+RM-04-I origin/main synchronization evidence:
+
+- Decision: `RM_04_INTEGRATED`; local `main` and `origin/main` were synchronized by normal fast-forward push after
+  remote-state, ancestry, commit-range, aggregate diff, event-store, and public/private security guards passed.
+- Synchronization baseline: pre-sync local `main` was `165603a5218b43de8839940c25b5906e4b7a0d50`; pre-fetch and
+  post-fetch `origin/main` were `0b29e354c40fbac156fd2f658675ff5a5a19177f`. `origin/main` was an ancestor of local
+  `main`, and the exact range was nine commits ahead with zero behind.
+- Scope audit: the synchronized range contains RM-04-D1 contract closure, RM-04 browser/test tooling, DB integration
+  timeout policy correction, RM-04-P1 through RM-04-P5 implementation and regression closure, and RM-04-I governance
+  status only. Unauthorized commits, migrations, schema changes, socket protocol changes, new clock event types, new
+  capabilities, generated artifacts, secret exposure, and unexpected production configuration changes are zero.
+- Integrity guard: `match_events` remains append-only; no `UPDATE match_events`, `DELETE FROM match_events`,
+  `TRUNCATE match_events`, `DROP TABLE match_events`, mutable `scoreboard_state` source-of-truth change, timer tick
+  event, Shot Clock Start/Stop command, or automatic/contextual 14/24 reset was introduced.
+- Security guard: `EffectiveMatchAccess` remains the protected/private Clock command-surface authority, server RBAC
+  remains final, and public/private boundaries remain unchanged.
+- Push result: first normal fast-forward push synchronized `origin/main` to
+  `165603a5218b43de8839940c25b5906e4b7a0d50`. No force push, rebase, squash, merge commit, production deployment,
+  Plesk/Hostatom operation, or feature branch cleanup occurred.
+- Roadmap transition: RM-04-I is `INTEGRATED`; RM-04 is `INTEGRATED`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05 - Score Control Dashboard authorization gate`. Do not begin RM-05 implementation
+  automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
