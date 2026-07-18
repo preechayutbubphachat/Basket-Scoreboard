@@ -95,7 +95,7 @@ Use only these status values:
 | RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
 | RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
 | RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
-| RM-05 | Score Control Dashboard | `PENDING` |
+| RM-05 | Score Control Dashboard | `CURRENT` |
 | RM-06 | Foul Control Dashboard | `PENDING` |
 | RM-07 | Timeout Dashboard | `PENDING` |
 | RM-08 | Lineup / Roster Dashboard | `PENDING` |
@@ -148,8 +148,11 @@ RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
 RM-04-P5 = REGRESSION CLOSURE COMPLETE
 RM-04-I = INTEGRATED
-RM-05 through RM-18 = PENDING
-Next safe step: RM-05 - Score Control Dashboard authorization gate
+RM-05 = CURRENT
+RM-05-D1 = DISCOVERY COMPLETE
+RM-05-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-06 through RM-18 = PENDING
+Next safe step: RM-05-P1 - Score Workspace Hierarchy and Supported Command Surface
 ```
 
 ## 6. Straight-Line Diagram
@@ -286,7 +289,7 @@ There is no parallel top-level path.
 - Objective: deliver fast, safe, production-grade score operation.
 - Visual target: `UI Score Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `/operator/matches/:matchId/score` and `OperatorScorePage` exist; full visual and shared-shell parity is pending.
+- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE` and RM-05-P1 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` exist; full visual and shared-shell parity is pending.
 - Domain dependencies: score events, optional player attribution, correction workflow.
 - API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and operator/public projections.
@@ -294,7 +297,7 @@ There is no parallel top-level path.
 - Acceptance: large +1/+2/+3 controls, pending/accepted/rejected/sync states, recent events, correction entry.
 - Tests: authorization, duplicate clicks, stale sequence, concurrency, correction, keyboard, and responsive layouts.
 - Production gate: real DB command and public projection verification.
-- Known blockers: player-attribution product policy.
+- Known blockers: no blocker for the authorized +1/+2/+3 command surface when player attribution remains optional. Any policy that makes attribution mandatory or derives official player scoring semantics requires a separate product decision.
 - Source requirements: score values are domain facts; no invented rule automation.
 - Next milestone: RM-06.
 
@@ -700,7 +703,10 @@ RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
 RM-04-P5 = REGRESSION CLOSURE COMPLETE
 RM-04-I = INTEGRATED
-RM-05 through RM-18 = PENDING
+RM-05 = CURRENT
+RM-05-D1 = DISCOVERY COMPLETE
+RM-05-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-06 through RM-18 = PENDING
 ```
 
 RM-01-P1 integration evidence:
@@ -1428,6 +1434,56 @@ RM-04-I origin/main synchronization evidence:
   Plesk/Hostatom operation, or feature branch cleanup occurred.
 - Roadmap transition: RM-04-I is `INTEGRATED`; RM-04 is `INTEGRATED`; RM-05 through RM-18 remain `PENDING`.
 - Next safe step: `RM-05 - Score Control Dashboard authorization gate`. Do not begin RM-05 implementation
+  automatically.
+
+RM-05-D1 score dashboard authorization evidence:
+
+- Decision: `RM05_AUTHORIZED_FOR_IMPLEMENTATION`; the authorization applies only to the linear RM-05 slices below
+  and does not authorize RM-06, deployment, production access, or invented scoring rules.
+- Baseline: `main`, local HEAD, and `origin/main` were aligned at
+  `0e05ccd6a74271277f0743d0777cb68a669467e7` with a clean working tree before this documentation-only update.
+- Visual/GridGeist: `UI-design/UI Score Control Dashboard.png` was inspected as a visual target, not a command or
+  rule contract. Its two-team hierarchy, dominant current scores, large +1/+2/+3 controls, visible sequence,
+  connection and command feedback, recent-event context, and separate guarded correction entry are authorized
+  design requirements. Direct score mutation, an ordinary subtract command, artwork keyboard shortcuts, and new
+  rule automation are not authorized.
+- Ownership: `OperatorScorePage` retains projection and roster fetch, effective-access hydration, public
+  notification socket use, polling, reconnect/resync, command dispatch, projection-derived `expectedSeq`, and
+  API-client command/correlation IDs. Presentation helpers and shells remain free of network, command, retry, and
+  authority ownership.
+- Implemented score contract: protected REST `score/add` accepts only HOME/AWAY and +1/+2/+3 intent with optional
+  active-roster player attribution, period and game-clock context. Authentication, CSRF, match-scoped server RBAC,
+  path/envelope match validation, schema validation, optimistic concurrency, command idempotency, append-only
+  `SCORE_ADDED`, authoritative projection derivation, audit logging, and notification-only realtime are retained.
+- Correction contract: scoring subtraction is not an ordinary scoring command. The existing recent-event workflow
+  uses a reason-required, match-scoped, append-only `SCORE_UNDO` compensation producing `SCORE_CORRECTED`, preserving
+  target sequence, actor, role, device, timestamp, old/new values, delta, correlation, causation, and event sequence.
+  RM-05 may integrate a guarded entry to that existing workflow, but may not invent direct score totals or a new
+  correction event. Explicit confirmation and capability-driven presentation are required before dispatch.
+- Security gap to close: the current Score route hydrates `EffectiveMatchAccess` for navigation but still enables
+  score commands through legacy current-user/assignment inference. RM-05 must make matching, successfully hydrated
+  `matchRead` and `scoreOperate` the frontend command-surface authority, fail closed on loading/error/mismatch, and
+  preserve server RBAC as final authority.
+- Realtime/data decision: no API, socket, event-model, database, or schema change is required for the authorized
+  surface. Socket payloads remain notification-only; route-owned refresh and polling remain authoritative recovery.
+- Linear slices: RM-05-P1 Score Workspace Hierarchy and Supported Command Surface; RM-05-P2 Rapid Scoring Controls
+  and Duplicate-Entry Safety; RM-05-P3 Score Correction and Compensating-Event Safety; RM-05-P4 Effective Access,
+  Reconnect, Error, and Accessibility States; RM-05-P5 Responsive and Full Regression Closure; RM-05-I Integration
+  Gate. Do not open more than one slice at a time.
+- Acceptance: preserve route ownership; render only +1/+2/+3; keep attribution optional; derive `expectedSeq` from
+  projection; distinguish legitimate consecutive events from accidental duplicates; fail closed through
+  EffectiveMatchAccess; preserve append-only correction history, confirmation/reason/audit evidence, authoritative
+  reconnect, server RBAC, public/private boundaries, and RM-03/RM-04 regression behavior.
+- Responsive/accessibility evidence required: 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576 plus 125%-200%
+  zoom equivalents; no horizontal overflow; both scores and authorized controls remain unambiguous and reachable;
+  semantic buttons, visible focus, practical 44x44 targets, non-color cues, logical keyboard order, forced colors,
+  reduced motion, concise command-result announcements, and no projection-refresh live-region spam.
+- Source boundary: existing 1/2/3 point command values require no new rule automation. `[NEEDS SOURCE] Missing
+  governing document: FIBA scoring-award and/or score-correction operational semantics required by any proposed
+  behavior beyond the implemented command and compensating-event contracts.`
+- Roadmap transition: RM-05 is `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`; RM-05-P1 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P1 - Score Workspace Hierarchy and Supported Command Surface`. Do not begin it
   automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
