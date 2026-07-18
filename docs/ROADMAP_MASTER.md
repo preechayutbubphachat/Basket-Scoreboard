@@ -95,7 +95,7 @@ Use only these status values:
 | RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
 | RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
 | RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
-| RM-05 | Score Control Dashboard | `CURRENT` |
+| RM-05 | Score Control Dashboard | `INTEGRATED` |
 | RM-06 | Foul Control Dashboard | `PENDING` |
 | RM-07 | Timeout Dashboard | `PENDING` |
 | RM-08 | Lineup / Roster Dashboard | `PENDING` |
@@ -148,16 +148,16 @@ RM-04-P3 = IMPLEMENTATION COMPLETE
 RM-04-P4 = IMPLEMENTATION COMPLETE
 RM-04-P5 = REGRESSION CLOSURE COMPLETE
 RM-04-I = INTEGRATED
-RM-05 = CURRENT
+RM-05 = INTEGRATED
 RM-05-D1 = DISCOVERY COMPLETE
 RM-05-P1 = IMPLEMENTATION COMPLETE
 RM-05-P2 = IMPLEMENTATION COMPLETE
 RM-05-P3 = IMPLEMENTATION COMPLETE
 RM-05-P4 = IMPLEMENTATION COMPLETE
 RM-05-P5 = REGRESSION CLOSURE COMPLETE
-RM-05-I = PENDING (AUTHORIZED TO BEGIN)
+RM-05-I = INTEGRATED
 RM-06 through RM-18 = PENDING
-Next safe step: RM-05-I - Integration Gate
+Next safe step: RM-06 - Foul Control Dashboard authorization gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -294,7 +294,7 @@ There is no parallel top-level path.
 - Objective: deliver fast, safe, production-grade score operation.
 - Visual target: `UI Score Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P4 are `IMPLEMENTATION COMPLETE`, RM-05-P5 is `REGRESSION CLOSURE COMPLETE`, and RM-05-I is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership; integration remains pending in its separately authorized gate.
+- Current implementation state: `INTEGRATED`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P4 are `IMPLEMENTATION COMPLETE`, RM-05-P5 is `REGRESSION CLOSURE COMPLETE`, and RM-05-I is `INTEGRATED`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership.
 - Domain dependencies: score events, optional player attribution, correction workflow.
 - API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and operator/public projections.
@@ -1637,6 +1637,33 @@ RM-05-P5 responsive and full-regression closure evidence:
 - Roadmap transition: RM-05 remains `CURRENT`; RM-05-P5 is `REGRESSION CLOSURE COMPLETE`; RM-05-I is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
 - Next safe step: `RM-05-I - Integration Gate`. Do not begin it automatically.
+
+RM-05-I score dashboard integration gate closure evidence:
+
+- Decision: `RM_05_INTEGRATED`; local `main` and `origin/main` were synchronized by normal fast-forward push after
+  remote-state, ancestry, commit-range, aggregate diff, event-store, EffectiveAccess/RBAC, and public/private
+  security guards passed.
+- Synchronization baseline: pre-sync local `main` was `a04f8ba7f53725db5610ef17d411e9ed99e76e90`; pre-fetch and
+  post-fetch `origin/main` were `0e05ccd6a74271277f0743d0777cb68a669467e7`. `origin/main` was an ancestor of local
+  `main`, and the exact range was six commits ahead with zero behind.
+- Scope audit: the synchronized range contains RM-05 authorization plus RM-05-P1 through RM-05-P5 implementation and
+  regression closure only. Unauthorized commits, migrations, schema changes, socket protocol changes, new score event
+  types, new capabilities, secret exposure, and unexpected production configuration changes are zero.
+- Integrity guard: `match_events` remains append-only; no `UPDATE match_events`, `DELETE FROM match_events`,
+  `TRUNCATE match_events`, `DROP TABLE match_events`, mutable `scoreboard_state` source-of-truth change, ordinary
+  subtract command, or direct score-total setter was introduced. EffectiveMatchAccess remains the protected/private
+  Score frontend authority and server RBAC remains final.
+- Verification: immutable RM-05-P5 evidence was reused for the synchronized SHA
+  `a04f8ba7f53725db5610ef17d411e9ed99e76e90`. The integration push pre-flight additionally passed `npm test`
+  671/671, `npm run build`, the required event-store guard search, and `git diff --check`.
+- Dirty-tree isolation: pre-existing `AGENTS.md` and `docs/AI_HANDOFF.md` remained untouched and excluded from the
+  integration sync and completion commit.
+- Push result: first normal fast-forward push synchronized `origin/main` to
+  `a04f8ba7f53725db5610ef17d411e9ed99e76e90`. No force push, rebase, squash, merge commit, production deployment,
+  Plesk/Hostatom operation, or feature branch cleanup occurred.
+- Roadmap transition: RM-05-I is `INTEGRATED`; RM-05 is `INTEGRATED`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-06 - Foul Control Dashboard authorization gate`. Do not begin RM-06 implementation
+  automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
