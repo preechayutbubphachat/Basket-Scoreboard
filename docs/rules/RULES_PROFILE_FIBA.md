@@ -226,6 +226,19 @@ shotClockConfig:
 
 ## 8. Shot Clock Reset Policy
 
+### 8.0 RM-04 Manual Operator Boundary
+
+RM-04 authorizes only explicit operator-selected Reset 14 and Reset 24 commands through the existing server-validated
+14/24 payload enum. This bounded UI does not select a reset value from game context and does not claim automatic FIBA
+reset compliance. The broader contextual decision model below remains deferred and is not authorization for new
+commands, events, endpoints, or automatic behavior.
+
+`SHOT_CLOCK_START`, `SHOT_CLOCK_STOP`, `SHOT_CLOCK_STARTED`, and `SHOT_CLOCK_STOPPED` are outside the RM-04 command
+surface. Period and match lifecycle remain in their existing lifecycle domain.
+
+`[NEEDS SOURCE] Missing governing document: authoritative FIBA shot-clock operational rules required for
+automatic/context-aware 14/24 reset decisions.`
+
 [SYSTEM RECOMMENDATION] The UI must never decide final shot clock reset values by itself. The UI may send a command such as `REQUEST_SHOT_CLOCK_RESET`, but the backend must validate the reset against the current match state, event context, and this rules profile.
 
 ### 8.1 Basic reset decision table

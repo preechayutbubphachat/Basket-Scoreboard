@@ -94,7 +94,7 @@ Use only these status values:
 | RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
 | RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
 | RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
-| RM-04 | Clock & Shot Clock Dashboard | `PENDING` |
+| RM-04 | Clock & Shot Clock Dashboard | `CURRENT` |
 | RM-05 | Score Control Dashboard | `PENDING` |
 | RM-06 | Foul Control Dashboard | `PENDING` |
 | RM-07 | Timeout Dashboard | `PENDING` |
@@ -140,8 +140,11 @@ DB COVERAGE GAP = CLOSED
 DB ENVIRONMENT / EXECUTION GATE = CLOSED
 DB AUTHORIZATION CLOSURE GATE = CLOSED
 RM-03-I = INTEGRATED
-RM-04 through RM-18 = PENDING
-Next safe step: RM-04 - Clock & Shot Clock Dashboard authorization gate
+RM-04 = CURRENT
+RM-04-D1 = DISCOVERY COMPLETE
+RM-04-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-05 through RM-18 = PENDING
+Next safe step: RM-04-P1 - Clock Workspace Visual Hierarchy and Supported Command Surface
 ```
 
 ## 6. Straight-Line Diagram
@@ -261,16 +264,16 @@ There is no parallel top-level path.
 - Objective: deliver the production-grade clock and shot-clock operator dashboard.
 - Visual target: `Clock and Shot Clock Dashboard.png`.
 - Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `/operator/matches/:matchId/clock` and `OperatorClockPage` exist but visual/role parity is incomplete.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE` and RM-04-P1 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` exist but visual/role parity is incomplete.
 - Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
 - API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and clock projections.
-- Security: TIMER game clock only; SHOT_CLOCK_OPERATOR shot clock only; corrections independently authorized.
-- Acceptance: large clocks, safe start/stop/reset/set/period controls, confirmation and stale-state handling.
+- Security: frontend command availability is derived from server-calculated `EffectiveMatchAccess`; TIMER game clock only and SHOT_CLOCK_OPERATOR shot reset/set only. `GAME_CLOCK_SET` and `SHOT_CLOCK_SET` remain domain-capability commands but are correction-style actions requiring confirmation and a non-empty server-validated reason.
+- Acceptance: large clocks; safe game start/stop/set and operator-selected shot reset 14/24/set controls; confirmation and stale-state handling. Shot-clock start/stop and period/lifecycle controls are outside RM-04 command scope.
 - Tests: role matrix, duplicate/concurrent commands, reconnect drift, correction, and responsive operator matrix.
 - Production gate: DB-backed command-denial/no-event proof and owner deployment.
-- Known blockers: exact rule-supported reset decisions must remain server validated.
-- Source requirements: loaded FIBA clock/shot-clock sources; unsupported decisions use `NEEDS SOURCE`.
+- Known blockers: none for the supported manual command surface. Automatic/context-aware shot-clock reset decisions remain deferred.
+- Source requirements: `[NEEDS SOURCE] Missing governing document: authoritative FIBA shot-clock operational rules required for automatic/context-aware 14/24 reset decisions.` Manual Reset 14 / Reset 24 remains an explicit operator-selected command and does not claim automatic FIBA reset selection.
 - Next milestone: RM-05.
 
 ### RM-05 - Score Control Dashboard
@@ -684,7 +687,10 @@ RM-03-P4 = IMPLEMENTATION COMPLETE
 RM-03-P5 = REGRESSION CLOSURE COMPLETE
 RM-03-P5-F1 = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
 RM-03-I = INTEGRATED
-RM-04 through RM-18 = PENDING
+RM-04 = CURRENT
+RM-04-D1 = DISCOVERY COMPLETE
+RM-04-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-05 through RM-18 = PENDING
 ```
 
 RM-01-P1 integration evidence:
@@ -1210,3 +1216,43 @@ RM-03-I origin/main synchronization evidence:
 - Roadmap transition: RM-03-I is `INTEGRATED`; RM-03 is `INTEGRATED`; RM-04 through RM-18 remain `PENDING` and RM-04
   implementation was not begun in this task.
 - Next safe step: `RM-04 - Clock & Shot Clock Dashboard authorization gate`.
+
+RM-04-D1 clock rule and command contract closure evidence:
+
+- Decision: `RM04_CONTRACT_CLOSED_IMPLEMENTATION_AUTHORIZED`; the owner-approved supported surface is game clock
+  start, stop, and guarded manual set plus operator-selected shot-clock reset 14, reset 24, and guarded manual set.
+- Unsupported/deferred surface: shot-clock start/stop commands, events, endpoints, and controls are not authorized.
+  Period, overtime, and match lifecycle controls remain in the existing lifecycle domain and capability.
+- Reset policy: Reset 14 and Reset 24 are explicit operator-selected commands using the existing enum-validated
+  endpoint. The product does not claim automatic FIBA contextual reset selection. `[NEEDS SOURCE] Missing governing
+  document: authoritative FIBA shot-clock operational rules required for automatic/context-aware 14/24 reset
+  decisions.`
+- Manual-set safety contract: `GAME_CLOCK_SET` requires `gameClockOperate`; `SHOT_CLOCK_SET` requires
+  `shotClockOperate`; both require explicit UI confirmation and a non-empty trimmed reason of at most 500 characters.
+  The server schema must reject missing, null, empty, and whitespace-only reasons before either implementation slice
+  closes. Existing audit insertion remains mandatory and receives the validated reason.
+- Contract implementation boundary: current schemas allow nullable reasons and current frontend payload builders can
+  produce null. The coordinated schema, client builder, confirmation UI, and focused tests are authorized for RM-04-P2
+  and RM-04-P3, not partially changed in D1. The command envelope, route permission middleware, append-only event
+  behavior, idempotency, expected-sequence enforcement, audit repository, sockets, and database schema remain unchanged.
+- Effective-access authority: `OperatorClockPage` must use the matching server-calculated `EffectiveMatchAccess` as
+  the command-surface authority. Missing, loading, failed, mismatched, or `matchRead=false` access denies command
+  dispatch by default. Role labels and `currentUser` assignment helpers are not final command-surface authority;
+  backend middleware remains authoritative for every request.
+- Ownership: `OperatorClockPage` retains projection/access fetch, realtime notification, polling, reconnect/resync,
+  command dispatch, projection-derived `expectedSeq`, and clock interpolation. `LiveMatchShell` remains
+  presentation/navigation only. No duplicate owner or second authoritative clock state is authorized.
+- Event/realtime/data boundary: the authorized event set remains `GAME_CLOCK_STARTED`, `GAME_CLOCK_STOPPED`,
+  `GAME_CLOCK_SET`, `SHOT_CLOCK_RESET`, and `SHOT_CLOCK_SET`. `match_events` remains append-only; projections remain
+  derived; no timer-tick event, socket contract change, database/schema change, or public/private boundary change is
+  authorized.
+- Linear slices: RM-04-P1 Clock Workspace Visual Hierarchy and Supported Command Surface; RM-04-P2 Game Clock Control
+  and Manual Correction Safety; RM-04-P3 Shot Clock Reset/Set and Manual Correction Safety; RM-04-P4 Effective Access,
+  Error/Reconnect, and Accessibility States; RM-04-P5 Responsive and Full Regression Closure; RM-04-I Integration Gate.
+- Acceptance: preserve route ownership; capability-isolate game and shot domains; fail closed during effective-access
+  hydration; keep `expectedSeq` projection-derived; render no shot-clock start/stop or lifecycle command; identify
+  manual reset selection honestly; require confirmation and validated reason for manual set; preserve audit,
+  append-only history, idempotency, realtime ownership, and public/private boundaries; and retain RM-03 regression.
+- Roadmap transition: RM-04 is `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`; RM-04-P1 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P1 - Clock Workspace Visual Hierarchy and Supported Command Surface`.

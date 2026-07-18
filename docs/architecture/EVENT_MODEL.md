@@ -761,6 +761,18 @@ Audit:
 
 [SYSTEM RECOMMENDATION] Shot clock ต้องใช้ deadline-based model เช่นเดียวกับ game clock
 
+RM-04 bounded implementation profile:
+
+- The implemented/authorized shot-clock events are `SHOT_CLOCK_RESET` and `SHOT_CLOCK_SET` only.
+- Reset 14 and Reset 24 are explicit operator-selected commands; the payload enum is server validated.
+- `SHOT_CLOCK_STARTED` and `SHOT_CLOCK_STOPPED` below describe a broader future model and are not authorized for
+  RM-04 implementation, API endpoints, or UI controls.
+- Automatic/context-aware 14/24 selection is deferred and must not be inferred from this event catalog.
+- `[NEEDS SOURCE] Missing governing document: authoritative FIBA shot-clock operational rules required for
+  automatic/context-aware 14/24 reset decisions.`
+- `SHOT_CLOCK_SET` is correction-style: explicit confirmation, a non-empty server-validated reason, and audit are
+  mandatory. It remains authorized by the existing shot-clock operation capability.
+
 ### SHOT_CLOCK_SET
 
 ```ts

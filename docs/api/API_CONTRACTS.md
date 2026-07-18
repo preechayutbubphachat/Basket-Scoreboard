@@ -1118,6 +1118,36 @@ All command endpoints:
 - return `currentSeq`
 - support idempotency
 
+### 16.0 RM-04 Clock Command Contract
+
+The RM-04 operator surface is limited to the existing protected REST commands below:
+
+| Command | Endpoint | Capability | Payload reason |
+|---|---|---|---|
+| Game clock start | `POST /api/v1/matches/:matchId/commands/clock/game/start` | `match.clock.game.operate` | Not required |
+| Game clock stop | `POST /api/v1/matches/:matchId/commands/clock/game/stop` | `match.clock.game.operate` | Not required |
+| Game clock set | `POST /api/v1/matches/:matchId/commands/clock/game/set` | `match.clock.game.operate` | Required correction reason |
+| Shot clock reset 14/24 | `POST /api/v1/matches/:matchId/commands/clock/shot/reset` | `match.clock.shot.operate` | Not required |
+| Shot clock set | `POST /api/v1/matches/:matchId/commands/clock/shot/set` | `match.clock.shot.operate` | Required correction reason |
+
+Every endpoint retains authentication, CSRF protection, match-scoped server RBAC, path/body `matchId` validation,
+`expectedSeq`, command idempotency, transactional event append, derived projection update, and audit behavior.
+
+`GAME_CLOCK_SET` and `SHOT_CLOCK_SET` are guarded correction-style operations. Their payload schemas must require
+`reason` as a trimmed, non-empty string with a maximum length of 500 characters; missing, null, empty, and
+whitespace-only reasons are invalid. The UI must obtain explicit confirmation before dispatch. No additional
+correction capability is introduced: game set remains governed by `match.clock.game.operate`, and shot set remains
+governed by `match.clock.shot.operate`.
+
+Reset 14 and Reset 24 are explicit operator-selected values accepted only by the existing 14/24 enum. They do not
+claim automatic or context-aware FIBA reset selection.
+
+There is no RM-04 shot-clock start/stop command, endpoint, or event. Period, overtime, and match lifecycle commands
+remain outside the clock command domain.
+
+`[NEEDS SOURCE] Missing governing document: authoritative FIBA shot-clock operational rules required for
+automatic/context-aware 14/24 reset decisions.`
+
 ### 16.1 Start Match
 
 ```http
