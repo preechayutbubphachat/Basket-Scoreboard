@@ -80,8 +80,9 @@ describe("operator Score LiveMatchShell adoption", () => {
     expect(scoreSource).toContain("api.getEffectiveMatchAccess(matchId)");
     expect(scoreSource).toContain("usePublicProjectionRealtime(");
     expect(scoreSource).toContain("window.setInterval(");
-    expect(scoreSource).toContain("buildScoreCommandPayload(projection");
+    expect(scoreSource).toContain("createScoreIntent({");
     expect(scoreSource).toContain("const previousSeq = projection.currentSeq");
+    expect(scoreSource).toContain("scoreIntentQueueReducer");
     expect(scoreSource).not.toContain("<dt>Seq</dt>");
     expect(scoreSource).not.toContain("<dt>Expected Seq</dt>");
     expect(appSource.slice(foulStart)).not.toContain("<LiveMatchShell");

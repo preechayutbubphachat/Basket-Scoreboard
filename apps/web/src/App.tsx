@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import React, { FormEvent, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type {
   AlphaCorrectionResponse,
   CommandResult,
@@ -46,7 +46,7 @@ import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryD
 import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
 import { UiCommandSafetyPanel, UiConnectionStatus } from "./components/ui";
 import "./styles/authenticated-dashboard.css";
-import { ApiClientError, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
+import { ApiClientError, createClientCommandId, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
 import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
 import {
   canManageAssignments,
@@ -94,7 +94,6 @@ import {
   buildOperatorScoreConnection
 } from "./lib/operatorScoreShell";
 import {
-  buildScoreCommandPayload,
   buildScoreControlPanels,
   canUseLiveMatchControls,
   finishedMatchLiveControlWarning,
@@ -104,6 +103,12 @@ import {
   type ScoreControlPoint,
   type ScoreControlTeamSide
 } from "./lib/scoreControl";
+import {
+  buildScoreQueuePresentation,
+  createScoreIntent,
+  initialScoreIntentQueueState,
+  scoreIntentQueueReducer
+} from "./lib/scoreIntentQueue";
 import {
   buildFoulControlPanels,
   buildTeamFoulCommandPayload,
@@ -3168,7 +3173,8 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [selectedPlayers, setSelectedPlayers] = useState<Record<ScoreControlTeamSide, string>>({ HOME: "", AWAY: "" });
   const [loading, setLoading] = useState(true);
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [scoreQueue, dispatchScoreQueue] = useReducer(scoreIntentQueueReducer, initialScoreIntentQueueState);
+  const dispatchedAttemptRef = useRef<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitScore = canOperateScore(currentUser, matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
@@ -3197,6 +3203,8 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   }
 
   useEffect(() => {
+    dispatchedAttemptRef.current = null;
+    dispatchScoreQueue({ type: "DISCARD_ALL" });
     void loadState();
   }, [matchId]);
 
@@ -3225,42 +3233,108 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     setProjection(await api.getMatchProjection(matchId));
   }
 
-  async function addScore(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
-    if (!projection || !canUseLiveMatchControls(projection, canSubmitScore, Boolean(pendingKey))) return;
-    const key = `${teamSide}-${points}`;
-    setPendingKey(key);
+  function enqueueScoreIntent(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
+    if (!projection || scoreQueue.pauseReason || !canUseLiveMatchControls(projection, canSubmitScore, false)) return;
     setMessage(null);
+    dispatchScoreQueue({
+      type: "ENQUEUE",
+      intent: createScoreIntent({
+        commandId: createClientCommandId(),
+        correlationId: createClientCommandId(),
+        localIntentId: createClientCommandId(),
+        playerId: selectedPlayers[teamSide] || null,
+        points,
+        projection,
+        teamSide
+      })
+    });
+  }
+
+  useEffect(() => {
+    if (!projection || scoreQueue.activeIntent || scoreQueue.pauseReason || scoreQueue.queuedIntents.length === 0) return;
+    dispatchScoreQueue({ type: "START_NEXT" });
+  }, [projection, scoreQueue.activeIntent, scoreQueue.pauseReason, scoreQueue.queuedIntents.length]);
+
+  useEffect(() => {
+    const intent = scoreQueue.activeIntent;
+    if (!intent || scoreQueue.pauseReason || !projection) return;
+    const attemptKey = `${intent.localIntentId}:${scoreQueue.retryNonce}`;
+    if (dispatchedAttemptRef.current === attemptKey) return;
+    dispatchedAttemptRef.current = attemptKey;
     const previousSeq = projection.currentSeq;
 
-    try {
-      const payload = buildScoreCommandPayload(projection, teamSide, points);
-      const playerId = selectedPlayers[teamSide] || null;
-      const result = await api.addScore(matchId, {
-        ...payload,
-        payload: {
-          ...payload.payload,
-          playerId
+    void (async () => {
+      try {
+        const result = await api.addScore(matchId, {
+          commandId: intent.commandId,
+          correlationId: intent.correlationId,
+          expectedSeq: previousSeq,
+          payload: {
+            teamSide: intent.teamSide,
+            points: intent.points,
+            playerId: intent.playerId,
+            periodNumber: intent.periodNumber,
+            gameClockRemainingMs: intent.gameClockRemainingMs,
+            note: intent.note
+          }
+        });
+
+        if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+          setMessage(getScoreControlFeedback(result));
+          dispatchScoreQueue({
+            type: "PAUSE",
+            reason: "SYNC_REQUIRED",
+            detail: "Authoritative score was refreshed. Review or discard the queued actions; the failed action will not replay."
+          });
+          await refreshAfterCommand(previousSeq);
+          return;
         }
-      });
 
-      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+        if (result.status === "REJECTED") {
+          setMessage(getScoreControlFeedback(result));
+          dispatchScoreQueue({
+            type: "PAUSE",
+            reason: "REJECTED",
+            detail: "The failed action will not replay. Review or discard the remaining queued actions."
+          });
+          return;
+        }
+
+        const responseProjection = getAcceptedScoreProjection(result);
+        if (responseProjection) setProjection(responseProjection);
+        else await refreshAfterCommand(previousSeq);
         setMessage(getScoreControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
-        return;
+        dispatchScoreQueue({ type: "ACCEPT_ACTIVE" });
+      } catch (error) {
+        setMessage(toUiMessage(error));
+        dispatchScoreQueue({
+          type: "PAUSE",
+          reason: "NETWORK_AMBIGUOUS",
+          detail: "The server may have accepted this action. Retry it with the same identity, or discard all queued work."
+        });
       }
+    })();
+  }, [api, matchId, projection, scoreQueue.activeIntent, scoreQueue.pauseReason, scoreQueue.retryNonce]);
 
-      const responseProjection = getAcceptedScoreProjection(result);
-      if (responseProjection) {
-        setProjection(responseProjection);
-      } else {
-        await refreshAfterCommand(previousSeq);
-      }
-      setMessage(getScoreControlFeedback(result));
-    } catch (error) {
-      setMessage(toUiMessage(error));
-    } finally {
-      setPendingKey(null);
-    }
+  const pendingKey = scoreQueue.activeIntent
+    ? `${scoreQueue.activeIntent.teamSide}-${scoreQueue.activeIntent.points}`
+    : null;
+  const queuePresentation = buildScoreQueuePresentation(scoreQueue);
+
+  function retryAmbiguousIntent() {
+    dispatchedAttemptRef.current = null;
+    dispatchScoreQueue({ type: "RETRY_ACTIVE" });
+  }
+
+  function resumeQueuedIntents() {
+    dispatchedAttemptRef.current = null;
+    dispatchScoreQueue({ type: "RESUME_QUEUED" });
+  }
+
+  function discardScoreIntents() {
+    dispatchedAttemptRef.current = null;
+    dispatchScoreQueue({ type: "DISCARD_ALL" });
+    setMessage({ tone: "success", text: "Queued score actions discarded." });
   }
 
   const isReadOnly = projection ? isFinishedMatchStatus(projection.status) : false;
@@ -3341,9 +3415,9 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                 <Notice tone="error" text={finishedMatchLiveControlWarning} />
               ) : null}
               <ScoreWorkspace
-                commandPending={Boolean(pendingKey)}
+                commandPending={false}
                 connectionLabel={getRealtimeConnectionLabel(realtimeState)}
-                controlsEnabled={canUseLiveMatchControls(projection, canSubmitScore, false)}
+                controlsEnabled={canUseLiveMatchControls(projection, canSubmitScore, false) && !scoreQueue.pauseReason}
                 correctionEntry={correctionNavigationItem ? {
                   href: correctionNavigationItem.href,
                   onNavigate: () => navigate(correctionNavigationItem.href)
@@ -3351,10 +3425,16 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
                 currentSeq={projection.currentSeq}
                 matchStatus={projection.status}
                 onPlayerChange={(teamSide, playerId) => setSelectedPlayers({ ...selectedPlayers, [teamSide]: playerId })}
-                onScore={(teamSide, points) => void addScore(teamSide, points)}
+                onScore={enqueueScoreIntent}
                 panels={scoreWorkspacePanels}
                 pendingKey={pendingKey}
                 periodLabel={`${projection.periodType === "OVERTIME" ? "OT" : "P"}${projection.periodNumber}`}
+                queueStatus={queuePresentation ? {
+                  ...queuePresentation,
+                  onDiscard: discardScoreIntents,
+                  onResume: resumeQueuedIntents,
+                  onRetry: retryAmbiguousIntent
+                } : null}
               />
             </section>
           ) : null}

@@ -5,7 +5,7 @@ const { chromium } = require("playwright");
 
 const repositoryRoot = resolve(__dirname, "..", "..");
 const viteEntry = resolve(repositoryRoot, "node_modules", "vite", "bin", "vite.js");
-const port = Number(process.env.RM05_P1_PORT || 4185);
+const port = Number(process.env.RM05_P2_PORT || 4186);
 const baseUrl = `http://127.0.0.1:${port}`;
 const fixturePath = "/tests/browser/score-workspace-fixture.html";
 const viewports = [
@@ -24,7 +24,7 @@ async function waitForServer() {
     } catch {}
     await new Promise((resolveWait) => setTimeout(resolveWait, 250));
   }
-  throw new Error("RM-05-P1 fixture server did not become ready");
+  throw new Error("RM-05-P2 fixture server did not become ready");
 }
 
 async function measure(page, viewport) {
@@ -75,8 +75,6 @@ async function measure(page, viewport) {
     "AWAY add 1 point", "AWAY add 2 points", "AWAY add 3 points"
   ]);
 
-  for (const label of result.buttonLabels) await page.getByRole("button", { name: label, exact: true }).click();
-  assert.equal(await page.getByTestId("dispatches").textContent(), "HOME:1,HOME:2,HOME:3,AWAY:1,AWAY:2,AWAY:3");
   return { viewport, ...result };
 }
 
@@ -85,6 +83,55 @@ async function zoomEquivalent(page, percent) {
   const viewport = { width: Math.floor(1280 / scale), height: Math.floor(720 / scale) };
   const result = await measure(page, viewport);
   return { percent, ...result };
+}
+
+async function verifyRapidQueue(page, viewport) {
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}${fixturePath}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();
+  await page.getByRole("button", { name: "HOME add 2 points", exact: true }).click();
+  await page.getByRole("button", { name: "AWAY add 3 points", exact: true }).click();
+  await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();
+  await page.getByRole("button", { name: "AWAY add 2 points", exact: true }).press("Enter");
+  await page.getByTestId("projection-seq").getByText("1289").waitFor();
+  const dispatches = await page.getByTestId("dispatches").textContent();
+  assert.equal(dispatches, "HOME:1:none:1284,HOME:2:none:1285,AWAY:3:none:1286,HOME:1:none:1287,AWAY:2:none:1288");
+  assert.equal(await page.getByTestId("max-network-active").textContent(), "1");
+  assert.equal(await page.getByTestId("queue-state").textContent(), "RUNNING:0:IDLE");
+  const layout = await page.evaluate(() => ({
+    noHorizontalOverflow: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+    scoresVisible: document.querySelectorAll(".score-workspace__score-block output").length === 2,
+    controlsReachable: [...document.querySelectorAll(".score-workspace__score-actions button")].every((button) => button.getBoundingClientRect().height >= 44)
+  }));
+  assert.equal(layout.noHorizontalOverflow, true);
+  assert.equal(layout.scoresVisible, true);
+  assert.equal(layout.controlsReachable, true);
+  return { viewport, dispatches, maxNetworkActive: 1, ...layout };
+}
+
+async function verifySyncPause(page, viewport) {
+  await page.setViewportSize(viewport);
+  await page.goto(`${baseUrl}${fixturePath}?failure=sync`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();
+  await page.getByRole("button", { name: "HOME add 2 points", exact: true }).click();
+  await page.getByRole("button", { name: "AWAY add 3 points", exact: true }).click();
+  await page.getByText("Synchronization required — queued actions paused").waitFor();
+  assert.equal(await page.getByTestId("dispatches").textContent(), "");
+  assert.equal(await page.getByTestId("queue-state").textContent(), "SYNC_REQUIRED:2:ACTIVE");
+  assert.equal(await page.getByRole("button", { name: "HOME add 1 point", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "Resume queued actions" }).click();
+  await page.getByTestId("projection-seq").getByText("1286").waitFor();
+  assert.equal(await page.getByTestId("dispatches").textContent(), "HOME:2:none:1284,AWAY:3:none:1285");
+  assert.equal(await page.getByTestId("max-network-active").textContent(), "1");
+
+  await page.goto(`${baseUrl}${fixturePath}?failure=sync`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "HOME add 1 point", exact: true }).click();
+  await page.getByRole("button", { name: "AWAY add 1 point", exact: true }).click();
+  await page.getByText("Synchronization required — queued actions paused").waitFor();
+  await page.getByRole("button", { name: "Discard queued actions" }).click();
+  assert.equal(await page.getByTestId("queue-state").textContent(), "RUNNING:0:IDLE");
+  assert.equal(await page.getByTestId("dispatches").textContent(), "");
+  return { viewport, paused: true, noAutoReplay: true, resume: true, discard: true };
 }
 
 async function main() {
@@ -114,10 +161,14 @@ async function main() {
     for (const viewport of viewports) matrix.push(await measure(page, viewport));
     const zoom = [];
     for (const percent of [125, 150, 200]) zoom.push(await zoomEquivalent(page, percent));
+    const rapid = [];
+    for (const viewport of [viewports[0], viewports[2], viewports[4]]) rapid.push(await verifyRapidQueue(page, viewport));
+    const syncPause = [];
+    for (const viewport of [viewports[0], viewports[2], viewports[4]]) syncPause.push(await verifySyncPause(page, viewport));
     assert.deepEqual(consoleErrors, []);
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(failedRequests, []);
-    process.stdout.write(`${JSON.stringify({ matrix, zoom, consoleErrors, pageErrors, failedRequests })}\n`);
+    process.stdout.write(`${JSON.stringify({ matrix, zoom, rapid, syncPause, consoleErrors, pageErrors, failedRequests })}\n`);
   } finally {
     if (browser) await browser.close();
     server.kill();

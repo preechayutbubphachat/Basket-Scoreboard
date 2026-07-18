@@ -144,6 +144,34 @@
 .score-workspace__score-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .score-workspace__operations { display: grid; gap: var(--space-4); }
+.score-workspace__queue-status {
+  align-items: center;
+  background: color-mix(in srgb, var(--color-informational) 8%, var(--color-surface-muted));
+  border: var(--border-thin) solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: var(--space-3) var(--space-4);
+}
+.score-workspace__queue-status > div:first-child { display: grid; gap: var(--space-1); }
+.score-workspace__queue-status strong { color: var(--color-text-primary); }
+.score-workspace__queue-status small { color: var(--color-text-muted); }
+.score-workspace__queue-status--paused {
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface-muted));
+  border-color: color-mix(in srgb, var(--color-warning) 62%, var(--color-border));
+}
+.score-workspace__queue-count {
+  border: var(--border-thin) solid currentColor;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-weight: 800;
+  padding: var(--space-2) var(--space-3);
+  white-space: nowrap;
+}
+.score-workspace__queue-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); grid-column: 1 / -1; }
+.score-workspace__queue-actions button { min-height: 44px; }
 .score-workspace__status { display: grid; gap: var(--space-3); grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
 .score-workspace__status div { border-bottom: var(--border-thin) solid var(--color-border); display: grid; gap: var(--space-1); min-width: 0; padding-bottom: var(--space-3); }
 .score-workspace__status dd { color: var(--color-text-secondary); font-family: var(--font-mono); font-weight: 700; margin: 0; overflow-wrap: anywhere; }
@@ -174,6 +202,8 @@
   .score-workspace__heading,
   .score-workspace__correction { align-items: stretch; flex-direction: column; }
   .score-workspace__status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .score-workspace__queue-status { grid-template-columns: 1fr; }
+  .score-workspace__queue-count { justify-self: start; }
   .score-workspace__correction a { width: 100%; }
 }
 

@@ -141,16 +141,18 @@ export function createApiRequestHeaders(input: {
   return Object.fromEntries(headers.entries());
 }
 
+export function createClientCommandId() {
+  return globalThis.crypto?.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (digit) =>
+    (Number(digit) ^ (Math.random() * 16) >> (Number(digit) / 4)).toString(16)
+  );
+}
+
 export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLike } = {}) {
   const baseUrl = options.baseUrl ?? getDefaultApiBaseUrl();
   const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
   let csrfToken: string | null = null;
 
-  function createCommandId() {
-    return globalThis.crypto?.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (digit) =>
-      (Number(digit) ^ (Math.random() * 16) >> (Number(digit) / 4)).toString(16)
-    );
-  }
+  const createCommandId = createClientCommandId;
 
   async function request<T>(
     path: string,
@@ -634,16 +636,21 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
-    async addScore(matchId: string, input: { expectedSeq: number; payload: ScoreAddedPayload }) {
+    async addScore(matchId: string, input: {
+      commandId?: string;
+      correlationId?: string;
+      expectedSeq: number;
+      payload: ScoreAddedPayload;
+    }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/score/add`,
         {
           method: "POST",
           body: JSON.stringify({
-            commandId: createCommandId(),
+            commandId: input.commandId ?? createCommandId(),
             matchId,
             expectedSeq: input.expectedSeq,
-            correlationId: createCommandId(),
+            correlationId: input.correlationId ?? createCommandId(),
             clientTimestamp: new Date().toISOString(),
             payload: input.payload
           })

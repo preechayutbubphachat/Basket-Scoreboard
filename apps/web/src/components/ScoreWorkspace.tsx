@@ -30,6 +30,16 @@ export type ScoreWorkspaceProps = {
   panels: ScoreWorkspacePanel[];
   pendingKey: string | null;
   periodLabel: string;
+  queueStatus?: {
+    detail: string;
+    label: string;
+    onDiscard: () => void;
+    onResume: () => void;
+    onRetry: () => void;
+    paused: boolean;
+    queuedCount: number;
+    retryAvailable: boolean;
+  } | null;
 };
 
 export function ScoreWorkspace({
@@ -43,7 +53,8 @@ export function ScoreWorkspace({
   onScore,
   panels,
   pendingKey,
-  periodLabel
+  periodLabel,
+  queueStatus
 }: ScoreWorkspaceProps) {
   return (
     <section className="score-workspace" aria-label="Score workspace">
@@ -111,6 +122,28 @@ export function ScoreWorkspace({
       </div>
 
       <div className="score-workspace__operations">
+        {queueStatus ? (
+          <section
+            aria-atomic="true"
+            aria-live="polite"
+            className={`score-workspace__queue-status${queueStatus.paused ? " score-workspace__queue-status--paused" : ""}`}
+            role="status"
+          >
+            <div>
+              <span className="score-workspace__eyebrow">Rapid scoring queue</span>
+              <strong>{queueStatus.label}</strong>
+              <small>{queueStatus.detail}</small>
+            </div>
+            <span className="score-workspace__queue-count">Queued {queueStatus.queuedCount}</span>
+            {queueStatus.paused ? (
+              <div className="score-workspace__queue-actions" aria-label="Paused score queue actions">
+                {queueStatus.retryAvailable ? <button type="button" onClick={queueStatus.onRetry}>Retry uncertain action</button> : null}
+                <button type="button" onClick={queueStatus.onResume}>Resume queued actions</button>
+                <button type="button" onClick={queueStatus.onDiscard}>Discard queued actions</button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
         <dl className="score-workspace__status" aria-label="Score operation status">
           <div><dt>Match status</dt><dd>{matchStatus}</dd></div>
           <div><dt>Period</dt><dd>{periodLabel}</dd></div>
