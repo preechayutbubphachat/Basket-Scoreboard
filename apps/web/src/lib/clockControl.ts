@@ -7,6 +7,7 @@ import {
 } from "./operatorMatches";
 
 export type ClockCommandKind = "game-start" | "game-stop" | "game-set" | "shot-reset-24" | "shot-reset-14" | "shot-set";
+export const GAME_CLOCK_SET_REASON_MAX_LENGTH = 500;
 type DisplayClock = {
   remainingMs: number;
   running: boolean;
@@ -85,13 +86,42 @@ export function buildGameClockSetPayload(
   projection: ScoreboardProjection,
   input: { minutes: number; seconds: number; reason: string }
   ) {
+  const validation = validateGameClockSetInput(input);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
   return {
     expectedSeq: projection.currentSeq,
     payload: {
-      remainingMs: Math.max(0, (input.minutes * 60 + input.seconds) * 1000),
-      reason: input.reason.trim() ? input.reason.trim() : null
+      remainingMs: validation.remainingMs,
+      reason: validation.reason
     }
   };
+}
+
+export function validateGameClockSetInput(input: { minutes: number; seconds: number; reason: string }) {
+  if (!Number.isInteger(input.minutes) || input.minutes < 0 || input.minutes > 10) {
+    return { valid: false as const, error: "Enter game-clock minutes from 0 to 10." };
+  }
+  if (!Number.isInteger(input.seconds) || input.seconds < 0 || input.seconds > 59) {
+    return { valid: false as const, error: "Enter game-clock seconds from 0 to 59." };
+  }
+
+  const remainingMs = (input.minutes * 60 + input.seconds) * 1000;
+  if (remainingMs > 600_000) {
+    return { valid: false as const, error: "Game clock cannot exceed 10:00." };
+  }
+
+  const reason = input.reason.trim();
+  if (!reason) {
+    return { valid: false as const, error: "Enter a correction reason before continuing." };
+  }
+  if (reason.length > GAME_CLOCK_SET_REASON_MAX_LENGTH) {
+    return { valid: false as const, error: "Correction reason must be 500 characters or fewer." };
+  }
+
+  return { valid: true as const, remainingMs, reason };
 }
 
 export function buildShotClockSetPayload(

@@ -3,12 +3,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { ClockWorkspace } from "../../apps/web/src/components/ClockWorkspace";
+import { buildGameClockSetPayload, buildShotClockSetPayload, validateGameClockSetInput } from "../../apps/web/src/lib/clockControl";
 
 const workspaceSource = readFileSync("apps/web/src/components/ClockWorkspace.tsx", "utf8");
 const workspaceStyles = readFileSync("apps/web/src/styles/clock-workspace.css", "utf8");
 const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
 
-function renderWorkspace() {
+function renderWorkspace(stage: "closed" | "edit" | "confirm" = "closed") {
   return renderToStaticMarkup(createElement(ClockWorkspace, {
     controls: {
       gameEnabled: true,
@@ -16,16 +17,17 @@ function renderWorkspace() {
       pending: false, shotEnabled: true
     },
     gameClock: { label: "02:41", running: true },
+    gameSetFlow: { error: null, onCancel: () => {}, onOpen: () => {}, onRequestConfirmation: () => {}, stage },
     shotClock: { label: "14", running: false },
     status: { connection: "Connected", match: "Live", period: 4 },
     values: { gameMinutes: 2, gameSeconds: 41, reason: "", shotSeconds: 14 }
   }));
 }
 
-describe("RM-04 P1 ClockWorkspace", () => {
+describe("RM-04 P2 ClockWorkspace", () => {
   test("renders exactly the D1-authorized command surface", () => {
     const html = renderWorkspace();
-    for (const command of ["Start Game Clock", "Stop Game Clock", "Set Game Clock", "Reset Shot 14", "Reset Shot 24", "Set Shot Clock"]) {
+    for (const command of ["Start Game Clock", "Stop Game Clock", "Set / Adjust Game Clock", "Reset Shot 14", "Reset Shot 24", "Set Shot Clock"]) {
       expect(html).toContain(command);
     }
     expect(html).not.toMatch(/Start Shot Clock|Stop Shot Clock|Start Period|End Period|Overtime/i);
@@ -44,10 +46,27 @@ describe("RM-04 P1 ClockWorkspace", () => {
     expect(workspaceStyles).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/);
   });
 
-  test("remains presentation-only and does not change the P1 manual-set contract", () => {
+  test("keeps the guarded correction dialog presentation-only", () => {
     expect(workspaceSource).not.toMatch(/fetch\(|api\.|setInterval|setTimeout|socket|expectedSeq|useLiveClockNow/);
-    expect(workspaceSource).toContain("Manual set behavior remains unchanged in this slice.");
-    expect(workspaceSource).not.toMatch(/\brequired\s*(?:=|\})|onConfirm|ConfirmationDialog/);
+    expect(renderWorkspace("edit")).toContain("Review correction");
+    expect(renderWorkspace("confirm")).toContain("Confirm clock correction");
+    expect(renderWorkspace("confirm")).toContain("Match context");
+    expect(workspaceSource).toContain("showModal");
+    expect(workspaceSource).toContain("gameSetTriggerRef.current?.focus()");
+  });
+
+  test("requires and canonicalizes the game-clock correction reason only", () => {
+    expect(validateGameClockSetInput({ minutes: 2, seconds: 30, reason: "   " }).valid).toBe(false);
+    expect(validateGameClockSetInput({ minutes: 2, seconds: 30, reason: "x".repeat(501) }).valid).toBe(false);
+    expect(validateGameClockSetInput({ minutes: 10, seconds: 1, reason: "valid" }).valid).toBe(false);
+    expect(validateGameClockSetInput({ minutes: 10, seconds: 0, reason: "x".repeat(500) })).toMatchObject({ valid: true, remainingMs: 600000 });
+
+    const projection = { currentSeq: 7 } as Parameters<typeof buildGameClockSetPayload>[0];
+    expect(buildGameClockSetPayload(projection, { minutes: 2, seconds: 30, reason: "  table correction  " })).toEqual({
+      expectedSeq: 7,
+      payload: { remainingMs: 150000, reason: "table correction" }
+    });
+    expect(buildShotClockSetPayload(projection, { seconds: 14, reason: "   " }).payload.reason).toBeNull();
   });
 
   test("keeps one route owner for hydration, realtime, polling, interpolation and commands", () => {

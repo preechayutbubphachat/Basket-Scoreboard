@@ -156,7 +156,8 @@
 
 .clock-workspace button:disabled { cursor: not-allowed; opacity: 0.55; }
 .clock-workspace button:focus-visible,
-.clock-workspace input:focus-visible { box-shadow: var(--focus-separation-halo); outline: var(--focus-outline-width) solid var(--color-focus); outline-offset: var(--focus-outline-offset); }
+.clock-workspace input:focus-visible,
+.clock-workspace textarea:focus-visible { box-shadow: var(--focus-separation-halo); outline: var(--focus-outline-width) solid var(--color-focus); outline-offset: var(--focus-outline-offset); }
 
 .clock-workspace__note,
 .clock-workspace__adjustments p {
@@ -183,6 +184,23 @@
 .clock-workspace label { color: var(--color-text-secondary); display: grid; font-size: var(--text-label); font-weight: 700; gap: var(--space-1); }
 .clock-workspace input { background: var(--color-canvas); border: var(--border-thin) solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); font: inherit; min-height: var(--control-height-default); padding: 0 var(--space-3); }
 
+.clock-workspace__dialog { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; overflow: auto; color: var(--color-text-primary); background: var(--color-surface-elevated); border: var(--border-thin) solid var(--color-border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-elevated); }
+.clock-workspace__dialog::backdrop { background: rgb(2 6 23 / 78%); }
+.clock-workspace__dialog-form { display: grid; gap: var(--space-5); padding: clamp(20px, 4vw, 36px); }
+.clock-workspace__dialog-form header { display: grid; gap: var(--space-2); }
+.clock-workspace__dialog-form header p { margin: 0; }
+.clock-workspace__dialog-time { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.clock-workspace__dialog-form textarea { min-height: 112px; resize: vertical; background: var(--color-canvas); border: var(--border-thin) solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-primary); font: inherit; padding: var(--space-3); }
+.clock-workspace__field-help,
+.clock-workspace__form-error { margin: calc(var(--space-3) * -1) 0 0; }
+.clock-workspace__form-error { padding: var(--space-3); color: var(--color-text-primary); background: color-mix(in srgb, var(--color-danger) 18%, var(--color-surface)); border-inline-start: 4px solid var(--color-danger); font-weight: 700; }
+.clock-workspace__dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-3); }
+.clock-workspace__confirm-action { background: var(--color-warning) !important; color: var(--color-canvas) !important; border-color: var(--color-warning) !important; }
+.clock-workspace__confirmation-summary { display: grid; gap: 1px; margin: 0; overflow: hidden; background: var(--color-border); border: var(--border-thin) solid var(--color-border); border-radius: var(--radius-md); }
+.clock-workspace__confirmation-summary div { display: grid; grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr); gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--color-surface); }
+.clock-workspace__confirmation-summary dt { color: var(--color-text-muted); font-weight: 700; }
+.clock-workspace__confirmation-summary dd { margin: 0; overflow-wrap: anywhere; }
+
 @media (max-width: 1100px) {
   .clock-workspace__domains { grid-template-columns: minmax(0, 1fr); }
   .clock-workspace__domain--shot { grid-template-columns: minmax(0, 1fr) minmax(220px, 0.7fr); }
@@ -200,6 +218,9 @@
   .clock-workspace__domain--shot .clock-workspace__note { grid-column: auto; }
   .clock-workspace__timer { min-height: clamp(8rem, 28vw, 12rem); }
   .clock-workspace__timer--game { font-size: clamp(4rem, 17vw, 7rem); }
+  .clock-workspace__dialog-time,
+  .clock-workspace__confirmation-summary div { grid-template-columns: minmax(0, 1fr); }
+  .clock-workspace__dialog-actions > * { flex: 1 1 100%; }
 }
 
 @media (forced-colors: active) {
@@ -208,9 +229,12 @@
   .clock-workspace__adjustments,
   .clock-workspace fieldset,
   .clock-workspace input,
+  .clock-workspace textarea,
+  .clock-workspace__dialog,
   .clock-workspace button { border-color: CanvasText; }
   .clock-workspace__timer,
   .clock-workspace__state { color: CanvasText; }
+  .clock-workspace__form-error { border: 2px solid CanvasText; }
 }
 
 @media (prefers-reduced-motion: reduce) {

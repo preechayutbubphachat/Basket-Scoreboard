@@ -1,4 +1,4 @@
-import type { ChangeEventHandler } from "react";
+import { useEffect, useRef, type ChangeEventHandler } from "react";
 
 export type ClockWorkspaceProps = {
   gameClock: {
@@ -21,13 +21,20 @@ export type ClockWorkspaceProps = {
     onGameSet: () => void;
     onGameStart: () => void;
     onGameStop: () => void;
-    onReasonChange: ChangeEventHandler<HTMLInputElement>;
+    onReasonChange: ChangeEventHandler<HTMLInputElement | HTMLTextAreaElement>;
     onShotReset14: () => void;
     onShotReset24: () => void;
     onShotSecondsChange: ChangeEventHandler<HTMLInputElement>;
     onShotSet: () => void;
     pending: boolean;
     shotEnabled: boolean;
+  };
+  gameSetFlow: {
+    error: string | null;
+    onCancel: () => void;
+    onOpen: () => void;
+    onRequestConfirmation: () => void;
+    stage: "closed" | "edit" | "confirm";
   };
   values: {
     gameMinutes: number;
@@ -41,9 +48,27 @@ function ClockState({ running }: { running: boolean }) {
   return <span className={`clock-workspace__state clock-workspace__state--${running ? "running" : "stopped"}`}>{running ? "Running" : "Stopped"}</span>;
 }
 
-export function ClockWorkspace({ controls, gameClock, shotClock, status, values }: ClockWorkspaceProps) {
+export function ClockWorkspace({ controls, gameClock, gameSetFlow, shotClock, status, values }: ClockWorkspaceProps) {
   const gameDisabled = !controls.gameEnabled || controls.pending;
   const shotDisabled = !controls.shotEnabled || controls.pending;
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const gameSetTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (gameSetFlow.stage !== "closed" && !dialog.open) {
+      dialog.showModal();
+    } else if (gameSetFlow.stage === "closed" && dialog.open) {
+      dialog.close();
+      gameSetTriggerRef.current?.focus();
+    }
+  }, [gameSetFlow.stage]);
+
+  function cancelGameSet() {
+    gameSetFlow.onCancel();
+  }
 
   return (
     <section className="clock-workspace" aria-label="Clock workspace">
@@ -90,23 +115,78 @@ export function ClockWorkspace({ controls, gameClock, shotClock, status, values 
         <header>
           <span className="clock-workspace__eyebrow">Manual adjustment</span>
           <h2 id="clock-adjustments-heading">Set Clock Values</h2>
-          <p>Manual set behavior remains unchanged in this slice. Confirmation and required-reason enforcement are reserved for the approved follow-up slices.</p>
+          <p>Game-clock corrections require a reason and explicit confirmation. Shot-clock behavior remains separate.</p>
         </header>
-        <label className="clock-workspace__reason">Reason<input value={values.reason} onChange={controls.onReasonChange} /></label>
         <div className="clock-workspace__adjustment-grid">
           <fieldset>
             <legend>Game Clock</legend>
-            <label>Minutes<input type="number" min="0" max="10" value={values.gameMinutes} onChange={controls.onGameMinutesChange} /></label>
-            <label>Seconds<input type="number" min="0" max="59" value={values.gameSeconds} onChange={controls.onGameSecondsChange} /></label>
-            <button type="button" disabled={gameDisabled} onClick={controls.onGameSet}>Set Game Clock</button>
+            <p>Open the guarded correction flow to adjust authoritative match time.</p>
+            <button ref={gameSetTriggerRef} type="button" disabled={gameDisabled} onClick={gameSetFlow.onOpen}>Set / Adjust Game Clock</button>
           </fieldset>
           <fieldset>
             <legend>Shot Clock</legend>
             <label>Seconds<input type="number" min="0" max="24" value={values.shotSeconds} onChange={controls.onShotSecondsChange} /></label>
+            <label>Reason (optional)<input value={values.reason} onChange={controls.onReasonChange} /></label>
             <button type="button" disabled={shotDisabled} onClick={controls.onShotSet}>Set Shot Clock</button>
           </fieldset>
         </div>
       </section>
+
+      <dialog
+        aria-labelledby="game-clock-correction-title"
+        className="clock-workspace__dialog"
+        onCancel={(event) => {
+          event.preventDefault();
+          cancelGameSet();
+        }}
+        ref={dialogRef}
+      >
+        {gameSetFlow.stage === "edit" ? (
+          <form
+            className="clock-workspace__dialog-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              gameSetFlow.onRequestConfirmation();
+            }}
+          >
+            <header>
+              <span className="clock-workspace__eyebrow">Correction workflow</span>
+              <h2 id="game-clock-correction-title">Set / Adjust Game Clock</h2>
+              <p>Enter the authoritative target and document why match time is being corrected.</p>
+            </header>
+            <div className="clock-workspace__dialog-time">
+              <label>Minutes<input autoFocus inputMode="numeric" type="number" min="0" max="10" value={values.gameMinutes} onChange={controls.onGameMinutesChange} /></label>
+              <label>Seconds<input inputMode="numeric" type="number" min="0" max="59" value={values.gameSeconds} onChange={controls.onGameSecondsChange} /></label>
+            </div>
+            <label>Correction reason<textarea maxLength={500} required value={values.reason} onChange={controls.onReasonChange} /></label>
+            <p className="clock-workspace__field-help">Required. Maximum 500 characters.</p>
+            {gameSetFlow.error ? <p className="clock-workspace__form-error" role="alert">{gameSetFlow.error}</p> : null}
+            <div className="clock-workspace__dialog-actions">
+              <button type="button" className="clock-workspace__secondary-action" onClick={cancelGameSet}>Cancel</button>
+              <button type="submit">Review correction</button>
+            </div>
+          </form>
+        ) : gameSetFlow.stage === "confirm" ? (
+          <section className="clock-workspace__dialog-form">
+            <header>
+              <span className="clock-workspace__eyebrow">Explicit confirmation</span>
+              <h2 id="game-clock-correction-title">Confirm Game Clock Correction</h2>
+              <p>Verify this match context before changing authoritative time.</p>
+            </header>
+            <dl className="clock-workspace__confirmation-summary">
+              <div><dt>Target clock</dt><dd>{values.gameMinutes}:{String(values.gameSeconds).padStart(2, "0")}</dd></div>
+              <div><dt>Reason</dt><dd>{values.reason.trim()}</dd></div>
+              <div><dt>Match context</dt><dd>{status.match}, period {status.period}</dd></div>
+            </dl>
+            <div className="clock-workspace__dialog-actions">
+              <button type="button" className="clock-workspace__secondary-action" disabled={controls.pending} onClick={cancelGameSet}>Cancel correction</button>
+              <button type="button" className="clock-workspace__confirm-action" disabled={controls.pending} onClick={controls.onGameSet}>
+                {controls.pending ? "Applying correction..." : "Confirm clock correction"}
+              </button>
+            </div>
+          </section>
+        ) : null}
+      </dialog>
     </section>
   );
 }

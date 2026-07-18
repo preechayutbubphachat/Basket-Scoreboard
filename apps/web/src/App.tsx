@@ -118,7 +118,8 @@ import {
   buildGameClockSetPayload,
   buildShotClockResetPayload,
   buildShotClockSetPayload,
-  getClockControlFeedback
+  getClockControlFeedback,
+  validateGameClockSetInput
 } from "./lib/clockControl";
 import {
   buildTimeoutControlPanels,
@@ -3633,6 +3634,8 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const [gameSeconds, setGameSeconds] = useState(0);
   const [shotSeconds, setShotSeconds] = useState(24);
   const [reason, setReason] = useState("");
+  const [gameSetStage, setGameSetStage] = useState<"closed" | "edit" | "confirm">("closed");
+  const [gameSetError, setGameSetError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitGameClock = canOperateGameClock(currentUser, matchId);
   const canSubmitShotClock = canOperateShotClock(currentUser, matchId);
@@ -3699,7 +3702,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   }
 
   async function runClockCommand(key: string, permitted: boolean, command: () => Promise<CommandResult>) {
-    if (!projection || !permitted) return;
+    if (!projection || !permitted) return false;
     setPendingKey(key);
     setMessage(null);
     const previousSeq = projection.currentSeq;
@@ -3709,17 +3712,49 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getClockControlFeedback(result));
         await refreshAfterCommand(previousSeq);
-        return;
+        return false;
       }
 
       await refreshAfterCommand(previousSeq);
       setMessage(getClockControlFeedback(result));
-      setReason("");
+      const accepted = result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED";
+      if (accepted) setReason("");
+      return accepted;
     } catch (error) {
       setMessage(toUiMessage(error));
+      return false;
     } finally {
       setPendingKey(null);
     }
+  }
+
+  function requestGameSetConfirmation() {
+    const validation = validateGameClockSetInput({ minutes: gameMinutes, seconds: gameSeconds, reason });
+    if (!validation.valid) {
+      setGameSetError(validation.error);
+      return;
+    }
+    setReason(validation.reason);
+    setGameSetError(null);
+    setGameSetStage("confirm");
+  }
+
+  async function confirmGameClockSet() {
+    if (!projection || pendingKey) return;
+    const validation = validateGameClockSetInput({ minutes: gameMinutes, seconds: gameSeconds, reason });
+    if (!validation.valid) {
+      setGameSetError(validation.error);
+      setGameSetStage("edit");
+      return;
+    }
+    const accepted = await runClockCommand("game-set", canSubmitGameClock, () =>
+      api.setGameClock(matchId, buildGameClockSetPayload(projection, {
+        minutes: gameMinutes,
+        seconds: gameSeconds,
+        reason: validation.reason
+      }))
+    );
+    setGameSetStage(accepted ? "closed" : "edit");
   }
 
   const clockState = projection ? buildClockControlState(projection, { nowMs, receivedAtMs: projectionReceivedAtMs }) : null;
@@ -3753,7 +3788,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             gameEnabled: canSubmitGameClock,
             onGameMinutesChange: (event) => setGameMinutes(Number(event.target.value)),
             onGameSecondsChange: (event) => setGameSeconds(Number(event.target.value)),
-            onGameSet: () => void runClockCommand("game-set", canSubmitGameClock, () => api.setGameClock(matchId, buildGameClockSetPayload(projection, { minutes: gameMinutes, seconds: gameSeconds, reason }))),
+            onGameSet: () => void confirmGameClockSet(),
             onGameStart: () => void runClockCommand("game-start", canSubmitGameClock, () => api.startGameClock(matchId, { expectedSeq: projection.currentSeq })),
             onGameStop: () => void runClockCommand("game-stop", canSubmitGameClock, () => api.stopGameClock(matchId, { expectedSeq: projection.currentSeq })),
             onReasonChange: (event) => setReason(event.target.value),
@@ -3765,6 +3800,19 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
             shotEnabled: canSubmitShotClock
           }}
           gameClock={{ label: clockState.gameClockLabel, running: clockState.gameClockRunning }}
+          gameSetFlow={{
+            error: gameSetError,
+            onCancel: () => {
+              setGameSetError(null);
+              setGameSetStage("closed");
+            },
+            onOpen: () => {
+              setGameSetError(null);
+              setGameSetStage("edit");
+            },
+            onRequestConfirmation: requestGameSetConfirmation,
+            stage: gameSetStage
+          }}
           shotClock={{ label: clockState.shotClockLabel, running: clockState.shotClockRunning }}
           status={{ connection: getRealtimeConnectionLabel(realtimeState), match: projection.status, period: projection.periodNumber }}
           values={{ gameMinutes, gameSeconds, reason, shotSeconds }}

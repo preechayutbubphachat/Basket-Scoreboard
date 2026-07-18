@@ -246,6 +246,34 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         appendedEvents: [{ seqNo: 3, eventType: "SHOT_CLOCK_RESET" }]
       });
 
+      const rejectedSetResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/game/set`,
+        headers: adminHeaders,
+        payload: clockCommand(created.matchId, 3, { remainingMs: 150000, reason: "   " })
+      });
+      expect(rejectedSetResponse.statusCode).toBe(400);
+
+      const set = clockCommand(created.matchId, 3, { remainingMs: 150000, reason: "  table correction  " });
+      const setResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/game/set`,
+        headers: adminHeaders,
+        payload: set
+      });
+      expect(setResponse.json()).toMatchObject({
+        status: "ACCEPTED",
+        currentSeq: 4,
+        appendedEvents: [{ seqNo: 4, eventType: "GAME_CLOCK_SET" }]
+      });
+      const duplicateSetResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/clock/game/set`,
+        headers: adminHeaders,
+        payload: set
+      });
+      expect(duplicateSetResponse.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 4, appendedEvents: [] });
+
       const staleResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/clock/shot/set`,
@@ -254,7 +282,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       });
       expect(staleResponse.json()).toMatchObject({
         status: "SYNC_REQUIRED",
-        currentSeq: 3,
+        currentSeq: 4,
         reasonCode: "INVALID_EXPECTED_SEQ"
       });
 
@@ -265,8 +293,26 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       expect(eventRows.map((event) => event.event_type)).toEqual([
         "GAME_CLOCK_STARTED",
         "GAME_CLOCK_STOPPED",
-        "SHOT_CLOCK_RESET"
+        "SHOT_CLOCK_RESET",
+        "GAME_CLOCK_SET"
       ]);
+
+      const [setEventRows] = await pool.query<RowDataPacket[]>(
+        "SELECT payload, reason FROM match_events WHERE match_id = ? AND seq_no = 4",
+        [created.matchId]
+      );
+      expect(JSON.parse(setEventRows[0]!.payload)).toMatchObject({ remainingMs: 150000, reason: "table correction" });
+      expect(setEventRows[0]!.reason).toBe("table correction");
+
+      const connection = await pool.getConnection();
+      try {
+        const auditLogs = await listAuditLogsForMatch(connection, created.matchId);
+        expect(auditLogs).toEqual(expect.arrayContaining([
+          expect.objectContaining({ action: "GAME_CLOCK_SET", eventSeq: 4, reason: "table correction" })
+        ]));
+      } finally {
+        connection.release();
+      }
 
       const projectionResponse = await app.inject({
         method: "GET",
@@ -274,9 +320,9 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         headers: scorerHeaders(created.matchId)
       });
       expect(projectionResponse.json()).toMatchObject({
-        currentSeq: 3,
-        lastEventSeq: 3,
-        gameClock: { running: false },
+        currentSeq: 4,
+        lastEventSeq: 4,
+        gameClock: { remainingMs: 150000, running: false },
         shotClock: { remainingMs: 14000, running: false },
         shotClockRemainingMs: 14000
       });

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AuthenticatedDashboardShell } from "../../apps/web/src/components/AuthenticatedDashboardShell";
 import { LiveMatchShell, type LiveMatchShellProps } from "../../apps/web/src/components/LiveMatchShell";
 import { ClockWorkspace } from "../../apps/web/src/components/ClockWorkspace";
+import { validateGameClockSetInput } from "../../apps/web/src/lib/clockControl";
 import type { EffectiveMatchAccess } from "@basket-scoreboard/api-contracts";
 import {
   buildLiveMatchNavigation,
@@ -80,6 +81,58 @@ const commandStatus: LiveMatchShellProps["commandStatus"] = commandState === "pe
       ? { detail: `${workspaceLabel} command rejected.`, state: "rejected" }
       : undefined;
 
+function ClockFixtureWorkspace() {
+  const [stage, setStage] = React.useState<"closed" | "edit" | "confirm">("closed");
+  const [minutes, setMinutes] = React.useState(2);
+  const [seconds, setSeconds] = React.useState(41);
+  const [reason, setReason] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [dispatchCount, setDispatchCount] = React.useState(0);
+  const pending = commandState === "pending";
+
+  function requestConfirmation() {
+    const result = validateGameClockSetInput({ minutes, seconds, reason });
+    if (!result.valid) {
+      setError(result.error);
+      return;
+    }
+    setReason(result.reason);
+    setError(null);
+    setStage("confirm");
+  }
+
+  return <>
+    <output data-testid="game-set-dispatch-count" aria-live="polite">Game corrections dispatched: {dispatchCount}</output>
+    <ClockWorkspace
+      controls={{
+        gameEnabled: fixtureState !== "final",
+        onGameMinutesChange: (event) => setMinutes(Number(event.currentTarget.value)),
+        onGameSecondsChange: (event) => setSeconds(Number(event.currentTarget.value)),
+        onGameSet: () => {
+          if (pending) return;
+          setDispatchCount((count) => count + 1);
+          setStage("closed");
+        },
+        onGameStart: () => {}, onGameStop: () => {},
+        onReasonChange: (event) => setReason(event.currentTarget.value),
+        onShotReset14: () => {}, onShotReset24: () => {}, onShotSecondsChange: () => {}, onShotSet: () => {},
+        pending, shotEnabled: fixtureState !== "final"
+      }}
+      gameClock={{ label: "02:41", running: true }}
+      gameSetFlow={{
+        error,
+        onCancel: () => { setError(null); setStage("closed"); },
+        onOpen: () => { setError(null); setStage("edit"); },
+        onRequestConfirmation: requestConfirmation,
+        stage
+      }}
+      shotClock={{ label: "14", running: false }}
+      status={{ connection: connectionByState[fixtureState]?.label ?? "Arena link connected", match: fixtureState === "final" ? "Final" : "Live", period: 4 }}
+      values={{ gameMinutes: minutes, gameSeconds: seconds, reason, shotSeconds: 14 }}
+    />
+  </>;
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("Fixture root was not found");
 
@@ -112,17 +165,7 @@ createRoot(root).render(
           </section>
         ) : undefined}
       >
-        {workspace === "clock" ? <ClockWorkspace
-          controls={{
-            gameEnabled: fixtureState !== "final",
-            onGameMinutesChange: () => {}, onGameSecondsChange: () => {}, onGameSet: () => {}, onGameStart: () => {}, onGameStop: () => {}, onReasonChange: () => {}, onShotReset14: () => {}, onShotReset24: () => {}, onShotSecondsChange: () => {}, onShotSet: () => {},
-            pending: commandState === "pending", shotEnabled: fixtureState !== "final"
-          }}
-          gameClock={{ label: "02:41", running: true }}
-          shotClock={{ label: "14", running: false }}
-          status={{ connection: connectionByState[fixtureState]?.label ?? "Arena link connected", match: fixtureState === "final" ? "Final" : "Live", period: 4 }}
-          values={{ gameMinutes: 2, gameSeconds: 41, reason: "", shotSeconds: 14 }}
-        /> : <section aria-label={workspaceLabel} className="panel score-control">
+        {workspace === "clock" ? <ClockFixtureWorkspace /> : <section aria-label={workspaceLabel} className="panel score-control">
           <h2>{workspaceLabel}</h2>
           <div className="score-display" aria-label="Current score">
             <div><span>{workspace === "clock" ? "GAME CLOCK" : "HOME"}</span><strong>{workspace === "clock" ? "02:41" : "72"}</strong><small>{match.homeTeamName}</small></div>

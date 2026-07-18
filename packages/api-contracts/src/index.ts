@@ -1231,7 +1231,7 @@ export const playerFoulAddedPayloadSchema = teamFoulAddedPayloadSchema.extend({
 
 export const gameClockSetPayloadSchema = z.object({
   remainingMs: z.number().int().min(0).max(600000),
-  reason: z.string().max(500).nullable()
+  reason: z.string().trim().min(1).max(500)
 });
 
 export const shotClockResetPayloadSchema = z.object({

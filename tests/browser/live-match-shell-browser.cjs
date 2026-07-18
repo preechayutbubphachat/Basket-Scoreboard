@@ -147,7 +147,7 @@ async function main() {
         assert.equal(result.teamNamesBounded, true, `${viewport.width} ${state.name} team label overflow`);
         assert(result.workspaceButtonCount >= 2, `${viewport.width} ${workspace} ${state.name} controls missing`);
         if (workspace === "clock") {
-          assert.deepEqual(result.clockControls, ["Start Game Clock", "Stop Game Clock", "Reset Shot 24", "Reset Shot 14", "Set Game Clock", "Set Shot Clock"]);
+          assert.deepEqual(result.clockControls, ["Start Game Clock", "Stop Game Clock", "Reset Shot 24", "Reset Shot 14", "Set / Adjust Game Clock", "Set Shot Clock"]);
           assert.equal(result.clockTimersVisible, true, `${viewport.width} ${state.name} clock timer is not visible`);
         }
         if (state.command === "pending") assert(result.commandText.includes(`Saving ${workspace}`), `${viewport.width} ${workspace} pending status missing`);

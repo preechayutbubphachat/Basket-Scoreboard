@@ -143,9 +143,10 @@ RM-03-I = INTEGRATED
 RM-04 = CURRENT
 RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
-RM-04-P2 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P2 = IMPLEMENTATION COMPLETE
+RM-04-P3 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
-Next safe step: RM-04-P2 - Game Clock Control and Manual Correction Safety
+Next safe step: RM-04-P3 - Shot Clock Reset/Set and Manual Correction Safety
 ```
 
 ## 6. Straight-Line Diagram
@@ -265,7 +266,7 @@ There is no parallel top-level path.
 - Objective: deliver the production-grade clock and shot-clock operator dashboard.
 - Visual target: `Clock and Shot Clock Dashboard.png`.
 - Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 is `IMPLEMENTATION COMPLETE`, and RM-04-P2 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 and RM-04-P2 are `IMPLEMENTATION COMPLETE`, and RM-04-P3 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
 - Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
 - API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and clock projections.
@@ -691,7 +692,8 @@ RM-03-I = INTEGRATED
 RM-04 = CURRENT
 RM-04-D1 = DISCOVERY COMPLETE
 RM-04-P1 = IMPLEMENTATION COMPLETE
-RM-04-P2 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P2 = IMPLEMENTATION COMPLETE
+RM-04-P3 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
 ```
 
@@ -1258,6 +1260,32 @@ RM-04-D1 clock rule and command contract closure evidence:
 - Roadmap transition: RM-04 is `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`; RM-04-P1 is
   `IMPLEMENTATION COMPLETE`; RM-04-P2 is `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
 - Next safe step: `RM-04-P2 - Game Clock Control and Manual Correction Safety`.
+
+RM-04-P2 game clock control and manual correction safety closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): guard game clock manual corrections`).
+- Contract and ownership: `GAME_CLOCK_SET` alone requires a trimmed non-empty reason of at most 500 characters;
+  its existing 0..600000ms bound, protected REST route, route-owned dispatch, projection-derived `expectedSeq`,
+  command identifiers, append-only event, projection, audit, and realtime ownership remain intact. Game start/stop
+  and every Shot Clock contract remain unchanged.
+- Operator safety: the route-owned two-stage modal validates minutes, seconds, and reason before presenting target
+  time, reason, and match context for explicit confirmation. Cancel and Escape dispatch nothing, focus returns to
+  the trigger, pending disables confirmation, accepted results close the flow, and stale state refreshes once then
+  requires an explicit operator retry without automatic command replay.
+- Database evidence: the dedicated disposable loopback target matched the required endpoint, database, and user.
+  Focused and canonical DB runs proved invalid corrections append no event, accepted corrections append one
+  `GAME_CLOCK_SET`, duplicate commands append nothing, concurrent stale commands return `SYNC_REQUIRED`, and the
+  canonical trimmed reason is identical in event payload, event reason, projection transition, and audit row.
+- Validation: focused contract/workspace tests passed 7/7 and the focused clock event-store test passed 1/1. The
+  five-viewport browser matrix (1920, 1600, 1366, 1280, and 1024 widths) passed with no horizontal overflow,
+  console error, failed request, or page error. Canonical lint, 644/644 full tests, 24/24 DB tests, production build,
+  single-app build, and diff checks passed.
+- Gridgeist review: `PASS`; the guarded flow reuses the existing grid, type, color, focus, forced-colors, and
+  reduced-motion system while preserving Game Clock dominance and the distinct Shot Clock domain.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P2 is `IMPLEMENTATION COMPLETE`; RM-04-P3 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P3 - Shot Clock Reset/Set and Manual Correction Safety`. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
