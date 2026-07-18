@@ -38,6 +38,7 @@ import type {
 } from "@basket-scoreboard/api-contracts";
 import { AuthProvider, useCurrentUser } from "./auth/AuthProvider";
 import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem } from "./components/AuthenticatedDashboardShell";
+import { ClockWorkspace } from "./components/ClockWorkspace";
 import { LiveMatchShell } from "./components/LiveMatchShell";
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
@@ -3747,127 +3748,27 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
         <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
       ) : null}
       {projection && clockState ? (
-        <section className="panel score-control">
-          <div className="clock-display" aria-label="Clock state">
-            <div>
-              <span>Game Clock</span>
-              <strong>{clockState.gameClockLabel}</strong>
-              <small>{clockState.gameClockRunning ? "Running" : "Stopped"}</small>
-            </div>
-            <div>
-              <span>Shot Clock</span>
-              <strong>{clockState.shotClockLabel}</strong>
-              <small>{clockState.shotClockRunning ? "Running" : "Stopped"}</small>
-            </div>
-          </div>
-          <dl className="state-strip">
-            <div><dt>Status</dt><dd>{projection.status}</dd></div>
-            <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
-            <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
-          </dl>
-          <div className="button-row">
-            <button
-              type="button"
-              className="score-button"
-              disabled={!canSubmitGameClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("game-start", canSubmitGameClock, () =>
-                api.startGameClock(matchId, { expectedSeq: projection.currentSeq })
-              )}
-            >
-              Start Game Clock
-            </button>
-            <button
-              type="button"
-              className="score-button"
-              disabled={!canSubmitGameClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("game-stop", canSubmitGameClock, () =>
-                api.stopGameClock(matchId, { expectedSeq: projection.currentSeq })
-              )}
-            >
-              Stop Game Clock
-            </button>
-            <button
-              type="button"
-              className="score-button"
-              disabled={!canSubmitShotClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("shot-24", canSubmitShotClock, () =>
-                api.resetShotClock(matchId, buildShotClockResetPayload(projection, 24000, reason))
-              )}
-            >
-              Reset Shot 24
-            </button>
-            <button
-              type="button"
-              className="score-button"
-              disabled={!canSubmitShotClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("shot-14", canSubmitShotClock, () =>
-                api.resetShotClock(matchId, buildShotClockResetPayload(projection, 14000, reason))
-              )}
-            >
-              Reset Shot 14
-            </button>
-          </div>
-          <div className="form-grid compact">
-            <label>
-              Game minutes
-              <input
-                type="number"
-                min="0"
-                max="10"
-                value={gameMinutes}
-                onChange={(event) => setGameMinutes(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Game seconds
-              <input
-                type="number"
-                min="0"
-                max="59"
-                value={gameSeconds}
-                onChange={(event) => setGameSeconds(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Shot seconds
-              <input
-                type="number"
-                min="0"
-                max="24"
-                value={shotSeconds}
-                onChange={(event) => setShotSeconds(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Reason
-              <input value={reason} onChange={(event) => setReason(event.target.value)} />
-            </label>
-          </div>
-          <div className="button-row">
-            <button
-              type="button"
-              disabled={!canSubmitGameClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("game-set", canSubmitGameClock, () =>
-                api.setGameClock(matchId, buildGameClockSetPayload(projection, {
-                  minutes: gameMinutes,
-                  seconds: gameSeconds,
-                  reason
-                }))
-              )}
-            >
-              Set Game Clock
-            </button>
-            <button
-              type="button"
-              disabled={!canSubmitShotClock || Boolean(pendingKey)}
-              onClick={() => void runClockCommand("shot-set", canSubmitShotClock, () =>
-                api.setShotClock(matchId, buildShotClockSetPayload(projection, { seconds: shotSeconds, reason }))
-              )}
-            >
-              Set Shot Clock
-            </button>
-          </div>
-        </section>
+        <ClockWorkspace
+          controls={{
+            gameEnabled: canSubmitGameClock,
+            onGameMinutesChange: (event) => setGameMinutes(Number(event.target.value)),
+            onGameSecondsChange: (event) => setGameSeconds(Number(event.target.value)),
+            onGameSet: () => void runClockCommand("game-set", canSubmitGameClock, () => api.setGameClock(matchId, buildGameClockSetPayload(projection, { minutes: gameMinutes, seconds: gameSeconds, reason }))),
+            onGameStart: () => void runClockCommand("game-start", canSubmitGameClock, () => api.startGameClock(matchId, { expectedSeq: projection.currentSeq })),
+            onGameStop: () => void runClockCommand("game-stop", canSubmitGameClock, () => api.stopGameClock(matchId, { expectedSeq: projection.currentSeq })),
+            onReasonChange: (event) => setReason(event.target.value),
+            onShotReset14: () => void runClockCommand("shot-14", canSubmitShotClock, () => api.resetShotClock(matchId, buildShotClockResetPayload(projection, 14000, reason))),
+            onShotReset24: () => void runClockCommand("shot-24", canSubmitShotClock, () => api.resetShotClock(matchId, buildShotClockResetPayload(projection, 24000, reason))),
+            onShotSecondsChange: (event) => setShotSeconds(Number(event.target.value)),
+            onShotSet: () => void runClockCommand("shot-set", canSubmitShotClock, () => api.setShotClock(matchId, buildShotClockSetPayload(projection, { seconds: shotSeconds, reason }))),
+            pending: Boolean(pendingKey),
+            shotEnabled: canSubmitShotClock
+          }}
+          gameClock={{ label: clockState.gameClockLabel, running: clockState.gameClockRunning }}
+          shotClock={{ label: clockState.shotClockLabel, running: clockState.shotClockRunning }}
+          status={{ connection: getRealtimeConnectionLabel(realtimeState), match: projection.status, period: projection.periodNumber }}
+          values={{ gameMinutes, gameSeconds, reason, shotSeconds }}
+        />
       ) : null}
       </section>
     </OperatorLiveMatchFrame>

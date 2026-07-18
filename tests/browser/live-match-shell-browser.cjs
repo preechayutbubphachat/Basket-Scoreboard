@@ -12,9 +12,10 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const fixturePath = "/tests/browser/live-match-shell-fixture.html";
 const viewports = [
   { width: 1920, height: 1080 },
+  { width: 1600, height: 900 },
   { width: 1366, height: 768 },
   { width: 1280, height: 720 },
-  { width: 1024, height: 768 }
+  { width: 1024, height: 576 }
 ];
 const workspaces = ["score", "fouls", "clock", "timeouts"];
 const states = [
@@ -45,6 +46,9 @@ async function measure(page, viewport, state, workspaceName) {
   await page.goto(`${baseUrl}${fixturePath}?${state.query}&workspace=${workspaceName}`, { waitUntil: "networkidle" });
   const firstNavigationLink = page.locator(".live-match-shell__navigation a").first();
   if (await firstNavigationLink.count()) await firstNavigationLink.focus();
+  if (workspaceName === "clock") {
+    await page.locator(".clock-workspace").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  }
 
   return page.evaluate(({ expectedState, hasRail, compact, workspace }) => {
     const documentElement = document.documentElement;
@@ -78,8 +82,13 @@ async function measure(page, viewport, state, workspaceName) {
       commandText: document.querySelector(".ui-command-status")?.textContent ?? "",
       mainCount: document.querySelectorAll("main").length,
       navigationLinkHeight: linkRect?.height ?? 0,
-      workspaceButtonCount: document.querySelectorAll(`[aria-label="${workspace[0].toUpperCase()}${workspace.slice(1)} workspace"] button`).length,
-      workspaceButtonsDisabled: [...document.querySelectorAll(`[aria-label="${workspace[0].toUpperCase()}${workspace.slice(1)} workspace"] button`)].every((button) => button.disabled),
+      workspaceButtonCount: workspace === "clock" ? document.querySelectorAll(".clock-workspace button").length : document.querySelectorAll(`[aria-label="${workspace[0].toUpperCase()}${workspace.slice(1)} workspace"] button`).length,
+      workspaceButtonsDisabled: workspace === "clock" ? [...document.querySelectorAll(".clock-workspace button")].every((button) => button.disabled) : [...document.querySelectorAll(`[aria-label="${workspace[0].toUpperCase()}${workspace.slice(1)} workspace"] button`)].every((button) => button.disabled),
+      clockControls: workspace === "clock" ? [...document.querySelectorAll(".clock-workspace button")].map((button) => button.textContent?.trim()) : [],
+      clockTimersVisible: workspace !== "clock" || [...document.querySelectorAll(".clock-workspace__timer")].every((timer) => {
+        const rect = timer.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0;
+      }),
       railPositionSafe: !hasRail || !primaryRect || !railRect
         ? !hasRail && !rail
         : compact
@@ -137,6 +146,10 @@ async function main() {
         assert.equal(result.railPositionSafe, true, `${viewport.width} ${state.name} rail position mismatch`);
         assert.equal(result.teamNamesBounded, true, `${viewport.width} ${state.name} team label overflow`);
         assert(result.workspaceButtonCount >= 2, `${viewport.width} ${workspace} ${state.name} controls missing`);
+        if (workspace === "clock") {
+          assert.deepEqual(result.clockControls, ["Start Game Clock", "Stop Game Clock", "Reset Shot 24", "Reset Shot 14", "Set Game Clock", "Set Shot Clock"]);
+          assert.equal(result.clockTimersVisible, true, `${viewport.width} ${state.name} clock timer is not visible`);
+        }
         if (state.command === "pending") assert(result.commandText.includes(`Saving ${workspace}`), `${viewport.width} ${workspace} pending status missing`);
         if (state.command === "error") assert(result.commandText.includes(`${workspace[0].toUpperCase()}${workspace.slice(1)} workspace command rejected.`), `${viewport.width} ${workspace} error status missing`);
         if (state.command === "Authoritative state changed.") assert(result.commandText.includes(state.command), `${viewport.width} ${workspace} conflict status missing`);

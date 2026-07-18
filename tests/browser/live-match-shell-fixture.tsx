@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { AuthenticatedDashboardShell } from "../../apps/web/src/components/AuthenticatedDashboardShell";
 import { LiveMatchShell, type LiveMatchShellProps } from "../../apps/web/src/components/LiveMatchShell";
+import { ClockWorkspace } from "../../apps/web/src/components/ClockWorkspace";
 import type { EffectiveMatchAccess } from "@basket-scoreboard/api-contracts";
 import {
   buildLiveMatchNavigation,
@@ -11,6 +12,7 @@ import "../../apps/web/src/styles/tokens.css";
 import "../../apps/web/src/styles/primitives.css";
 import "../../apps/web/src/styles/authenticated-dashboard.css";
 import "../../apps/web/src/styles/live-match-shell.css";
+import "../../apps/web/src/styles/clock-workspace.css";
 import "../../apps/web/src/styles.css";
 
 const parameters = new URLSearchParams(window.location.search);
@@ -110,7 +112,17 @@ createRoot(root).render(
           </section>
         ) : undefined}
       >
-        <section aria-label={workspaceLabel} className="panel score-control">
+        {workspace === "clock" ? <ClockWorkspace
+          controls={{
+            gameEnabled: fixtureState !== "final",
+            onGameMinutesChange: () => {}, onGameSecondsChange: () => {}, onGameSet: () => {}, onGameStart: () => {}, onGameStop: () => {}, onReasonChange: () => {}, onShotReset14: () => {}, onShotReset24: () => {}, onShotSecondsChange: () => {}, onShotSet: () => {},
+            pending: commandState === "pending", shotEnabled: fixtureState !== "final"
+          }}
+          gameClock={{ label: "02:41", running: true }}
+          shotClock={{ label: "14", running: false }}
+          status={{ connection: connectionByState[fixtureState]?.label ?? "Arena link connected", match: fixtureState === "final" ? "Final" : "Live", period: 4 }}
+          values={{ gameMinutes: 2, gameSeconds: 41, reason: "", shotSeconds: 14 }}
+        /> : <section aria-label={workspaceLabel} className="panel score-control">
           <h2>{workspaceLabel}</h2>
           <div className="score-display" aria-label="Current score">
             <div><span>{workspace === "clock" ? "GAME CLOCK" : "HOME"}</span><strong>{workspace === "clock" ? "02:41" : "72"}</strong><small>{match.homeTeamName}</small></div>
@@ -142,7 +154,7 @@ createRoot(root).render(
               </div>
             ))}
           </div>
-        </section>
+        </section>}
       </LiveMatchShell>
     </AuthenticatedDashboardShell>
   </React.StrictMode>

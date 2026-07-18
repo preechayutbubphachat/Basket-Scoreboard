@@ -142,9 +142,10 @@ DB AUTHORIZATION CLOSURE GATE = CLOSED
 RM-03-I = INTEGRATED
 RM-04 = CURRENT
 RM-04-D1 = DISCOVERY COMPLETE
-RM-04-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P1 = IMPLEMENTATION COMPLETE
+RM-04-P2 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
-Next safe step: RM-04-P1 - Clock Workspace Visual Hierarchy and Supported Command Surface
+Next safe step: RM-04-P2 - Game Clock Control and Manual Correction Safety
 ```
 
 ## 6. Straight-Line Diagram
@@ -264,7 +265,7 @@ There is no parallel top-level path.
 - Objective: deliver the production-grade clock and shot-clock operator dashboard.
 - Visual target: `Clock and Shot Clock Dashboard.png`.
 - Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE` and RM-04-P1 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` exist but visual/role parity is incomplete.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 is `IMPLEMENTATION COMPLETE`, and RM-04-P2 is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
 - Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
 - API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
 - Database dependencies: append-only events and clock projections.
@@ -689,7 +690,8 @@ RM-03-P5-F1 = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
 RM-03-I = INTEGRATED
 RM-04 = CURRENT
 RM-04-D1 = DISCOVERY COMPLETE
-RM-04-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-04-P1 = IMPLEMENTATION COMPLETE
+RM-04-P2 = PENDING (AUTHORIZED TO BEGIN)
 RM-05 through RM-18 = PENDING
 ```
 
@@ -1254,5 +1256,29 @@ RM-04-D1 clock rule and command contract closure evidence:
   manual reset selection honestly; require confirmation and validated reason for manual set; preserve audit,
   append-only history, idempotency, realtime ownership, and public/private boundaries; and retain RM-03 regression.
 - Roadmap transition: RM-04 is `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`; RM-04-P1 is
+  `IMPLEMENTATION COMPLETE`; RM-04-P2 is `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P2 - Game Clock Control and Manual Correction Safety`.
+
+RM-04-P1 clock workspace hierarchy closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): establish rm04 clock workspace hierarchy`).
+- Scope: route-owned clock presentation now composes a dedicated clock workspace with large game/shot clocks,
+  capability-isolated supported controls, honest operator-selected reset copy, and no shot-clock start/stop or
+  lifecycle surface. Existing fetch, polling, realtime, reconnect, dispatch, expected-sequence, and interpolation
+  ownership remains in `OperatorClockPage`.
+- Tooling: Playwright `1.61.1` is exact-pinned as a development dependency in `057c43f`; Chromium runtime and the
+  Clock fixture smoke passed. The prior five-viewport browser matrix, zoom 125/150/200, keyboard/focus,
+  forced-colors, and reduced-motion evidence remains valid because the corrective slice changed no frontend file.
+- DB regression correction: `b39fdf1` scopes a shared 15000ms timeout to nine real disposable-DB integration suites
+  and to the two asynchronous DB hook suites. The generic non-DB timeout remains 5000ms; retries and default
+  parallelism remain unchanged.
+- Regression evidence: four historically affected files passed 12/12 individual repetitions and 3/3 combined
+  repetitions; the canonical DB suite passed twice at 24/24; the full suite passed twice at 641/641 with no skip,
+  timeout, retry, pool follow-on error, or rotating failure.
+- Closure validation: focused RM-04-P1 tests passed 4/4; lint, build, build:single, and diff checks passed. The
+  disposable DB target, TCP connection, handshake, migration status, append-only event guard, ownership regression,
+  and API/socket/event/schema boundaries passed without production access or deployment.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P1 is `IMPLEMENTATION COMPLETE`; RM-04-P2 is
   `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
-- Next safe step: `RM-04-P1 - Clock Workspace Visual Hierarchy and Supported Command Surface`.
+- Next safe step: `RM-04-P2 - Game Clock Control and Manual Correction Safety`.
