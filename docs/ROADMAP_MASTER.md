@@ -1803,10 +1803,16 @@ RM-06-P2 authorization/contract gate evidence:
 - Architecture impact: `API_CHANGE_REQUIRED=false`; `SOCKET_CHANGE_REQUIRED=false`;
   `EVENT_MODEL_CHANGE_REQUIRED=false`; `DB_SCHEMA_CHANGE_REQUIRED=false`;
   `NEW_CAPABILITY_REQUIRED=false`.
-- Authorized implementation allowlist only: `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`, new
-  `apps/web/src/lib/foulIntentQueue.ts`, new `tests/web/rm06-p2-foul-intent-queue.test.ts`, and
+- Authorized implementation allowlist only: `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`,
+  `apps/web/src/lib/apiClient.ts` only for caller-supplied immutable foul command identity/timestamp,
+  new `apps/web/src/lib/foulIntentQueue.ts`, new `tests/web/rm06-p2-foul-intent-queue.test.ts`, and
   `tests/web/rm06-p1-foul-effective-access.test.ts` only for focused regression assertions. No component extraction;
   if another production file is genuinely required, stop for scope approval.
+- Scope amendment: strict-TDD discovery proved that `addPlayerFoul()` regenerated command/correlation identity and
+  timestamp on every call. The Product Owner explicitly authorized only `apps/web/src/lib/apiClient.ts` as the
+  minimum additional file. It may accept and preserve the queue's exact first-attempt envelope for ambiguous retry
+  while retaining the existing endpoint and wire schema; no package contract, server, socket, event, DB, or
+  capability change is authorized.
 - Required tests: immutable snapshots and distinct identities; same-side/cross-side FIFO; one active request;
   dispatch-time latest `expectedSeq`; roster/side/status/access revalidation; preview drift pause; accepted
   reconciliation before next dispatch; no replay/drain after sync, rejection, ambiguity, reconnect, or access loss;
