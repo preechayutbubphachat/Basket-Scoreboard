@@ -3724,6 +3724,16 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       reason,
       teamLabel: selectedFoulPlayer.teamLabel
     });
+    const currentOwner = foulOwnerRef.current!;
+    const lockAcquired = foulLifecycleCoordinator.acquireNavigationLock({
+      matchId: currentOwner.matchId,
+      ownerId: currentOwner.ownerId,
+      pathname: foulPathname
+    });
+    if (!lockAcquired) {
+      setMessage({ tone: "error", text: "Unresolved foul state is owned by another active page. No new foul was queued." });
+      return;
+    }
     dispatchFoulQueue({ type: "ENQUEUE", intent });
     setMessage(null);
     setReason("");

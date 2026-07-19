@@ -350,6 +350,17 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     expect(foulRouteSource).toContain('reason: acceptedByServer ? "REFRESH_FAILED" : "NETWORK_AMBIGUOUS"');
   });
 
+  it("acquires the unresolved navigation lock synchronously before enqueue dispatch", () => {
+    const confirmStart = foulRouteSource.indexOf("function confirmPlayerFoul()");
+    const confirmEnd = foulRouteSource.indexOf("useEffect(() => {", confirmStart);
+    const confirmSource = foulRouteSource.slice(confirmStart, confirmEnd);
+    const lockIndex = confirmSource.indexOf("foulLifecycleCoordinator.acquireNavigationLock({");
+    const enqueueIndex = confirmSource.indexOf('dispatchFoulQueue({ type: "ENQUEUE", intent })');
+
+    expect(lockIndex).toBeGreaterThan(-1);
+    expect(enqueueIndex).toBeGreaterThan(lockIndex);
+  });
+
   it("guards route navigation, popstate, logout, beforeunload, and live-match links with the global lock", () => {
     expect(appSource).toContain("if (!foulLifecycleCoordinator.canNavigate(to)) return false;");
     expect(appSource).toContain("window.history.replaceState({}, \"\", lockedPathname)");
