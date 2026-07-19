@@ -36,11 +36,12 @@ export async function appendTeamFoulAddedCommand(options: {
   command: AddTeamFoulCommand;
   user: AuthenticatedUser;
 }): Promise<CommandResult> {
-  return appendFoulCommand({
-    ...options,
-    eventType: "TEAM_FOUL_ADDED",
-    commandType: "foul/team/add"
-  });
+  return rejected(
+    options.command,
+    reasonCodes.VALIDATION_ERROR,
+    "Direct team foul commands are not supported",
+    options.command.expectedSeq
+  );
 }
 
 export async function appendPlayerFoulAddedCommand(options: {
@@ -48,6 +49,15 @@ export async function appendPlayerFoulAddedCommand(options: {
   command: AddPlayerFoulCommand;
   user: AuthenticatedUser;
 }): Promise<CommandResult> {
+  if (options.command.payload.foulType !== "PERSONAL") {
+    return rejected(
+      options.command,
+      reasonCodes.VALIDATION_ERROR,
+      "Only player-attributed PERSONAL fouls are supported",
+      options.command.expectedSeq
+    );
+  }
+
   return appendFoulCommand({
     ...options,
     eventType: "PLAYER_FOUL_ADDED",

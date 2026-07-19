@@ -13,6 +13,7 @@ import {
 } from "../../apps/api/src/migrations";
 import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 import { insertAuditLog, listAuditLogsForMatch } from "../../apps/api/src/matchEventStore/auditRepository";
+import { appendTeamFoulAddedCommand } from "../../apps/api/src/matchEventStore/appendFoulCommand";
 import { correctionEventTypes } from "../../packages/event-model/src";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
@@ -74,26 +75,6 @@ function scoreCommand(matchId: string, expectedSeq: number, commandId = randomUU
       periodNumber: 1,
       gameClockRemainingMs: 590000,
       note: null
-    }
-  };
-}
-
-function teamFoulCommand(
-  matchId: string,
-  expectedSeq: number,
-  teamSide: "HOME" | "AWAY" = "HOME",
-  commandId = randomUUID()
-) {
-  return {
-    commandId,
-    matchId,
-    expectedSeq,
-    correlationId: randomUUID(),
-    clientTimestamp: new Date().toISOString(),
-    payload: {
-      teamSide,
-      foulType: "PERSONAL",
-      reason: null
     }
   };
 }
@@ -416,7 +397,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
     }
   });
 
-  it("appends team foul events, updates projection, deduplicates commands, and rejects stale expectedSeq", async () => {
+  it("rejects direct team foul commands before append", async () => {
     const { app, pool } = await buildMigratedApp();
 
     try {
@@ -432,63 +413,53 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       expect(createResponse.statusCode).toBe(201);
       const created = createResponse.json<{ matchId: string }>();
 
-      const homeFoul = teamFoulCommand(created.matchId, 0, "HOME");
+      const storeResult = await appendTeamFoulAddedCommand({
+        pool,
+        command: {
+          commandId: randomUUID(),
+          matchId: created.matchId,
+          expectedSeq: 0,
+          correlationId: randomUUID(),
+          clientTimestamp: new Date().toISOString(),
+          payload: { teamSide: "HOME", foulType: "PERSONAL", reason: null }
+        },
+        user: {
+          userId: adminHeaders["x-dev-user-id"],
+          role: "ADMIN",
+          permissions: [],
+          assignedMatchIds: [],
+          deviceId: "db-test",
+          authMode: "DEV_HEADER"
+        }
+      });
+      expect(storeResult).toMatchObject({
+        status: "REJECTED",
+        currentSeq: 0,
+        appendedEvents: [],
+        reasonCode: "VALIDATION_ERROR"
+      });
+
       const homeFoulResponse = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
         headers: scorerHeaders(created.matchId),
-        payload: homeFoul
+        payload: {
+          commandId: randomUUID(),
+          matchId: created.matchId,
+          expectedSeq: 0,
+          correlationId: randomUUID(),
+          clientTimestamp: new Date().toISOString(),
+          payload: { teamSide: "HOME", foulType: "PERSONAL", reason: null }
+        }
       });
-      expect(homeFoulResponse.statusCode).toBe(200);
-      expect(homeFoulResponse.json()).toMatchObject({
-        status: "ACCEPTED",
-        currentSeq: 1,
-        appendedEvents: [{ seqNo: 1, eventType: "TEAM_FOUL_ADDED" }]
-      });
-
-      const duplicateResponse = await app.inject({
-        method: "POST",
-        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
-        headers: scorerHeaders(created.matchId),
-        payload: homeFoul
-      });
-      expect(duplicateResponse.json()).toMatchObject({
-        status: "DUPLICATE_ACCEPTED",
-        currentSeq: 1,
-        appendedEvents: []
-      });
-
-      const awayFoulResponse = await app.inject({
-        method: "POST",
-        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
-        headers: scorerHeaders(created.matchId),
-        payload: teamFoulCommand(created.matchId, 1, "AWAY")
-      });
-      expect(awayFoulResponse.json()).toMatchObject({
-        status: "ACCEPTED",
-        currentSeq: 2
-      });
-
-      const staleResponse = await app.inject({
-        method: "POST",
-        url: `/api/v1/matches/${created.matchId}/commands/foul/team/add`,
-        headers: scorerHeaders(created.matchId),
-        payload: teamFoulCommand(created.matchId, 0, "HOME")
-      });
-      expect(staleResponse.json()).toMatchObject({
-        status: "SYNC_REQUIRED",
-        currentSeq: 2,
-        reasonCode: "INVALID_EXPECTED_SEQ"
-      });
+      expect(homeFoulResponse.statusCode).toBe(400);
+      expect(homeFoulResponse.json()).toMatchObject({ error: { reasonCode: "VALIDATION_ERROR" } });
 
       const [eventRows] = await pool.query<RowDataPacket[]>(
         "SELECT seq_no, event_type, payload FROM match_events WHERE match_id = ? ORDER BY seq_no ASC",
         [created.matchId]
       );
-      expect(eventRows.map((event) => event.event_type)).toEqual([
-        "TEAM_FOUL_ADDED",
-        "TEAM_FOUL_ADDED"
-      ]);
+      expect(eventRows).toEqual([]);
 
       const projectionResponse = await app.inject({
         method: "GET",
@@ -496,10 +467,10 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         headers: scorerHeaders(created.matchId)
       });
       expect(projectionResponse.json()).toMatchObject({
-        currentSeq: 2,
-        lastEventSeq: 2,
-        teamFouls: { home: 1, away: 1 },
-        teamFoulsByPeriod: { "1": { home: 1, away: 1 } },
+        currentSeq: 0,
+        lastEventSeq: 0,
+        teamFouls: { home: 0, away: 0 },
+        teamFoulsByPeriod: {},
         playerFouls: []
       });
 
@@ -508,7 +479,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         url: `/api/v1/public/matches/${created.matchId}/scoreboard`
       });
       expect(publicResponse.json()).toMatchObject({
-        teamFouls: { home: 1, away: 1 }
+        teamFouls: { home: 0, away: 0 }
       });
       expect(JSON.stringify(publicResponse.json())).not.toContain("audit");
     } finally {
@@ -1150,6 +1121,64 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         homeScore: beforeRejectState.json<{ homeScore: number }>().homeScore,
         awayScore: beforeRejectState.json<{ awayScore: number }>().awayScore,
         currentSeq: 3
+      });
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
+  it("appends one active-roster PERSONAL player foul and keeps duplicate and stale commands safe", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const homeTeamId = randomUUID();
+      const awayTeamId = randomUUID();
+      const playerId = randomUUID();
+      await pool.query("INSERT INTO teams (team_id, name) VALUES (?, ?), (?, ?)", [homeTeamId, "RM06 Home", awayTeamId, "RM06 Away"]);
+      await pool.query("INSERT INTO players (player_id, team_id, display_name, jersey_number) VALUES (?, ?, ?, ?)", [playerId, homeTeamId, "RM06 Player", "6"]);
+
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        headers: adminHeaders,
+        payload: { matchCode: `RM06-${randomUUID()}`, ruleProfileId: "FIBA_2024", homeTeamId, awayTeamId }
+      });
+      const { matchId } = createResponse.json<{ matchId: string }>();
+      await pool.query(
+        "INSERT INTO match_roster_players (roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, roster_status) VALUES (?, ?, 'HOME', ?, ?, ?, ?, 'ACTIVE')",
+        [randomUUID(), matchId, homeTeamId, playerId, "RM06 Player", "6"]
+      );
+
+      const command = {
+        commandId: randomUUID(), matchId, expectedSeq: 0, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(),
+        payload: { teamSide: "HOME", playerId, foulType: "PERSONAL", reason: null }
+      };
+      const accepted = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/foul/player/add`, headers: scorerHeaders(matchId), payload: command });
+      expect(accepted.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1, appendedEvents: [{ seqNo: 1, eventType: "PLAYER_FOUL_ADDED" }] });
+
+      const duplicate = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/foul/player/add`, headers: scorerHeaders(matchId), payload: command });
+      expect(duplicate.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 1, appendedEvents: [] });
+
+      const stale = await app.inject({
+        method: "POST", url: `/api/v1/matches/${matchId}/commands/foul/player/add`, headers: scorerHeaders(matchId),
+        payload: { ...command, commandId: randomUUID(), correlationId: randomUUID() }
+      });
+      expect(stale.json()).toMatchObject({ status: "SYNC_REQUIRED", currentSeq: 1, appendedEvents: [], reasonCode: "INVALID_EXPECTED_SEQ" });
+
+      const wrongSide = await app.inject({
+        method: "POST", url: `/api/v1/matches/${matchId}/commands/foul/player/add`, headers: scorerHeaders(matchId),
+        payload: { ...command, commandId: randomUUID(), expectedSeq: 1, correlationId: randomUUID(), payload: { ...command.payload, teamSide: "AWAY" } }
+      });
+      expect(wrongSide.json()).toMatchObject({ status: "REJECTED", currentSeq: 1, appendedEvents: [], reasonCode: "VALIDATION_ERROR" });
+
+      const [events] = await pool.query<RowDataPacket[]>("SELECT event_type FROM match_events WHERE match_id = ? ORDER BY seq_no", [matchId]);
+      expect(events.map((event) => event.event_type)).toEqual(["PLAYER_FOUL_ADDED"]);
+      const projection = await app.inject({ method: "GET", url: `/api/v1/matches/${matchId}/projection`, headers: scorerHeaders(matchId) });
+      expect(projection.json()).toMatchObject({
+        currentSeq: 1,
+        teamFouls: { home: 1, away: 0 },
+        teamFoulsByPeriod: { "1": { home: 1, away: 0 } },
+        playerFouls: [{ playerId, teamSide: "HOME", fouls: 1 }]
       });
     } finally {
       await app.close();

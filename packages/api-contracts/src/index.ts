@@ -1326,10 +1326,18 @@ export const correctionRequestCommandSchema = commandEnvelopeBaseSchema.extend({
 
 export const addTeamFoulCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: teamFoulAddedPayloadSchema
+}).superRefine((_command, context) => {
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["payload"],
+    message: "Direct team foul commands are not supported"
+  });
 });
 
 export const addPlayerFoulCommandSchema = commandEnvelopeBaseSchema.extend({
-  payload: playerFoulAddedPayloadSchema
+  payload: playerFoulAddedPayloadSchema.extend({
+    foulType: z.literal("PERSONAL")
+  })
 });
 
 export const gameClockStartCommandSchema = commandEnvelopeBaseSchema.extend({

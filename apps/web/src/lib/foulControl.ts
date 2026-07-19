@@ -1,5 +1,6 @@
 import type {
   CommandResult,
+  EffectiveMatchAccess,
   FoulType,
   ScoreboardProjection,
   TeamFoulAddedPayload
@@ -13,12 +14,48 @@ import {
 } from "./operatorMatches";
 
 export const foulTypeOptions: FoulType[] = [
-  "PERSONAL",
-  "TECHNICAL",
-  "UNSPORTSMANLIKE",
-  "DISQUALIFYING",
-  "OTHER"
+  "PERSONAL"
 ];
+
+export type FoulAccessLifecycle = "ACCESS_LOADING" | "ACCESS_READY" | "ACCESS_DENIED" | "ACCESS_ERROR" | "ACCESS_MATCH_MISMATCH";
+export type FoulEffectiveAccessState = {
+  lifecycle: FoulAccessLifecycle;
+  access: EffectiveMatchAccess | null;
+  canRead: boolean;
+  canOperateFoul: boolean;
+  canRequestCorrection: boolean;
+};
+
+function isEffectiveMatchAccess(value: unknown): value is EffectiveMatchAccess {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<EffectiveMatchAccess>;
+  const capabilities = candidate.capabilities as Partial<EffectiveMatchAccess["capabilities"]> | undefined;
+  return typeof candidate.matchId === "string" && Boolean(capabilities) &&
+    typeof capabilities?.matchRead === "boolean" &&
+    typeof capabilities.foulOperate === "boolean" &&
+    typeof capabilities.correctionRequest === "boolean";
+}
+
+export function resolveFoulEffectiveAccess(matchId: string, phase: "loading" | "ready" | "error", value: unknown): FoulEffectiveAccessState {
+  const closed = (lifecycle: FoulAccessLifecycle): FoulEffectiveAccessState => ({
+    lifecycle,
+    access: null,
+    canRead: false,
+    canOperateFoul: false,
+    canRequestCorrection: false
+  });
+  if (phase === "loading") return closed("ACCESS_LOADING");
+  if (phase === "error" || !isEffectiveMatchAccess(value)) return closed("ACCESS_ERROR");
+  if (value.matchId !== matchId) return closed("ACCESS_MATCH_MISMATCH");
+  if (!value.capabilities.matchRead) return closed("ACCESS_DENIED");
+  return {
+    lifecycle: "ACCESS_READY",
+    access: value,
+    canRead: true,
+    canOperateFoul: value.capabilities.foulOperate,
+    canRequestCorrection: value.capabilities.correctionRequest
+  };
+}
 
 export type FoulControlTeamSide = TeamFoulAddedPayload["teamSide"];
 

@@ -158,7 +158,7 @@ RM-05-P5 = REGRESSION CLOSURE COMPLETE
 RM-05-I = INTEGRATED
 RM-06 = CURRENT
 RM-06-D1 = DISCOVERY COMPLETE
-RM-06-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-06-P1 = IMPLEMENTATION COMPLETE
 RM-06-P2 and later = PENDING (NOT AUTHORIZED)
 RM-07 through RM-18 = PENDING
 Next safe step: RM-06-P1 - Personal Player Foul Contract and Effective Access Gate
@@ -316,8 +316,8 @@ There is no parallel top-level path.
 - Visual target: `UI Foul Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
 - Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
-  `Personal Player Foul Contract and Effective Access Gate` is `PENDING (AUTHORIZED TO BEGIN)`. No RM-06 application
-  implementation occurred during authorization. P2 and later are not authorized.
+  `Personal Player Foul Contract and Effective Access Gate` is `IMPLEMENTATION COMPLETE`. P2 and later are not
+  authorized.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
 - Database dependencies: append-only foul/correction events and projections.
@@ -1739,6 +1739,28 @@ RM-06-D1 foul dashboard authorization evidence:
   production access.
 - Next safe step: `RM-06-P1 - Personal Player Foul Contract and Effective Access Gate`. Do not begin it
   automatically.
+
+RM-06-P1 implementation closure evidence:
+
+- Branch: `feature/rm06-foul-dashboard`; baseline `3f19b3f9f73cffd3d23c4cf127cb707edbba6c8c`.
+  Pre-existing modified `AGENTS.md` and untracked `docs/AI_HANDOFF.md` remained untouched and excluded from staging.
+- Contract/store: the player command accepts only active-roster, matching-side `PERSONAL`; unsupported player foul
+  types and the direct-team command fail before append. One accepted command appends exactly one
+  `PLAYER_FOUL_ADDED`; projection increments player and team/period counts once without `TEAM_FOUL_ADDED` or
+  `PLAYER_FOULED_OUT`. Expected-sequence and command-id safety remain intact.
+- Operator route: `OperatorFoulPage` uses fail-closed EffectiveMatchAccess requiring `matchRead && foulOperate`,
+  exposes only player PERSONAL entry, keeps one pending command, and refreshes projection, roster, and access
+  together for initial load, polling/realtime recovery, and command recovery. Socket contracts are unchanged and
+  correction capability remains independent.
+- TDD evidence: contract RED failed 5 expected cases before GREEN 7/7; EffectiveMatchAccess RED failed 3 expected
+  cases plus route-ownership RED 1 before GREEN 4/4; direct-store team rejection RED failed 1 before GREEN 1/1.
+- Verification: focused foul/roster/correction tests 21/21; DB-backed P1 player test 1/1; `npm run lint` passed;
+  `npm test` passed 72 files/683 tests; `npm run test:db` passed 6 files/25 tests; `npm run db:check` and
+  `npm run migrate:status` passed with 13 applied, 0 pending, 0 checksum mismatches; `npm run build` and
+  `npm run build:single` passed; `git diff --check` and the event-store mutation/public-boundary guards passed.
+- Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 is `IMPLEMENTATION COMPLETE`; RM-06-P2 and later remain
+  `PENDING (NOT AUTHORIZED)`.
+- Next safe step: decision required; RM-06-P2 is not authorized. Do not begin it automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 

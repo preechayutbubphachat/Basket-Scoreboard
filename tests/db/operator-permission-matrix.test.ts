@@ -313,11 +313,11 @@ describeDb.sequential("DB-backed granular operator permission matrix", { timeout
       const adminUser = await seedUser(pool, "ADMIN");
       const admin = await login(app, adminUser);
       const cases: Array<{ role: AssignmentRole; allowed: Array<keyof typeof commands>; denied: Array<keyof typeof commands> }> = [
-        { role: "SCORER", allowed: ["score", "teamFoul"], denied: ["gameStart", "gameStop", "gameSet", "shotReset", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
-        { role: "ASSISTANT_SCORER", allowed: ["score", "teamFoul"], denied: ["gameStart", "shotReset", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
-        { role: "TIMER", allowed: ["gameStart", "gameStop", "gameSet"], denied: ["score", "teamFoul", "shotReset", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
-        { role: "SHOT_CLOCK_OPERATOR", allowed: ["shotReset", "shotSet"], denied: ["score", "teamFoul", "gameStart", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
-        { role: "MATCH_OPERATOR", allowed: ["score", "teamFoul", "gameStart", "gameStop", "gameSet", "shotReset", "shotSet", "timeout", "lifecycle"], denied: ["correctionApply", "correctionReject"] }
+        { role: "SCORER", allowed: ["score"], denied: ["gameStart", "gameStop", "gameSet", "shotReset", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
+        { role: "ASSISTANT_SCORER", allowed: ["score"], denied: ["gameStart", "shotReset", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
+        { role: "TIMER", allowed: ["gameStart", "gameStop", "gameSet"], denied: ["score", "shotReset", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
+        { role: "SHOT_CLOCK_OPERATOR", allowed: ["shotReset", "shotSet"], denied: ["score", "gameStart", "timeout", "lifecycle", "correctionApply", "correctionReject"] },
+        { role: "MATCH_OPERATOR", allowed: ["score", "gameStart", "gameStop", "gameSet", "shotReset", "shotSet", "timeout", "lifecycle"], denied: ["correctionApply", "correctionReject"] }
       ];
 
       for (const matrix of cases) {

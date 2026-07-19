@@ -544,7 +544,7 @@ describe("alpha score control routes", () => {
     }
   });
 
-  it("rejects team foul commands after a match is finished without appending an event", async () => {
+  it("rejects direct team foul commands before append even after a match is finished", async () => {
     process.env.AUTH_TEST_DISABLE_CSRF = "true";
     const fake = createFinishedMatchCommandPool();
     const app = buildApiApp({ pool: fake.pool as never });
@@ -568,14 +568,8 @@ describe("alpha score control routes", () => {
         }
       });
 
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({
-        status: "REJECTED",
-        currentSeq: 3,
-        appendedEvents: [],
-        reasonCode: "VALIDATION_ERROR",
-        message: "Finished matches cannot be changed through live controls"
-      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: { reasonCode: "VALIDATION_ERROR" } });
       expect(fake.events).toHaveLength(0);
     } finally {
       await app.close();

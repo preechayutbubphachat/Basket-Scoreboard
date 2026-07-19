@@ -7,7 +7,6 @@ import type {
   DisplaySceneResponse,
   DisplayScreenResponse,
   EffectiveMatchAccess,
-  FoulType,
   AuditLogGroupFilter,
   AuditLogRow,
   MatchAuditLogResponse,
@@ -78,7 +77,6 @@ import {
   buildPublicScoreboardLink,
   buildOperatorMatchCard,
   canAccessOperatorMatches,
-  canOperateFoul,
   canOperateTimeout,
   canOperateLifecycle,
   createEmptyOperatorMatchesMessage,
@@ -113,10 +111,9 @@ import {
 } from "./lib/scoreIntentQueue";
 import {
   buildFoulControlPanels,
-  buildTeamFoulCommandPayload,
   foulTypeOptions,
   getFoulControlFeedback,
-  type FoulControlTeamSide
+  resolveFoulEffectiveAccess
 } from "./lib/foulControl";
 import {
   buildClockControlState,
@@ -3507,35 +3504,40 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
 }
 
 function OperatorFoulPage({ matchId }: { matchId: string }) {
-  const { api, currentUser } = useCurrentUser();
+  const { api } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
+  const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [foulType, setFoulType] = useState<FoulType>("PERSONAL");
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitFoul = canOperateFoul(currentUser, matchId);
+  const resolvedAccess = resolveFoulEffectiveAccess(matchId, accessPhase, effectiveAccess);
+  const canSubmitFoul = resolvedAccess.canRead && resolvedAccess.canOperateFoul;
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
+
+  async function refreshAuthoritativeState() {
+    const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
+      api.getMatchProjection(matchId),
+      api.getMatchRosters(matchId),
+      api.getEffectiveMatchAccess(matchId)
+    ]);
+    setProjection(nextProjection);
+    setRosters(nextRosters);
+    setEffectiveAccess(nextEffectiveAccess);
+    setAccessPhase("ready");
+  }
 
   async function loadState() {
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
+    setAccessPhase("loading");
     try {
-      const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
-        api.getMatchProjection(matchId),
-        api.getMatchRosters(matchId).catch(() => null),
-        api.getEffectiveMatchAccess(matchId).catch((error) => {
-          setMessage(toUiMessage(error));
-          return null;
-        })
-      ]);
-      setProjection(nextProjection);
-      setRosters(nextRosters);
-      setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
+      await refreshAuthoritativeState();
     } catch (error) {
+      setAccessPhase("error");
       setMessage(toUiMessage(error));
     } finally {
       setLoading(false);
@@ -3548,8 +3550,10 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
 
   async function refreshProjectionSilently() {
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      await refreshAuthoritativeState();
     } catch (error) {
+      setAccessPhase("error");
+      setEffectiveAccess(null);
       setMessage(toUiMessage(error));
     }
   }
@@ -3563,41 +3567,8 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }, [api, matchId, realtimeState]);
 
   async function refreshAfterCommand(lastSeq: number) {
-    const sync = await api.syncMatch(matchId, lastSeq);
-    if (sync.projection) {
-      setProjection(sync.projection);
-      return;
-    }
-    setProjection(await api.getMatchProjection(matchId));
-  }
-
-  async function addTeamFoul(teamSide: FoulControlTeamSide) {
-    if (!projection || !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))) return;
-    const key = `TEAM-${teamSide}`;
-    setPendingKey(key);
-    setMessage(null);
-    const previousSeq = projection.currentSeq;
-
-    try {
-      const result = await api.addTeamFoul(
-        matchId,
-        buildTeamFoulCommandPayload(projection, teamSide, { foulType, reason })
-      );
-
-      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
-        setMessage(getFoulControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
-        return;
-      }
-
-      await refreshAfterCommand(previousSeq);
-      setMessage(getFoulControlFeedback(result));
-      setReason("");
-    } catch (error) {
-      setMessage(toUiMessage(error));
-    } finally {
-      setPendingKey(null);
-    }
+    await api.syncMatch(matchId, lastSeq);
+    await refreshAuthoritativeState();
   }
 
   async function addPlayerFoul(player: MatchRosterPlayer) {
@@ -3610,7 +3581,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     try {
       const result = await api.addPlayerFoul(
         matchId,
-        buildPlayerFoulCommandPayload(projection, player, { foulType, reason })
+        buildPlayerFoulCommandPayload(projection, player, { foulType: "PERSONAL", reason })
       );
 
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
@@ -3633,7 +3604,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     <OperatorLiveMatchFrame
       commandLabel="Saving foul"
       currentView="fouls"
-      effectiveAccess={effectiveAccess}
+      effectiveAccess={resolvedAccess.access}
       matchId={matchId}
       message={message}
       pendingKey={pendingKey}
@@ -3644,7 +3615,8 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     >
       <section className="stack" aria-label="Foul workspace">
       <div className="panel">
-        {!canSubmitFoul ? <ErrorMessage code="FORBIDDEN" message="Foul operation permission is required." /> : null}
+        {accessPhase === "error" ? <ErrorMessage code="FORBIDDEN" message="Foul access could not be verified." /> : null}
+        {accessPhase === "ready" && !canSubmitFoul ? <ErrorMessage code="FORBIDDEN" message="Foul operation permission is required." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
       </div>
@@ -3652,7 +3624,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       {!loading && !projection ? (
         <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
       ) : null}
-      {projection ? (
+      {projection && resolvedAccess.canRead ? (
         <section className="panel score-control">
           {isFinishedMatchStatus(projection.status) ? (
             <Notice tone="error" text={finishedMatchLiveControlWarning} />
@@ -3663,16 +3635,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="form-grid compact">
-            <label>
-              Foul type
-              <select value={foulType} onChange={(event) => setFoulType(event.target.value as FoulType)}>
-                {foulTypeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <p>Foul type: {foulTypeOptions[0]}</p>
             <label>
               Reason
               <input value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -3686,21 +3649,13 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                   <span>{panel.label} team fouls</span>
                   <strong>{panel.fouls}</strong>
                 </div>
-                <button
-                  type="button"
-                  className="score-button"
-                  disabled={!canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))}
-                  onClick={() => void addTeamFoul(panel.teamSide)}
-                >
-                  {pendingKey === panel.pendingKey ? "Saving..." : "Add Team Foul"}
-                </button>
               </div>
             ))}
           </div>
           <section className="inline-panel">
             <h2>Player Fouls</h2>
             {!rosters || (rosters.rosters.HOME.length === 0 && rosters.rosters.AWAY.length === 0) ? (
-              <p className="muted">No roster players found. Team foul control is available.</p>
+              <p className="muted">No active roster players are available for personal foul entry.</p>
             ) : (
               <div className="score-actions">
                 {(["HOME", "AWAY"] as const).map((teamSide) => (
