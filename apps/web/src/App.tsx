@@ -3739,26 +3739,26 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, matchId, pendingKey]);
 
   function retryAmbiguousFoul() {
-    if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
+    if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RETRY_AMBIGUOUS" });
   }
 
   function discardActiveFoul() {
-    if (pendingKey) return;
+    if (pendingKey || foulRequestInFlightRef.current) return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "DISCARD_ACTIVE" });
   }
 
   function discardAllFouls() {
-    if (pendingKey) return;
+    if (pendingKey || foulRequestInFlightRef.current) return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "DISCARD_ALL" });
     setMessage({ tone: "success", text: "All unresolved foul intents were discarded." });
   }
 
   function resumeWaitingFouls() {
-    if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
+    if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RESUME_WAITING" });
   }

@@ -10,7 +10,7 @@ import {
   foulIntentQueueReducer
 } from "../../apps/web/src/lib/foulIntentQueue";
 
-const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
+const appSource = readFileSync("apps/web/src/App.tsx", "utf8").replace(/\r\n/g, "\n");
 const foulRouteSource = appSource.slice(appSource.indexOf("function OperatorFoulPage"), appSource.indexOf("function OperatorClockPage"));
 
 const player = {
@@ -228,10 +228,10 @@ describe("RM-06-P2 foul route review and confirmation", () => {
   });
 
   it("freezes discard recovery while a foul request is pending without freezing enqueue", () => {
-    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey) return;");
-    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey) return;");
-    expect(foulRouteSource).toContain("if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
-    expect(foulRouteSource).toContain("if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
+    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey || foulRequestInFlightRef.current) return;");
+    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey || foulRequestInFlightRef.current) return;");
+    expect(foulRouteSource).toContain("if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
+    expect(foulRouteSource).toContain("if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
     expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardActiveFoul}");
     expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardAllFouls}");
     expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={retryAmbiguousFoul}");
