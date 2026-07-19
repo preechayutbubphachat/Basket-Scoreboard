@@ -90,6 +90,15 @@ export const initialFoulIntentQueueState: FoulIntentQueueState = {
   queuedIntents: []
 };
 
+export function canEnqueueFoulIntent(options: {
+  canOperate: boolean;
+  matchStatus: string;
+  pauseReason: FoulQueuePauseReason | string | null;
+}) {
+  const status = options.matchStatus.toUpperCase();
+  return options.canOperate && !options.pauseReason && status !== "FINISHED" && status !== "FINAL";
+}
+
 export function createFoulIntent(options: {
   commandId: string;
   correlationId: string;

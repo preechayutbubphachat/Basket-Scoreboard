@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiClient, type FetchLike } from "../../apps/web/src/lib/apiClient";
 import {
   blocksFoulCorrectionNavigation,
+  canEnqueueFoulIntent,
   createFoulIntent,
   initialFoulIntentQueueState,
   prepareFoulIntentDispatch,
@@ -50,6 +51,18 @@ function authoritative(overrides: Record<string, unknown> = {}) {
 }
 
 describe("RM-06-P2 foul intent activation and FIFO dispatch", () => {
+  it.each([
+    ["active request", { canOperate: true, matchStatus: "IN_PROGRESS", pauseReason: null }, true],
+    ["active envelope", { canOperate: true, matchStatus: "IN_PROGRESS", pauseReason: null }, true],
+    ["pending transport", { canOperate: true, matchStatus: "IN_PROGRESS", pauseReason: null }, true],
+    ["paused queue", { canOperate: true, matchStatus: "IN_PROGRESS", pauseReason: "NETWORK_AMBIGUOUS" }, false],
+    ["denied access", { canOperate: false, matchStatus: "IN_PROGRESS", pauseReason: null }, false],
+    ["finished match", { canOperate: true, matchStatus: "FINISHED", pauseReason: null }, false],
+    ["final match case-safe", { canOperate: true, matchStatus: "final", pauseReason: null }, false]
+  ])("allows selection and confirmation based on enqueue eligibility for %s", (_label, policy, expected) => {
+    expect(canEnqueueFoulIntent(policy)).toBe(expected);
+  });
+
   it("sends the exact caller-supplied player-foul envelope without changing the wire shape", async () => {
     const fetchImpl = vi
       .fn<FetchLike>()
@@ -158,6 +171,14 @@ describe("RM-06-P2 foul intent activation and FIFO dispatch", () => {
 });
 
 describe("RM-06-P2 foul route review and confirmation", () => {
+  it("uses pause, access, and status eligibility instead of pending transport to gate enqueue", () => {
+    expect(foulRouteSource).toContain("canEnqueueFoulIntent({");
+    expect(foulRouteSource).toContain("pauseReason: foulQueue.pauseReason");
+    expect(foulRouteSource).toContain("matchStatus: projection.status");
+    expect(foulRouteSource).toContain("canOperate: canSubmitFoul");
+    expect(foulRouteSource).not.toContain("canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))");
+  });
+
   it("requires explicit HOME or AWAY player selection and exposes the immutable preview before confirmation", () => {
     for (const signal of [
       "selectedFoulPlayer",

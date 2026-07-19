@@ -117,6 +117,7 @@ import {
 } from "./lib/foulControl";
 import {
   blocksFoulCorrectionNavigation,
+  canEnqueueFoulIntent,
   createFoulIntent,
   foulIntentQueueReducer,
   initialFoulIntentQueueState
@@ -3531,6 +3532,11 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const resolvedAccess = resolveFoulEffectiveAccess(matchId, accessPhase, effectiveAccess);
   const canSubmitFoul = resolvedAccess.canRead && resolvedAccess.canOperateFoul;
+  const canEnqueueFoul = projection ? canEnqueueFoulIntent({
+    canOperate: canSubmitFoul,
+    matchStatus: projection.status,
+    pauseReason: foulQueue.pauseReason
+  }) : false;
   const correctionBlocked = blocksFoulCorrectionNavigation(foulQueue);
   const frameEffectiveAccess = correctionBlocked && resolvedAccess.access
     ? { ...resolvedAccess.access, capabilities: { ...resolvedAccess.access.capabilities, correctionRequest: false } }
@@ -3619,7 +3625,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }
 
   function confirmPlayerFoul() {
-    if (!projection || !selectedFoulPlayer || !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))) return;
+    if (!projection || !selectedFoulPlayer || !canEnqueueFoul) return;
     const previousSeq = projection.currentSeq;
     if (!Number.isSafeInteger(previousSeq) || previousSeq < 0) return;
     const intent = createFoulIntent({
@@ -3837,7 +3843,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                         type="button"
                         className="score-button"
                         disabled={
-                          !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey)) ||
+                          !canEnqueueFoul ||
                           player.status !== "ACTIVE"
                         }
                          onClick={() => setSelectedFoulPlayer({
@@ -3867,7 +3873,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                    <div><dt>Activation period / clock</dt><dd>P{selectedFoulPlayer.periodNumber} / {Math.ceil(selectedFoulPlayer.gameClockRemainingMs / 1000)}s</dd></div>
                  </dl>
                  <div className="button-row">
-                   <button type="button" onClick={() => void confirmPlayerFoul()}>Confirm personal foul</button>
+                   <button type="button" disabled={!canEnqueueFoul} onClick={() => void confirmPlayerFoul()}>Confirm personal foul</button>
                    <button type="button" className="secondary" onClick={() => setSelectedFoulPlayer(null)}>Cancel review</button>
                  </div>
                </section>
