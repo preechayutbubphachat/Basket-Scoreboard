@@ -96,7 +96,7 @@ Use only these status values:
 | RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
 | RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
 | RM-05 | Score Control Dashboard | `INTEGRATED` |
-| RM-06 | Foul Control Dashboard | `PENDING` |
+| RM-06 | Foul Control Dashboard | `CURRENT` |
 | RM-07 | Timeout Dashboard | `PENDING` |
 | RM-08 | Lineup / Roster Dashboard | `PENDING` |
 | RM-09 | Match Pairing Dashboard | `PENDING` |
@@ -156,8 +156,12 @@ RM-05-P3 = IMPLEMENTATION COMPLETE
 RM-05-P4 = IMPLEMENTATION COMPLETE
 RM-05-P5 = REGRESSION CLOSURE COMPLETE
 RM-05-I = INTEGRATED
-RM-06 through RM-18 = PENDING
-Next safe step: RM-06 - Foul Control Dashboard authorization gate
+RM-06 = CURRENT
+RM-06-D1 = DISCOVERY COMPLETE
+RM-06-P1 = PENDING (AUTHORIZED TO BEGIN)
+RM-06-P2 and later = PENDING (NOT AUTHORIZED)
+RM-07 through RM-18 = PENDING
+Next safe step: RM-06-P1 - Personal Player Foul Contract and Effective Access Gate
 ```
 
 ## 6. Straight-Line Diagram
@@ -311,17 +315,28 @@ There is no parallel top-level path.
 - Objective: deliver player/team foul operation and correction safety.
 - Visual target: `UI Foul Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `/operator/matches/:matchId/fouls` and `OperatorFoulPage` exist; full parity is pending.
+- Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
+  `Personal Player Foul Contract and Effective Access Gate` is `PENDING (AUTHORIZED TO BEGIN)`. No RM-06 application
+  implementation occurred during authorization. P2 and later are not authorized.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
 - Database dependencies: append-only foul/correction events and projections.
 - Security: active assignment; correction permission remains independent.
-- Acceptance: player rows, foul types, team penalty warning, recent events, safe unsupported-rule messaging.
-- Tests: role denial, roster validation, duplicate/stale command, correction, and accessibility.
+- Acceptance: first slice is limited to player-attributed `PERSONAL` fouls for an active match roster player on the
+  matching team side. One `PLAYER_FOUL_ADDED` increments player count and team count exactly once through projection;
+  do not append an additional `TEAM_FOUL_ADDED`. Count displays are allowed; official derived statuses and warnings
+  requiring new semantics are deferred unless already authoritative server projection fields exist.
+- Tests: P1 must prove unsupported foul types are rejected before append, player foul requires active roster and
+  matching team side, no additional `TEAM_FOUL_ADDED` is appended for a player foul, duplicate and stale commands stay
+  safe, EffectiveMatchAccess fails closed, reconnect refreshes projection and access together, correction eligibility
+  remains exact-target and append-only, and projection/replay clamps counts nonnegative.
 - Production gate: DB-backed role/assignment tests and owner verification.
-- Known blockers: complex penalty automation.
-- Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting penalty matrix.
-- Next milestone: RM-07.
+- Known blockers: direct team-foul product meaning/causation, special foul count/consequence semantics, foul-out
+  automation, team-penalty automation, overtime carry-forward automation, free throws, and possession consequences.
+- Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
+  coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
+  and fail-closed.
+- Next milestone: RM-07 after RM-06 integration; next authorized slice is RM-06-P1 only.
 
 ### RM-07 - Timeout Dashboard
 
@@ -1663,6 +1678,66 @@ RM-05-I score dashboard integration gate closure evidence:
   Plesk/Hostatom operation, or feature branch cleanup occurred.
 - Roadmap transition: RM-05-I is `INTEGRATED`; RM-05 is `INTEGRATED`; RM-06 through RM-18 remain `PENDING`.
 - Next safe step: `RM-06 - Foul Control Dashboard authorization gate`. Do not begin RM-06 implementation
+  automatically.
+
+RM-06-D1 foul dashboard authorization evidence:
+
+- Branch: `feature/rm06-foul-dashboard`; authorization-only task at baseline
+  `9a86239bcd586fdb021cebfe6ffff1df40f052c9`. Existing dirty `AGENTS.md` and untracked
+  `docs/AI_HANDOFF.md` are Hermes continuity changes and were not touched, staged, committed, overwritten, or
+  attributed. No RM-06 implementation occurred in this task.
+- Governing sources read: `AGENTS.md`, `docs/ROADMAP_MASTER.md`, `README.md`,
+  `docs/rules/RULES_PROFILE_FIBA.md` sections 3, 10, 11, 23, 25,
+  `docs/architecture/EVENT_MODEL.md` sections `PLAYER_FOUL_ADDED`, `TEAM_FOUL_ADDED`, `PLAYER_FOULED_OUT`,
+  `docs/api/API_CONTRACTS.md` Foul Command APIs, `docs/product/PROJECT_BRIEF.md` sections 7.8, 7.9, 7.15,
+  `docs/ui/UI_DASHBOARDS.md` section 13, current
+  `apps/api/src/matchEventStore/appendFoulCommand.ts`, current `apps/web/src/App.tsx` `OperatorFoulPage`, and
+  `C:/Users/preec/AppData/Local/hermes/tmp/rm06_authorization_discovery_result.md` as advisory only.
+- Source boundary: RM-06 may close authorization for one minimal fail-closed slice without
+  `FOUL_PENALTY_MATRIX.md`. The supported P1 command surface is only player-attributed `PERSONAL` foul entry:
+  active match roster player, matching team side, server validation before append, one `PLAYER_FOUL_ADDED`, and
+  player/team foul counts incremented exactly once through projection. Do not append an additional
+  `TEAM_FOUL_ADDED` for this command.
+- Rejected/deferred scope: direct `TEAM_FOUL_ADDED` command entry is not authorized in P1; its product meaning and
+  causation contract remain `NEEDS PRODUCT DECISION`, while existing historical correction support remains intact.
+  `TECHNICAL`, `UNSPORTSMANLIKE`, `DISQUALIFYING`, `OTHER`, `OFFENSIVE`, bench, coach, fighting, correctable-error,
+  and other special foul types are omitted from UI and server-rejected before append. No foul-out status/event
+  automation, team-penalty automation, overtime carry-forward automation, free throws, possession consequences, or
+  special penalty automation is authorized. Count displays are allowed; official derived statuses/warnings requiring
+  new semantics are deferred unless already authoritative server projection fields exist.
+- Command and correction contract: protected REST commands remain authenticated, CSRF checked, server-authorized,
+  assignment checked, RBAC checked, validated, expected-sequence enforced, idempotent, append-only, projected, and
+  audited. Existing correction contract is closed for legacy/current eligible events: `TEAM_FOUL_UNDO` only targets
+  uncorrected `TEAM_FOUL_ADDED`; `PLAYER_FOUL_UNDO` only targets uncorrected `PLAYER_FOUL_ADDED`; canonical reason,
+  explicit review/confirmation, exact target revalidation, duplicate/concurrent target protection, append-only
+  `TEAM_FOUL_CORRECTED`/`PLAYER_FOUL_CORRECTED`, original event retention, replay/projection nonnegative clamp, and
+  correction capability independent from `foulOperate` are required.
+- EffectiveAccess and reconnect ownership: `OperatorFoulPage` must migrate from legacy
+  `canOperateFoul(currentUser, matchId)` command authority to matching fail-closed `EffectiveMatchAccess` requiring
+  `matchRead` and `foulOperate`. Loading, error, malformed, denied, and match mismatch states expose no command
+  surface; server RBAC remains final. Reconnect and authoritative recovery must refresh projection and access
+  together. P1 authorizes one active command only, with no rapid FIFO queue.
+- Architecture impact: `API_CHANGE_REQUIRED=true`; `SOCKET_CHANGE_REQUIRED=false`;
+  `EVENT_MODEL_CHANGE_REQUIRED=false`; `DB_SCHEMA_CHANGE_REQUIRED=false`; `NEW_CAPABILITY_REQUIRED=false`.
+- P1 anticipated allowlist only: `packages/api-contracts/src/index.ts`,
+  `apps/api/src/matchEventStore/appendFoulCommand.ts`, `apps/api/src/routes/matchRoutes.ts` only if route-level
+  validation needs it, `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`, and focused existing/new
+  foul/effective-access/correction tests under `tests/api`, `tests/db`, and `tests/web`. No migration, socket, event
+  type, capability, dependency, public contract, production configuration, deployment, or production access is
+  authorized.
+- P1 required tests: server rejects unsupported foul types before append; player foul requires active roster and
+  matching team side; a player foul appends no extra `TEAM_FOUL_ADDED`; duplicate command IDs and stale expected
+  sequences remain safe; EffectiveMatchAccess fail-closed UI states deny commands; reconnect refreshes projection and
+  access together; correction eligibility and dispatch preserve exact-target append-only behavior; replay/projection
+  clamps counts nonnegative.
+- Roadmap transition: RM-06 is `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
+  `Personal Player Foul Contract and Effective Access Gate` is `PENDING (AUTHORIZED TO BEGIN)`. RM-06-P2 and later
+  are not authorized. RM-07 through RM-18 remain `PENDING`.
+- Forbidden actions: do not invent `FOUL_PENALTY_MATRIX.md`, do not implement special foul penalty semantics, do not
+  append `PLAYER_FOULED_OUT`, do not add direct team-foul UI or server acceptance in P1, do not change sockets,
+  migrations/schema, event types, capabilities, dependencies, public contracts, production config, deployment, or
+  production access.
+- Next safe step: `RM-06-P1 - Personal Player Foul Contract and Effective Access Gate`. Do not begin it
   automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
