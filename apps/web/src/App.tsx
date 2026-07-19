@@ -116,6 +116,12 @@ import {
   resolveFoulEffectiveAccess
 } from "./lib/foulControl";
 import {
+  blocksFoulCorrectionNavigation,
+  createFoulIntent,
+  foulIntentQueueReducer,
+  initialFoulIntentQueueState
+} from "./lib/foulIntentQueue";
+import {
   buildClockControlState,
   buildGameClockSetPayload,
   buildShotClockResetPayload,
@@ -147,7 +153,6 @@ import {
 import {
   buildCreatePlayerPayload,
   buildLineupSetupSummary,
-  buildPlayerFoulCommandPayload,
   buildRosterPlayerDisplayLabel,
   buildRosterPlayerLabel,
   buildRosterReadinessLabel,
@@ -3511,10 +3516,25 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [foulQueue, dispatchFoulQueue] = useReducer(foulIntentQueueReducer, initialFoulIntentQueueState);
+  const dispatchedFoulEnvelopeRef = useRef<string | null>(null);
+  const previousFoulAccessRef = useRef(false);
+  const previousFoulRealtimeRef = useRef<string | null>(null);
   const [reason, setReason] = useState("");
+  const [selectedFoulPlayer, setSelectedFoulPlayer] = useState<{
+    gameClockRemainingMs: number;
+    periodNumber: number;
+    player: MatchRosterPlayer;
+    teamLabel: string;
+    teamSide: "HOME" | "AWAY";
+  } | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const resolvedAccess = resolveFoulEffectiveAccess(matchId, accessPhase, effectiveAccess);
   const canSubmitFoul = resolvedAccess.canRead && resolvedAccess.canOperateFoul;
+  const correctionBlocked = blocksFoulCorrectionNavigation(foulQueue);
+  const frameEffectiveAccess = correctionBlocked && resolvedAccess.access
+    ? { ...resolvedAccess.access, capabilities: { ...resolvedAccess.access.capabilities, correctionRequest: false } }
+    : resolvedAccess.access;
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function refreshAuthoritativeState() {
@@ -3527,6 +3547,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     setRosters(nextRosters);
     setEffectiveAccess(nextEffectiveAccess);
     setAccessPhase("ready");
+    return { nextEffectiveAccess, nextProjection, nextRosters };
   }
 
   async function loadState() {
@@ -3539,12 +3560,17 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     } catch (error) {
       setAccessPhase("error");
       setMessage(toUiMessage(error));
+      if (foulQueue.activeIntent || foulQueue.queuedIntents.length > 0) {
+        dispatchFoulQueue({ type: "PAUSE", reason: "REFRESH_FAILED", detail: "Background refresh failed. Explicit review is required." });
+      }
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
+    dispatchedFoulEnvelopeRef.current = null;
+    dispatchFoulQueue({ type: "DISCARD_ALL" });
     void loadState();
   }, [matchId]);
 
@@ -3555,6 +3581,9 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       setAccessPhase("error");
       setEffectiveAccess(null);
       setMessage(toUiMessage(error));
+      if (foulQueue.activeIntent || foulQueue.queuedIntents.length > 0) {
+        dispatchFoulQueue({ type: "PAUSE", reason: "REFRESH_FAILED", detail: "Background refresh failed. Explicit review is required." });
+      }
     }
   }
 
@@ -3566,45 +3595,167 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     return () => window.clearInterval(timer);
   }, [api, matchId, realtimeState]);
 
+  useEffect(() => {
+    if (previousFoulAccessRef.current && !canSubmitFoul && (foulQueue.activeIntent || foulQueue.queuedIntents.length > 0)) {
+      dispatchFoulQueue({ type: "PAUSE", reason: "ACCESS_LOST", detail: "Foul access changed. No intent will replay automatically." });
+    }
+    previousFoulAccessRef.current = canSubmitFoul;
+  }, [canSubmitFoul, foulQueue.activeIntent, foulQueue.queuedIntents.length]);
+
+  useEffect(() => {
+    if (
+      previousFoulRealtimeRef.current === "CONNECTED" &&
+      realtimeState !== "CONNECTED" &&
+      (foulQueue.activeIntent || foulQueue.queuedIntents.length > 0)
+    ) {
+      dispatchFoulQueue({ type: "PAUSE", reason: "RECONNECT_REQUIRED", detail: "Connection changed. Explicit review is required before any waiting foul." });
+    }
+    previousFoulRealtimeRef.current = realtimeState;
+  }, [foulQueue.activeIntent, foulQueue.queuedIntents.length, realtimeState]);
+
   async function refreshAfterCommand(lastSeq: number) {
     await api.syncMatch(matchId, lastSeq);
     await refreshAuthoritativeState();
   }
 
-  async function addPlayerFoul(player: MatchRosterPlayer) {
-    if (!projection || !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))) return;
-    const key = `PLAYER-${player.playerId}`;
-    setPendingKey(key);
-    setMessage(null);
+  function confirmPlayerFoul() {
+    if (!projection || !selectedFoulPlayer || !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey))) return;
     const previousSeq = projection.currentSeq;
+    if (!Number.isSafeInteger(previousSeq) || previousSeq < 0) return;
+    const intent = createFoulIntent({
+      commandId: createClientCommandId(),
+      correlationId: createClientCommandId(),
+      gameClockRemainingMs: selectedFoulPlayer.gameClockRemainingMs,
+      localIntentId: createClientCommandId(),
+      periodNumber: selectedFoulPlayer.periodNumber,
+      player: {
+        playerId: selectedFoulPlayer.player.playerId,
+        playerName: selectedFoulPlayer.player.displayNameSnapshot,
+        jerseyNumber: selectedFoulPlayer.player.jerseyNumberSnapshot,
+        status: selectedFoulPlayer.player.status,
+        teamSide: selectedFoulPlayer.teamSide
+      },
+      reason,
+      teamLabel: selectedFoulPlayer.teamLabel
+    });
+    dispatchFoulQueue({ type: "ENQUEUE", intent });
+    setMessage(null);
+    setReason("");
+    setSelectedFoulPlayer(null);
+  }
 
-    try {
-      const result = await api.addPlayerFoul(
-        matchId,
-        buildPlayerFoulCommandPayload(projection, player, { foulType: "PERSONAL", reason })
-      );
+  useEffect(() => {
+    if (foulQueue.activeIntent || foulQueue.pauseReason || foulQueue.queuedIntents.length === 0) return;
+    dispatchFoulQueue({ type: "START_NEXT" });
+  }, [foulQueue.activeIntent, foulQueue.pauseReason, foulQueue.queuedIntents.length]);
 
-      if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
-        setMessage(getFoulControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
-        return;
+  useEffect(() => {
+    if (foulQueue.lifecycle !== "REVALIDATING" || !foulQueue.activeIntent || foulQueue.pauseReason) return;
+    void (async () => {
+      try {
+        const { nextEffectiveAccess, nextProjection, nextRosters } = await refreshAuthoritativeState();
+        const nextResolvedAccess = resolveFoulEffectiveAccess(matchId, "ready", nextEffectiveAccess);
+        dispatchFoulQueue({
+          type: "PREPARE_DISPATCH",
+          authoritative: {
+            access: nextResolvedAccess,
+            currentSeq: nextProjection.currentSeq,
+            players: ([
+              ...getRosterPlayersForSide(nextRosters, "HOME").map((player) => ({
+                playerId: player.playerId,
+                playerName: player.displayNameSnapshot,
+                jerseyNumber: player.jerseyNumberSnapshot,
+                status: player.status,
+                teamSide: "HOME" as const
+              })),
+              ...getRosterPlayersForSide(nextRosters, "AWAY").map((player) => ({
+                playerId: player.playerId,
+                playerName: player.displayNameSnapshot,
+                jerseyNumber: player.jerseyNumberSnapshot,
+                status: player.status,
+                teamSide: "AWAY" as const
+              }))
+            ]),
+            status: nextProjection.status
+          },
+          clientTimestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        setAccessPhase("error");
+        setEffectiveAccess(null);
+        setMessage(toUiMessage(error));
+        dispatchFoulQueue({ type: "PAUSE", reason: "REFRESH_FAILED", detail: "Projection, roster, and access refresh failed. Review is required." });
       }
+    })();
+  }, [api, foulQueue.activeIntent, foulQueue.lifecycle, foulQueue.pauseReason, matchId]);
 
-      await refreshAfterCommand(previousSeq);
-      setMessage(getFoulControlFeedback(result));
-      setReason("");
-    } catch (error) {
-      setMessage(toUiMessage(error));
-    } finally {
-      setPendingKey(null);
-    }
+  useEffect(() => {
+    const activeEnvelope = foulQueue.activeEnvelope;
+    if (foulQueue.lifecycle !== "READY_TO_DISPATCH" || !activeEnvelope || foulQueue.pauseReason) return;
+    const attemptKey = `${activeEnvelope.commandId}:${activeEnvelope.clientTimestamp}`;
+    if (dispatchedFoulEnvelopeRef.current === attemptKey) return;
+    dispatchedFoulEnvelopeRef.current = attemptKey;
+    setPendingKey(`PLAYER-${activeEnvelope.payload.playerId}`);
+    void (async () => {
+      let acceptedByServer = false;
+      try {
+        const result = await api.addPlayerFoul(matchId, activeEnvelope);
+        setMessage(getFoulControlFeedback(result));
+        if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
+          dispatchFoulQueue({ type: "PAUSE", reason: "SYNC_REQUIRED", detail: "Authoritative state changed. This foul will not replay automatically." });
+          return;
+        }
+        if (result.status !== "ACCEPTED" && result.status !== "DUPLICATE_ACCEPTED") {
+          dispatchFoulQueue({ type: "PAUSE", reason: "REJECTED", detail: "The foul was rejected and will not replay automatically." });
+          return;
+        }
+        acceptedByServer = true;
+        dispatchFoulQueue({ type: "ACCEPTED_PENDING_RECONCILIATION" });
+        await refreshAfterCommand(activeEnvelope.expectedSeq);
+        dispatchFoulQueue({ type: "RECONCILED_ACCEPTED" });
+      } catch (error) {
+        setMessage(toUiMessage(error));
+        dispatchFoulQueue({
+          type: "PAUSE",
+          reason: acceptedByServer ? "REFRESH_FAILED" : "NETWORK_AMBIGUOUS",
+          detail: acceptedByServer
+            ? "The foul was accepted, but authoritative reconciliation failed. Refresh and explicit review are required."
+            : "Delivery outcome is unknown. Explicit exact-envelope retry or discard is required."
+        });
+      } finally {
+        setPendingKey(null);
+      }
+    })();
+  }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, matchId]);
+
+  function retryAmbiguousFoul() {
+    if (!canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
+    dispatchedFoulEnvelopeRef.current = null;
+    dispatchFoulQueue({ type: "RETRY_AMBIGUOUS" });
+  }
+
+  function discardActiveFoul() {
+    dispatchedFoulEnvelopeRef.current = null;
+    dispatchFoulQueue({ type: "DISCARD_ACTIVE" });
+  }
+
+  function discardAllFouls() {
+    dispatchedFoulEnvelopeRef.current = null;
+    dispatchFoulQueue({ type: "DISCARD_ALL" });
+    setMessage({ tone: "success", text: "All unresolved foul intents were discarded." });
+  }
+
+  function resumeWaitingFouls() {
+    if (!canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
+    dispatchedFoulEnvelopeRef.current = null;
+    dispatchFoulQueue({ type: "RESUME_WAITING" });
   }
 
   return (
     <OperatorLiveMatchFrame
       commandLabel="Saving foul"
       currentView="fouls"
-      effectiveAccess={resolvedAccess.access}
+      effectiveAccess={frameEffectiveAccess}
       matchId={matchId}
       message={message}
       pendingKey={pendingKey}
@@ -3614,12 +3765,28 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       title="Foul Control"
     >
       <section className="stack" aria-label="Foul workspace">
-      <div className="panel">
+       <div className="panel">
         {accessPhase === "error" ? <ErrorMessage code="FORBIDDEN" message="Foul access could not be verified." /> : null}
         {accessPhase === "ready" && !canSubmitFoul ? <ErrorMessage code="FORBIDDEN" message="Foul operation permission is required." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
-        {message ? <Notice {...message} /> : null}
-      </div>
+         {message ? <Notice {...message} /> : null}
+         {correctionBlocked ? (
+           <p className="muted">Corrections are blocked while foul intents are unresolved. Resolve or discard them first.</p>
+         ) : null}
+       </div>
+       {correctionBlocked ? (
+         <section className="panel" aria-labelledby="foul-queue-status">
+           <h2 id="foul-queue-status">Foul intent status</h2>
+           <p><strong>{foulQueue.lifecycle}</strong>{foulQueue.pauseDetail ? `: ${foulQueue.pauseDetail}` : ""}</p>
+           <p>Waiting intents: {foulQueue.queuedIntents.length}</p>
+           <div className="button-row">
+             {foulQueue.pauseReason === "NETWORK_AMBIGUOUS" ? <button type="button" onClick={retryAmbiguousFoul}>Retry exact foul envelope</button> : null}
+             {foulQueue.activeIntent ? <button type="button" className="secondary" onClick={discardActiveFoul}>Discard active foul</button> : null}
+             <button type="button" className="secondary" onClick={discardAllFouls}>Discard all foul intents</button>
+             {foulQueue.pauseReason === "WAITING_REVIEW" ? <button type="button" onClick={resumeWaitingFouls}>Review and resume waiting fouls</button> : null}
+           </div>
+         </section>
+       ) : null}
       {loading ? <section className="panel"><p>Loading match state...</p></section> : null}
       {!loading && !projection ? (
         <section className="panel"><p className="muted">No scoreboard projection found for this match.</p></section>
@@ -3637,7 +3804,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
           <div className="form-grid compact">
             <p>Foul type: {foulTypeOptions[0]}</p>
             <label>
-              Reason
+               Reason (optional)
               <input value={reason} onChange={(event) => setReason(event.target.value)} />
             </label>
           </div>
@@ -3671,20 +3838,41 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
                         className="score-button"
                         disabled={
                           !canUseLiveMatchControls(projection, canSubmitFoul, Boolean(pendingKey)) ||
-                          player.status === "INACTIVE"
+                          player.status !== "ACTIVE"
                         }
-                        onClick={() => void addPlayerFoul(player)}
+                         onClick={() => setSelectedFoulPlayer({
+                           gameClockRemainingMs: projection.gameClockRemainingMs,
+                           periodNumber: projection.periodNumber,
+                           player: { ...player },
+                           teamLabel: getRosterTeamLabel(projection, teamSide),
+                           teamSide
+                         })}
                       >
-                        {pendingKey === `PLAYER-${player.playerId}`
-                          ? "Saving..."
-                          : `Add foul ${buildRosterPlayerDisplayLabel(player)}`}
+                        {`Select ${teamSide} ${buildRosterPlayerDisplayLabel(player)}`}
                       </button>
                     ))}
                   </div>
                 ))}
-              </div>
-            )}
-          </section>
+               </div>
+             )}
+             {selectedFoulPlayer ? (
+               <section className="inline-panel" aria-labelledby="foul-review-title">
+                 <h3 id="foul-review-title">Review personal foul</h3>
+                 <dl className="state-strip">
+                   <div><dt>Side / team</dt><dd>{selectedFoulPlayer.teamSide} / {selectedFoulPlayer.teamLabel}</dd></div>
+                   <div><dt>Player</dt><dd>{selectedFoulPlayer.player.displayNameSnapshot} ({selectedFoulPlayer.player.playerId})</dd></div>
+                   <div><dt>Jersey</dt><dd>{selectedFoulPlayer.player.jerseyNumberSnapshot ?? "-"}</dd></div>
+                   <div><dt>Foul type</dt><dd>PERSONAL</dd></div>
+                   <div><dt>Reason (optional)</dt><dd>{reason.trim() || "-"}</dd></div>
+                   <div><dt>Activation period / clock</dt><dd>P{selectedFoulPlayer.periodNumber} / {Math.ceil(selectedFoulPlayer.gameClockRemainingMs / 1000)}s</dd></div>
+                 </dl>
+                 <div className="button-row">
+                   <button type="button" onClick={() => void confirmPlayerFoul()}>Confirm personal foul</button>
+                   <button type="button" className="secondary" onClick={() => setSelectedFoulPlayer(null)}>Cancel review</button>
+                 </div>
+               </section>
+             ) : null}
+           </section>
         </section>
       ) : null}
       </section>

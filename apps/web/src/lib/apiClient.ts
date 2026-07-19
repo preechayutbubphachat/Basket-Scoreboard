@@ -677,17 +677,23 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
-    async addPlayerFoul(matchId: string, input: { expectedSeq: number; payload: PlayerFoulAddedPayload }) {
+    async addPlayerFoul(matchId: string, input: {
+      commandId?: string;
+      correlationId?: string;
+      expectedSeq: number;
+      clientTimestamp?: string;
+      payload: PlayerFoulAddedPayload;
+    }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/foul/player/add`,
         {
           method: "POST",
           body: JSON.stringify({
-            commandId: createCommandId(),
+            commandId: input.commandId ?? createCommandId(),
             matchId,
             expectedSeq: input.expectedSeq,
-            correlationId: createCommandId(),
-            clientTimestamp: new Date().toISOString(),
+            correlationId: input.correlationId ?? createCommandId(),
+            clientTimestamp: input.clientTimestamp ?? new Date().toISOString(),
             payload: input.payload
           })
         },
