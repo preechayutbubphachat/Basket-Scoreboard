@@ -1691,8 +1691,8 @@ RM-06-D1 foul dashboard authorization evidence:
   `docs/architecture/EVENT_MODEL.md` sections `PLAYER_FOUL_ADDED`, `TEAM_FOUL_ADDED`, `PLAYER_FOULED_OUT`,
   `docs/api/API_CONTRACTS.md` Foul Command APIs, `docs/product/PROJECT_BRIEF.md` sections 7.8, 7.9, 7.15,
   `docs/ui/UI_DASHBOARDS.md` section 13, current
-  `apps/api/src/matchEventStore/appendFoulCommand.ts`, current `apps/web/src/App.tsx` `OperatorFoulPage`, and
-  `C:/Users/preec/AppData/Local/hermes/tmp/rm06_authorization_discovery_result.md` as advisory only.
+  `apps/api/src/matchEventStore/appendFoulCommand.ts`, and current `apps/web/src/App.tsx` `OperatorFoulPage`. The Codex
+  read-only discovery report was treated as advisory only and is not a durable authority over repository sources.
 - Source boundary: RM-06 may close authorization for one minimal fail-closed slice without
   `FOUL_PENALTY_MATRIX.md`. The supported P1 command surface is only player-attributed `PERSONAL` foul entry:
   active match roster player, matching team side, server validation before append, one `PLAYER_FOUL_ADDED`, and
