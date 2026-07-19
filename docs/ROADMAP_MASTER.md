@@ -159,9 +159,10 @@ RM-05-I = INTEGRATED
 RM-06 = CURRENT
 RM-06-D1 = DISCOVERY COMPLETE
 RM-06-P1 = IMPLEMENTATION COMPLETE
-RM-06-P2 and later = PENDING (NOT AUTHORIZED)
+RM-06-P2 = PENDING (AUTHORIZED TO BEGIN)
+RM-06-P3 and later = PENDING (NOT AUTHORIZED)
 RM-07 through RM-18 = PENDING
-Next safe step: RM-06-P2 authorization/contract gate; RM-06-P2 is PENDING (NOT AUTHORIZED)
+Next safe step: RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue
 ```
 
 ## 6. Straight-Line Diagram
@@ -316,8 +317,9 @@ There is no parallel top-level path.
 - Visual target: `UI Foul Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
 - Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
-  `Personal Player Foul Contract and Effective Access Gate` is `IMPLEMENTATION COMPLETE`. P2 and later are not
-  authorized.
+  `Personal Player Foul Contract and Effective Access Gate` is `IMPLEMENTATION COMPLETE`; RM-06-P2
+  `Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` is `PENDING (AUTHORIZED TO BEGIN)`. P3 and
+  later are not authorized.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
 - Database dependencies: append-only foul/correction events and projections.
@@ -336,7 +338,7 @@ There is no parallel top-level path.
 - Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
   coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
   and fail-closed.
-- Next milestone: RM-07 after RM-06 integration; next safe step is the RM-06-P2 authorization/contract gate. RM-06-P2 remains pending and is not authorized to begin.
+- Next milestone: RM-07 after RM-06 integration; next safe step is RM-06-P2 implementation within the authorized player-only client-side allowlist.
 
 ### RM-07 - Timeout Dashboard
 
@@ -1761,6 +1763,63 @@ RM-06-P1 implementation closure evidence:
 - Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 is `IMPLEMENTATION COMPLETE`; RM-06-P2 and later remain
   `PENDING (NOT AUTHORIZED)`.
 - Next safe step: decision required; RM-06-P2 is not authorized. Do not begin it automatically.
+
+
+RM-06-P2 authorization/contract gate evidence:
+
+- Gate baseline: branch `feature/rm06-foul-dashboard`; live HEAD
+  `34bcf43daace06be0d65df9caeec49e1236bde30`. Existing modified `AGENTS.md` and untracked
+  `docs/AI_HANDOFF.md` are pre-existing Hermes continuity changes and remain untouched, unstaged, and uncommitted.
+- Gate verdict: `P2_AUTHORIZATION_READY` for one bounded player-only client-side slice:
+  `RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue`. This authorization does not extend
+  to direct team-foul semantics or any behavior requiring the absent complete foul-penalty source package.
+- Attribution contract: an operator deliberately selects and confirms one active-roster player under explicit
+  `HOME`/`AWAY` grouping. The immutable UI intent captures distinct local/command/correlation identities, selected
+  team side and player ID, player name/jersey preview, fixed `PERSONAL`, trimmed optional reason, and activation-time
+  period/game-clock preview. Preview fields are confirmation aids only; the server remains authoritative for active
+  roster membership, matching side, canonical player/name/jersey snapshots, period, sequence, actor, status, RBAC,
+  assignment, and append eligibility. Preview context must not be added to the canonical wire payload.
+- Team-attribution boundary: team grouping, team identity derived from the selected roster player's matching side,
+  existing projected team count display, and explanation of the existing one-time team-count effect are authorized.
+  Direct `TEAM_FOUL_ADDED`, team-only, bench, or coach attribution remain unauthorized.
+- Rapid-intent contract: one deliberate confirmation equals one logical intent; repeated confirmations use distinct
+  identities; FIFO ordering; maximum one active request; `expectedSeq` is read from the latest authoritative
+  projection immediately before first dispatch. Accepted or duplicate-accepted results reconcile projection, roster,
+  and EffectiveMatchAccess before the next dispatch and revalidation.
+- Fail-closed lifecycle: before dispatch, refresh and jointly validate authoritative projection, roster, access,
+  live-control status, player ID, side, active roster status, and unchanged preview attribution. `SYNC_REQUIRED`,
+  definite rejection, ambiguous transport outcome, access loss, reconnect, roster drift, preview drift, or match
+  status drift pauses without automatic retry, replay, resume, retargeting, or queue drain. An ambiguous retry may
+  occur only by explicit operator action using the exact same command/correlation identity and first-attempt envelope.
+- Correction boundary: any active, queued, revalidating, or paused foul intent blocks correction navigation until the
+  operator resolves or explicitly discards the intent state. Corrections remain separate, exact-target, append-only,
+  and governed independently by `correctionRequest`.
+- Rule-source boundary: safe without `FOUL_PENALTY_MATRIX.md` are active-player HOME/AWAY selection, fixed `PERSONAL`
+  confirmation, optional reason, existing projected count display, intent delivery safety, server-side revalidation,
+  reconnect/pause/discard controls, and existing append-only correction navigation. Still deferred or blocked are
+  direct team foul, bench/coach/team-only attribution, technical/unsportsmanlike/disqualifying/offensive/other/fighting
+  or special types, foul-out/substitution automation, team penalty and warnings, free throws, possession, shot-clock
+  consequences, overtime carry-forward, and any automatic official-rule consequence.
+- Architecture impact: `API_CHANGE_REQUIRED=false`; `SOCKET_CHANGE_REQUIRED=false`;
+  `EVENT_MODEL_CHANGE_REQUIRED=false`; `DB_SCHEMA_CHANGE_REQUIRED=false`;
+  `NEW_CAPABILITY_REQUIRED=false`.
+- Authorized implementation allowlist only: `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`, new
+  `apps/web/src/lib/foulIntentQueue.ts`, new `tests/web/rm06-p2-foul-intent-queue.test.ts`, and
+  `tests/web/rm06-p1-foul-effective-access.test.ts` only for focused regression assertions. No component extraction;
+  if another production file is genuinely required, stop for scope approval.
+- Required tests: immutable snapshots and distinct identities; same-side/cross-side FIFO; one active request;
+  dispatch-time latest `expectedSeq`; roster/side/status/access revalidation; preview drift pause; accepted
+  reconciliation before next dispatch; no replay/drain after sync, rejection, ambiguity, reconnect, or access loss;
+  exact same-envelope ambiguous retry; finished/final dispatch denial; correction-navigation blocking; deterministic
+  discard; and existing P1 EffectiveMatchAccess/server foul regressions.
+- Forbidden actions: no API/route/socket/contract/event/schema/migration/RBAC/capability/dependency/public-client
+  change; no direct team foul or special foul type; no `PLAYER_FOULED_OUT`, penalty, free-throw, possession,
+  shot-clock, overtime, substitution, warning, or consequence automation; no silent retargeting; no production access,
+  deployment, merge, or push.
+- Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 remains `IMPLEMENTATION COMPLETE`; RM-06-P2 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06-P3 and later remain `PENDING (NOT AUTHORIZED)`.
+- Next safe step: implement only `RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` under
+  strict TDD and the stated allowlist. Do not auto-advance to P3.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
