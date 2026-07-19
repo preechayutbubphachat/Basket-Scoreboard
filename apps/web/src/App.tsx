@@ -3518,6 +3518,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [foulQueue, dispatchFoulQueue] = useReducer(foulIntentQueueReducer, initialFoulIntentQueueState);
+  const foulRequestInFlightRef = useRef(false);
   const dispatchedFoulEnvelopeRef = useRef<string | null>(null);
   const previousFoulAccessRef = useRef(false);
   const previousFoulRealtimeRef = useRef<string | null>(null);
@@ -3699,7 +3700,9 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     const activeEnvelope = foulQueue.activeEnvelope;
     if (foulQueue.lifecycle !== "READY_TO_DISPATCH" || !activeEnvelope || foulQueue.pauseReason) return;
     const attemptKey = `${activeEnvelope.commandId}:${activeEnvelope.clientTimestamp}`;
+    if (foulRequestInFlightRef.current) return;
     if (dispatchedFoulEnvelopeRef.current === attemptKey) return;
+    foulRequestInFlightRef.current = true;
     dispatchedFoulEnvelopeRef.current = attemptKey;
     setPendingKey(`PLAYER-${activeEnvelope.payload.playerId}`);
     void (async () => {
@@ -3729,30 +3732,33 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
             : "Delivery outcome is unknown. Explicit exact-envelope retry or discard is required."
         });
       } finally {
+        foulRequestInFlightRef.current = false;
         setPendingKey(null);
       }
     })();
-  }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, matchId]);
+  }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, matchId, pendingKey]);
 
   function retryAmbiguousFoul() {
-    if (!canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
+    if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RETRY_AMBIGUOUS" });
   }
 
   function discardActiveFoul() {
+    if (pendingKey) return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "DISCARD_ACTIVE" });
   }
 
   function discardAllFouls() {
+    if (pendingKey) return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "DISCARD_ALL" });
     setMessage({ tone: "success", text: "All unresolved foul intents were discarded." });
   }
 
   function resumeWaitingFouls() {
-    if (!canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
+    if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RESUME_WAITING" });
   }
@@ -3786,10 +3792,10 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
            <p><strong>{foulQueue.lifecycle}</strong>{foulQueue.pauseDetail ? `: ${foulQueue.pauseDetail}` : ""}</p>
            <p>Waiting intents: {foulQueue.queuedIntents.length}</p>
            <div className="button-row">
-             {foulQueue.pauseReason === "NETWORK_AMBIGUOUS" ? <button type="button" onClick={retryAmbiguousFoul}>Retry exact foul envelope</button> : null}
-             {foulQueue.activeIntent ? <button type="button" className="secondary" onClick={discardActiveFoul}>Discard active foul</button> : null}
-             <button type="button" className="secondary" onClick={discardAllFouls}>Discard all foul intents</button>
-             {foulQueue.pauseReason === "WAITING_REVIEW" ? <button type="button" onClick={resumeWaitingFouls}>Review and resume waiting fouls</button> : null}
+             {foulQueue.pauseReason === "NETWORK_AMBIGUOUS" ? <button type="button" disabled={Boolean(pendingKey)} onClick={retryAmbiguousFoul}>Retry exact foul envelope</button> : null}
+             {foulQueue.activeIntent ? <button type="button" className="secondary" disabled={Boolean(pendingKey)} onClick={discardActiveFoul}>Discard active foul</button> : null}
+             <button type="button" className="secondary" disabled={Boolean(pendingKey)} onClick={discardAllFouls}>Discard all foul intents</button>
+             {foulQueue.pauseReason === "WAITING_REVIEW" ? <button type="button" disabled={Boolean(pendingKey)} onClick={resumeWaitingFouls}>Review and resume waiting fouls</button> : null}
            </div>
          </section>
        ) : null}

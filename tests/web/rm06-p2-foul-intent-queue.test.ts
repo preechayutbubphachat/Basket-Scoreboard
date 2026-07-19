@@ -212,6 +212,36 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     }
   });
 
+  it("holds one global foul request ownership across every envelope until transport settles", () => {
+    expect(foulRouteSource).toContain("const foulRequestInFlightRef = useRef(false)");
+    expect(foulRouteSource).toContain("if (foulRequestInFlightRef.current) return");
+
+    const ownershipIndex = foulRouteSource.indexOf("foulRequestInFlightRef.current = true");
+    const requestIndex = foulRouteSource.indexOf("api.addPlayerFoul(matchId, activeEnvelope)");
+    const finallyIndex = foulRouteSource.indexOf("finally {", requestIndex);
+    const releaseIndex = foulRouteSource.indexOf("foulRequestInFlightRef.current = false", finallyIndex);
+
+    expect(ownershipIndex).toBeGreaterThan(-1);
+    expect(ownershipIndex).toBeLessThan(requestIndex);
+    expect(finallyIndex).toBeGreaterThan(requestIndex);
+    expect(releaseIndex).toBeGreaterThan(finallyIndex);
+  });
+
+  it("freezes discard recovery while a foul request is pending without freezing enqueue", () => {
+    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey) return;");
+    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey) return;");
+    expect(foulRouteSource).toContain("if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
+    expect(foulRouteSource).toContain("if (pendingKey || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardActiveFoul}");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardAllFouls}");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={retryAmbiguousFoul}");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={resumeWaitingFouls}");
+
+    const enqueuePolicyStart = foulRouteSource.indexOf("const canEnqueueFoul = projection ? canEnqueueFoulIntent({");
+    const enqueuePolicyEnd = foulRouteSource.indexOf("}) : false;", enqueuePolicyStart);
+    expect(foulRouteSource.slice(enqueuePolicyStart, enqueuePolicyEnd)).not.toContain("pendingKey");
+  });
+
   it("pauses fail closed and exposes only explicit retry, discard, review/resume, and blocked correction controls", () => {
     for (const signal of [
       "blocksFoulCorrectionNavigation(foulQueue)",
