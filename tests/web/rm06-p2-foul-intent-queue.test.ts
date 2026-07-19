@@ -292,6 +292,36 @@ describe("RM-06-P2 dispatch outcomes and explicit recovery", () => {
     return prepareFoulIntentDispatch(state, authoritative({ currentSeq: 91 }), "2026-07-19T03:00:00.000Z");
   }
 
+  it("rejects enqueue with the exact same state while an ambiguous active intent is paused", () => {
+    const prepared = preparedState();
+    const paused = foulIntentQueueReducer(prepared, {
+      type: "PAUSE",
+      reason: "NETWORK_AMBIGUOUS",
+      detail: "Delivery outcome is unknown."
+    });
+
+    const unchanged = foulIntentQueueReducer(paused, { type: "ENQUEUE", intent: intent("3") });
+
+    expect(unchanged).toBe(paused);
+    expect(unchanged.activeIntent).toBe(paused.activeIntent);
+    expect(unchanged.activeEnvelope).toBe(paused.activeEnvelope);
+    expect(unchanged.queuedIntents).toBe(paused.queuedIntents);
+  });
+
+  it("rejects enqueue with the exact same WAITING_REVIEW state while queued intents await review", () => {
+    const prepared = preparedState();
+    const paused = foulIntentQueueReducer(prepared, { type: "PAUSE", reason: "REJECTED", detail: "Rejected." });
+    const waitingReview = foulIntentQueueReducer(paused, { type: "DISCARD_ACTIVE" });
+
+    const unchanged = foulIntentQueueReducer(waitingReview, { type: "ENQUEUE", intent: intent("3") });
+
+    expect(waitingReview.activeIntent).toBeNull();
+    expect(waitingReview.pauseReason).toBe("WAITING_REVIEW");
+    expect(unchanged).toBe(waitingReview);
+    expect(unchanged.queuedIntents).toBe(waitingReview.queuedIntents);
+    expect(unchanged.queuedIntents.map((item) => item.localIntentId)).toEqual(["local-2"]);
+  });
+
   it("keeps accepted active until authoritative reconciliation before considering FIFO next", () => {
     const prepared = preparedState();
     const reconciling = foulIntentQueueReducer(prepared, { type: "ACCEPTED_PENDING_RECONCILIATION" });

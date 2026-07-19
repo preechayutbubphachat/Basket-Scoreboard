@@ -129,6 +129,7 @@ export function createFoulIntent(options: {
 export function foulIntentQueueReducer(state: FoulIntentQueueState, action: FoulIntentQueueAction): FoulIntentQueueState {
   switch (action.type) {
     case "ENQUEUE":
+      if (state.pauseReason) return state;
       return { ...state, lifecycle: state.lifecycle === "IDLE" ? "QUEUED" : state.lifecycle, queuedIntents: [...state.queuedIntents, action.intent] };
     case "START_NEXT": {
       if (state.activeIntent || state.pauseReason || state.queuedIntents.length === 0) return state;
