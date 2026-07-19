@@ -98,6 +98,31 @@ async function createMatch(app: App, admin: Session) {
   return response.json<{ matchId: string }>().matchId;
 }
 
+async function createMatchWithActiveRosterPlayer(app: App, pool: Pool, admin: Session) {
+  const homeTeamId = randomUUID();
+  const awayTeamId = randomUUID();
+  const playerId = randomUUID();
+  await pool.query("INSERT INTO teams (team_id, name) VALUES (?, ?), (?, ?)", [
+    homeTeamId, "Permission Home", awayTeamId, "Permission Away"
+  ]);
+  await pool.query(
+    "INSERT INTO players (player_id, team_id, display_name, jersey_number) VALUES (?, ?, ?, ?)",
+    [playerId, homeTeamId, "Permission Player", "6"]
+  );
+  const response = await app.inject({
+    method: "POST", url: "/api/v1/matches",
+    headers: { cookie: admin.cookie, "x-csrf-token": admin.csrfToken },
+    payload: { matchCode: `FOUL-PERM-${randomUUID()}`, ruleProfileId: "FIBA_2024", homeTeamId, awayTeamId }
+  });
+  expect(response.statusCode).toBe(201);
+  const matchId = response.json<{ matchId: string }>().matchId;
+  await pool.query(
+    "INSERT INTO match_roster_players (roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, roster_status) VALUES (?, ?, 'HOME', ?, ?, ?, ?, 'ACTIVE')",
+    [randomUUID(), matchId, homeTeamId, playerId, "Permission Player", "6"]
+  );
+  return { matchId, playerId };
+}
+
 async function assign(pool: Pool, matchId: string, userId: string, role: AssignmentRole, adminId: string) {
   const id = randomUUID();
   await pool.query(
@@ -124,6 +149,13 @@ const commands = {
   correctionApply: { path: "corrections/apply-score", payload: { correctionRequestSeq: 1, targetSeq: 1, reason: "synthetic correction", removeOriginalScore: true, replacement: null } },
   correctionReject: { path: "corrections/reject", payload: { correctionRequestSeq: 1, reason: "synthetic correction" } }
 } as const;
+
+function playerFoul(playerId: string) {
+  return {
+    path: "foul/player/add",
+    payload: { teamSide: "HOME", playerId, foulType: "PERSONAL", reason: null }
+  } as const;
+}
 
 async function state(pool: Pool, matchId: string) {
   const [events] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) event_count, COALESCE(MAX(seq_no), 0) latest_seq FROM match_events WHERE match_id = ?", [matchId]);
@@ -335,6 +367,80 @@ describeDb.sequential("DB-backed granular operator permission matrix", { timeout
           await expectDeniedUnchanged(app, pool, session, matchId, commands[name]);
         }
       }
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
+  it("enforces player-attributed PERSONAL foul permission for every canonical assignment role", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const admin = await login(app, adminUser);
+      const cases: Array<{ role: AssignmentRole; allowed: boolean }> = [
+        { role: "SCORER", allowed: true },
+        { role: "ASSISTANT_SCORER", allowed: true },
+        { role: "MATCH_OPERATOR", allowed: true },
+        { role: "TIMER", allowed: false },
+        { role: "SHOT_CLOCK_OPERATOR", allowed: false },
+        { role: "REFEREE", allowed: false }
+      ];
+
+      for (const matrix of cases) {
+        const user = await seedUser(pool, "SCORER");
+        const session = await login(app, user);
+        const { matchId, playerId } = await createMatchWithActiveRosterPlayer(app, pool, admin);
+        await assign(pool, matchId, user.userId, matrix.role, adminUser.userId);
+        const command = playerFoul(playerId);
+
+        if (!matrix.allowed) {
+          await expectDeniedUnchanged(app, pool, session, matchId, command);
+          continue;
+        }
+
+        const response = await send(app, session, matchId, command);
+        expect(response.statusCode, `${matrix.role} should allow playerFoul`).toBe(200);
+        expect(response.json()).toMatchObject({
+          status: "ACCEPTED",
+          currentSeq: 1,
+          appendedEvents: [{ seqNo: 1, eventType: "PLAYER_FOUL_ADDED" }]
+        });
+        const [events] = await pool.query<RowDataPacket[]>(
+          "SELECT event_type FROM match_events WHERE match_id = ? ORDER BY seq_no",
+          [matchId]
+        );
+        expect(events.map((event) => event.event_type)).toEqual(["PLAYER_FOUL_ADDED"]);
+      }
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
+  it("denies unassigned, cross-match, and revoked player foul dispatch without appending", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const scorerUser = await seedUser(pool, "SCORER");
+      const admin = await login(app, adminUser);
+      const scorer = await login(app, scorerUser);
+
+      const assigned = await createMatchWithActiveRosterPlayer(app, pool, admin);
+      await assign(pool, assigned.matchId, scorerUser.userId, "SCORER", adminUser.userId);
+      const crossMatch = await createMatchWithActiveRosterPlayer(app, pool, admin);
+      await expectDeniedUnchanged(app, pool, scorer, crossMatch.matchId, playerFoul(crossMatch.playerId));
+
+      const unassignedUser = await seedUser(pool, "SCORER");
+      const unassignedSession = await login(app, unassignedUser);
+      const unassigned = await createMatchWithActiveRosterPlayer(app, pool, admin);
+      await expectDeniedUnchanged(app, pool, unassignedSession, unassigned.matchId, playerFoul(unassigned.playerId));
+
+      const revoked = await createMatchWithActiveRosterPlayer(app, pool, admin);
+      const assignmentId = await assign(pool, revoked.matchId, scorerUser.userId, "SCORER", adminUser.userId);
+      await pool.query(
+        "UPDATE match_officials SET assignment_status = 'REVOKED', revoked_by_user_id = ?, revoked_at = NOW(3) WHERE id = ?",
+        [adminUser.userId, assignmentId]
+      );
+      await expectDeniedUnchanged(app, pool, scorer, revoked.matchId, playerFoul(revoked.playerId));
     } finally {
       await app.close(); await pool.end();
     }
