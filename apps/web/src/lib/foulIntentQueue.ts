@@ -81,6 +81,94 @@ export type FoulIntentQueueAction =
   | { type: "RESUME_WAITING" }
   | { type: "DISCARD_ALL" };
 
+export type FoulTransportLeaseIdentity = {
+  attemptId: string;
+  matchId: string;
+  ownerId: string;
+};
+
+export type FoulTransportLease = FoulTransportLeaseIdentity & {
+  token: string;
+};
+
+export type FoulNavigationLock = {
+  matchId: string;
+  ownerId: string;
+  pathname: string;
+};
+
+export function createFoulLifecycleCoordinator() {
+  let transportLease: Readonly<FoulTransportLease> | null = null;
+  let navigationLock: Readonly<FoulNavigationLock> | null = null;
+  let nextToken = 0;
+  const subscribers = new Set<(available: boolean) => void>();
+
+  const sameLease = (candidate: FoulTransportLease) => Boolean(
+    transportLease &&
+    transportLease.attemptId === candidate.attemptId &&
+    transportLease.matchId === candidate.matchId &&
+    transportLease.ownerId === candidate.ownerId &&
+    transportLease.token === candidate.token
+  );
+  const sameNavigationLock = (candidate: FoulNavigationLock) => Boolean(
+    navigationLock &&
+    navigationLock.matchId === candidate.matchId &&
+    navigationLock.ownerId === candidate.ownerId &&
+    navigationLock.pathname === candidate.pathname
+  );
+  const notifyAvailability = () => {
+    const available = transportLease === null;
+    for (const subscriber of [...subscribers]) subscriber(available);
+  };
+
+  return {
+    acquireNavigationLock(lock: FoulNavigationLock) {
+      if (navigationLock) return sameNavigationLock(lock);
+      navigationLock = Object.freeze({ ...lock });
+      return true;
+    },
+    acquireTransportLease(identity: FoulTransportLeaseIdentity) {
+      if (transportLease) return null;
+      const token = `foul-lease-${++nextToken}`;
+      transportLease = Object.freeze({ ...identity, token });
+      notifyAvailability();
+      return token;
+    },
+    canNavigate(pathname: string) {
+      return !navigationLock || pathname === navigationLock.pathname;
+    },
+    getLockedPathname() {
+      return navigationLock?.pathname ?? null;
+    },
+    isTransportAvailable() {
+      return transportLease === null;
+    },
+    ownsNavigationLock(lock: FoulNavigationLock) {
+      return sameNavigationLock(lock);
+    },
+    ownsTransportLease(lease: FoulTransportLease) {
+      return sameLease(lease);
+    },
+    releaseNavigationLock(lock: FoulNavigationLock) {
+      if (!sameNavigationLock(lock)) return false;
+      navigationLock = null;
+      return true;
+    },
+    releaseTransportLease(lease: FoulTransportLease) {
+      if (!sameLease(lease)) return false;
+      transportLease = null;
+      notifyAvailability();
+      return true;
+    },
+    subscribe(subscriber: (available: boolean) => void) {
+      subscribers.add(subscriber);
+      return () => {
+        subscribers.delete(subscriber);
+      };
+    }
+  };
+}
+
 export const initialFoulIntentQueueState: FoulIntentQueueState = {
   activeEnvelope: null,
   activeIntent: null,

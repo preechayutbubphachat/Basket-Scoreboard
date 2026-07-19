@@ -118,9 +118,11 @@ import {
 import {
   blocksFoulCorrectionNavigation,
   canEnqueueFoulIntent,
+  createFoulLifecycleCoordinator,
   createFoulIntent,
   foulIntentQueueReducer,
-  initialFoulIntentQueueState
+  initialFoulIntentQueueState,
+  type FoulTransportLease
 } from "./lib/foulIntentQueue";
 import {
   buildClockControlState,
@@ -523,18 +525,39 @@ function parseRoute(pathname: string): Route {
   return { name: "home" };
 }
 
+const foulLifecycleCoordinator = createFoulLifecycleCoordinator();
+let foulOwnerGeneration = 0;
+
 function navigate(to: string) {
+  if (!foulLifecycleCoordinator.canNavigate(to)) return false;
   window.history.pushState({}, "", to);
   window.dispatchEvent(new PopStateEvent("popstate"));
+  return true;
 }
 
 function useRoute() {
   const [route, setRoute] = useState(() => parseRoute(window.location.pathname));
 
   useEffect(() => {
-    const update = () => setRoute(parseRoute(window.location.pathname));
+    const update = () => {
+      const lockedPathname = foulLifecycleCoordinator.getLockedPathname();
+      if (lockedPathname && window.location.pathname !== lockedPathname) {
+        window.history.replaceState({}, "", lockedPathname);
+        return;
+      }
+      setRoute(parseRoute(window.location.pathname));
+    };
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!foulLifecycleCoordinator.getLockedPathname()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
     window.addEventListener("popstate", update);
-    return () => window.removeEventListener("popstate", update);
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => {
+      window.removeEventListener("popstate", update);
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+    };
   }, []);
 
   return route;
@@ -596,6 +619,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
+    if (!foulLifecycleCoordinator.canNavigate("/login")) return;
     await logout();
     navigate("/login");
   }
@@ -3099,6 +3123,7 @@ type OperatorLiveMatchFrameProps = {
   realtimeState: RealtimeConnectionState;
   subtitle: string;
   title: string;
+  unresolvedNavigationPath?: string | undefined;
 };
 
 function OperatorLiveMatchFrame({
@@ -3112,7 +3137,8 @@ function OperatorLiveMatchFrame({
   projection,
   realtimeState,
   subtitle,
-  title
+  title,
+  unresolvedNavigationPath
 }: OperatorLiveMatchFrameProps) {
   const { currentUser, roleSummary, logout } = useCurrentUser();
   const readOnly = projection ? isFinishedMatchStatus(projection.status) : false;
@@ -3132,13 +3158,14 @@ function OperatorLiveMatchFrame({
 
   async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
     event.preventDefault();
+    if (!foulLifecycleCoordinator.canNavigate("/login")) return;
     await logout();
     navigate("/login");
   }
 
   return (
     <AuthenticatedDashboardShell
-      actions={<a href="/login" onClick={onLogout}>Logout</a>}
+      actions={unresolvedNavigationPath ? <span>Resolve foul intents before leaving</span> : <a href="/login" onClick={onLogout}>Logout</a>}
       brand={{
         href: "/",
         label: "Basketball Scoreboard",
@@ -3149,7 +3176,7 @@ function OperatorLiveMatchFrame({
       }}
       contentMode="wide"
       contextLabel="Match operations"
-      navigationItems={[{
+      navigationItems={unresolvedNavigationPath ? [] : [{
         href: "/operator/matches",
         label: "Operator Matches",
         onClick: (event) => {
@@ -3166,7 +3193,7 @@ function OperatorLiveMatchFrame({
         {...(commandStatus ? { commandStatus } : {})}
         connection={connection}
         match={match}
-        navigation={navigation}
+        navigation={unresolvedNavigationPath ? [] : navigation}
       >
         {children}
       </LiveMatchShell>
@@ -3518,7 +3545,14 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [foulQueue, dispatchFoulQueue] = useReducer(foulIntentQueueReducer, initialFoulIntentQueueState);
-  const foulRequestInFlightRef = useRef(false);
+  const foulOwnerRef = useRef<{ matchId: string; ownerId: string } | null>(null);
+  if (!foulOwnerRef.current) {
+    foulOwnerRef.current = Object.freeze({ matchId, ownerId: `foul-owner-${++foulOwnerGeneration}` });
+  }
+  const foulMountedRef = useRef(true);
+  const foulQueueRef = useRef(foulQueue);
+  foulQueueRef.current = foulQueue;
+  const activeFoulLeaseRef = useRef<FoulTransportLease | null>(null);
   const dispatchedFoulEnvelopeRef = useRef<string | null>(null);
   const previousFoulAccessRef = useRef(false);
   const previousFoulRealtimeRef = useRef<string | null>(null);
@@ -3531,6 +3565,12 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     teamSide: "HOME" | "AWAY";
   } | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const [leaseAvailabilityVersion, setLeaseAvailabilityVersion] = useState(0);
+  const foulPathname = `/operator/matches/${encodeURIComponent(matchId)}/fouls`;
+  function isCurrentFoulOwner(candidate: { matchId: string; ownerId: string }) {
+    return foulMountedRef.current && foulOwnerRef.current === candidate && candidate.matchId === matchId;
+  }
+  const ownerHasTransportLease = !foulLifecycleCoordinator.isTransportAvailable();
   const resolvedAccess = resolveFoulEffectiveAccess(matchId, accessPhase, effectiveAccess);
   const canSubmitFoul = resolvedAccess.canRead && resolvedAccess.canOperateFoul;
   const canEnqueueFoul = projection ? canEnqueueFoulIntent({
@@ -3544,12 +3584,13 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     : resolvedAccess.access;
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
-  async function refreshAuthoritativeState() {
+  async function refreshAuthoritativeState(requestOwner = foulOwnerRef.current!) {
     const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
       api.getMatchProjection(matchId),
       api.getMatchRosters(matchId),
       api.getEffectiveMatchAccess(matchId)
     ]);
+    if (!isCurrentFoulOwner(requestOwner)) return null;
     setProjection(nextProjection);
     setRosters(nextRosters);
     setEffectiveAccess(nextEffectiveAccess);
@@ -3558,33 +3599,68 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }
 
   async function loadState() {
+    const requestOwner = foulOwnerRef.current!;
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
     setAccessPhase("loading");
     try {
-      await refreshAuthoritativeState();
+      const refreshed = await refreshAuthoritativeState(requestOwner);
+      if (!refreshed || !isCurrentFoulOwner(requestOwner)) return;
     } catch (error) {
+      if (!isCurrentFoulOwner(requestOwner)) return;
       setAccessPhase("error");
       setMessage(toUiMessage(error));
       if (foulQueue.activeIntent || foulQueue.queuedIntents.length > 0) {
         dispatchFoulQueue({ type: "PAUSE", reason: "REFRESH_FAILED", detail: "Background refresh failed. Explicit review is required." });
       }
     } finally {
-      setLoading(false);
+      if (isCurrentFoulOwner(requestOwner)) setLoading(false);
     }
   }
 
   useEffect(() => {
+    if (foulOwnerRef.current!.matchId !== matchId) {
+      if (blocksFoulCorrectionNavigation(foulQueueRef.current) || activeFoulLeaseRef.current) return;
+      foulOwnerRef.current = Object.freeze({ matchId, ownerId: `foul-owner-${++foulOwnerGeneration}` });
+    }
     dispatchedFoulEnvelopeRef.current = null;
-    dispatchFoulQueue({ type: "DISCARD_ALL" });
     void loadState();
   }, [matchId]);
 
+  useEffect(() => foulLifecycleCoordinator.subscribe((available) => {
+    if (available) setLeaseAvailabilityVersion((version) => version + 1);
+  }), []);
+
+  useEffect(() => {
+    foulMountedRef.current = true;
+    return () => {
+      foulMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const currentOwner = foulOwnerRef.current!;
+    const lock = { matchId: currentOwner.matchId, ownerId: currentOwner.ownerId, pathname: foulPathname };
+    if (correctionBlocked) {
+      foulLifecycleCoordinator.acquireNavigationLock(lock);
+    } else {
+      foulLifecycleCoordinator.releaseNavigationLock(lock);
+    }
+    return () => {
+      if (!blocksFoulCorrectionNavigation(foulQueueRef.current)) {
+        foulLifecycleCoordinator.releaseNavigationLock(lock);
+      }
+    };
+  }, [correctionBlocked, foulPathname]);
+
   async function refreshProjectionSilently() {
+    const requestOwner = foulOwnerRef.current!;
     try {
-      await refreshAuthoritativeState();
+      const refreshed = await refreshAuthoritativeState(requestOwner);
+      if (!refreshed || !isCurrentFoulOwner(requestOwner)) return;
     } catch (error) {
+      if (!isCurrentFoulOwner(requestOwner)) return;
       setAccessPhase("error");
       setEffectiveAccess(null);
       setMessage(toUiMessage(error));
@@ -3621,8 +3697,11 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }, [foulQueue.activeIntent, foulQueue.queuedIntents.length, realtimeState]);
 
   async function refreshAfterCommand(lastSeq: number) {
+    const requestOwner = foulOwnerRef.current!;
     await api.syncMatch(matchId, lastSeq);
-    await refreshAuthoritativeState();
+    if (!isCurrentFoulOwner(requestOwner)) return false;
+    const refreshed = await refreshAuthoritativeState(requestOwner);
+    return Boolean(refreshed && isCurrentFoulOwner(requestOwner));
   }
 
   function confirmPlayerFoul() {
@@ -3658,9 +3737,12 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
 
   useEffect(() => {
     if (foulQueue.lifecycle !== "REVALIDATING" || !foulQueue.activeIntent || foulQueue.pauseReason) return;
+    const requestOwner = foulOwnerRef.current!;
     void (async () => {
       try {
-        const { nextEffectiveAccess, nextProjection, nextRosters } = await refreshAuthoritativeState();
+        const refreshed = await refreshAuthoritativeState(requestOwner);
+        if (!refreshed || !isCurrentFoulOwner(requestOwner)) return;
+        const { nextEffectiveAccess, nextProjection, nextRosters } = refreshed;
         const nextResolvedAccess = resolveFoulEffectiveAccess(matchId, "ready", nextEffectiveAccess);
         dispatchFoulQueue({
           type: "PREPARE_DISPATCH",
@@ -3688,6 +3770,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
           clientTimestamp: new Date().toISOString()
         });
       } catch (error) {
+        if (!isCurrentFoulOwner(requestOwner)) return;
         setAccessPhase("error");
         setEffectiveAccess(null);
         setMessage(toUiMessage(error));
@@ -3700,15 +3783,23 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     const activeEnvelope = foulQueue.activeEnvelope;
     if (foulQueue.lifecycle !== "READY_TO_DISPATCH" || !activeEnvelope || foulQueue.pauseReason) return;
     const attemptKey = `${activeEnvelope.commandId}:${activeEnvelope.clientTimestamp}`;
-    if (foulRequestInFlightRef.current) return;
     if (dispatchedFoulEnvelopeRef.current === attemptKey) return;
-    foulRequestInFlightRef.current = true;
+    const owner = foulOwnerRef.current!;
+    const token = foulLifecycleCoordinator.acquireTransportLease({
+      attemptId: attemptKey,
+      matchId: owner.matchId,
+      ownerId: owner.ownerId
+    });
+    if (!token) return;
+    const lease: FoulTransportLease = { attemptId: attemptKey, matchId: owner.matchId, ownerId: owner.ownerId, token };
+    activeFoulLeaseRef.current = lease;
     dispatchedFoulEnvelopeRef.current = attemptKey;
     setPendingKey(`PLAYER-${activeEnvelope.payload.playerId}`);
     void (async () => {
       let acceptedByServer = false;
       try {
         const result = await api.addPlayerFoul(matchId, activeEnvelope);
+        if (!foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;
         setMessage(getFoulControlFeedback(result));
         if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
           dispatchFoulQueue({ type: "PAUSE", reason: "SYNC_REQUIRED", detail: "Authoritative state changed. This foul will not replay automatically." });
@@ -3720,9 +3811,11 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
         }
         acceptedByServer = true;
         dispatchFoulQueue({ type: "ACCEPTED_PENDING_RECONCILIATION" });
-        await refreshAfterCommand(activeEnvelope.expectedSeq);
+        const reconciled = await refreshAfterCommand(activeEnvelope.expectedSeq);
+        if (!reconciled || !foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;
         dispatchFoulQueue({ type: "RECONCILED_ACCEPTED" });
       } catch (error) {
+        if (!foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;
         setMessage(toUiMessage(error));
         dispatchFoulQueue({
           type: "PAUSE",
@@ -3732,33 +3825,34 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
             : "Delivery outcome is unknown. Explicit exact-envelope retry or discard is required."
         });
       } finally {
-        foulRequestInFlightRef.current = false;
-        setPendingKey(null);
+        foulLifecycleCoordinator.releaseTransportLease(lease);
+        if (activeFoulLeaseRef.current === lease) activeFoulLeaseRef.current = null;
+        if (isCurrentFoulOwner(owner)) setPendingKey(null);
       }
     })();
-  }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, matchId, pendingKey]);
+  }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, leaseAvailabilityVersion, matchId, pendingKey]);
 
   function retryAmbiguousFoul() {
-    if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
+    if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RETRY_AMBIGUOUS" });
   }
 
   function discardActiveFoul() {
-    if (pendingKey || foulRequestInFlightRef.current) return;
+    if (pendingKey || ownerHasTransportLease) return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "DISCARD_ACTIVE" });
   }
 
   function discardAllFouls() {
-    if (pendingKey || foulRequestInFlightRef.current) return;
+    if (pendingKey || ownerHasTransportLease) return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "DISCARD_ALL" });
     setMessage({ tone: "success", text: "All unresolved foul intents were discarded." });
   }
 
   function resumeWaitingFouls() {
-    if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
+    if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RESUME_WAITING" });
   }
@@ -3775,6 +3869,7 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       realtimeState={realtimeState}
       subtitle="Authoritative team and player foul controls"
       title="Foul Control"
+      unresolvedNavigationPath={correctionBlocked ? foulPathname : undefined}
     >
       <section className="stack" aria-label="Foul workspace">
        <div className="panel">

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createApiClient, type FetchLike } from "../../apps/web/src/lib/apiClient";
+import * as foulIntentQueueModule from "../../apps/web/src/lib/foulIntentQueue";
 import {
   blocksFoulCorrectionNavigation,
   canEnqueueFoulIntent,
@@ -12,6 +13,86 @@ import {
 
 const appSource = readFileSync("apps/web/src/App.tsx", "utf8").replace(/\r\n/g, "\n");
 const foulRouteSource = appSource.slice(appSource.indexOf("function OperatorFoulPage"), appSource.indexOf("function OperatorClockPage"));
+
+function lifecycleCoordinator() {
+  const createCoordinator = (foulIntentQueueModule as typeof foulIntentQueueModule & {
+    createFoulLifecycleCoordinator?: () => {
+      acquireNavigationLock(lock: { matchId: string; ownerId: string; pathname: string }): boolean;
+      acquireTransportLease(identity: { attemptId: string; matchId: string; ownerId: string }): string | null;
+      canNavigate(pathname: string): boolean;
+      ownsTransportLease(identity: { attemptId: string; matchId: string; ownerId: string; token: string }): boolean;
+      releaseNavigationLock(lock: { matchId: string; ownerId: string; pathname: string }): boolean;
+      releaseTransportLease(identity: { attemptId: string; matchId: string; ownerId: string; token: string }): boolean;
+      subscribe(listener: (available: boolean) => void): () => void;
+    };
+  }).createFoulLifecycleCoordinator;
+  expect(typeof createCoordinator).toBe("function");
+  return createCoordinator!();
+}
+
+describe("RM-06-P2 route-independent foul lifecycle coordinator", () => {
+  it("holds one immutable transport lease across owners, components, and matches", () => {
+    const coordinator = lifecycleCoordinator();
+    const tokenA = coordinator.acquireTransportLease({ ownerId: "owner-a", matchId: "match-a", attemptId: "attempt-a" });
+
+    expect(tokenA).toEqual(expect.any(String));
+    expect(coordinator.acquireTransportLease({ ownerId: "owner-b", matchId: "match-a", attemptId: "attempt-b" })).toBeNull();
+    expect(coordinator.acquireTransportLease({ ownerId: "owner-c", matchId: "match-b", attemptId: "attempt-c" })).toBeNull();
+  });
+
+  it("rejects stale ownership checks and releases while exact ownership releases", () => {
+    const coordinator = lifecycleCoordinator();
+    const identity = { ownerId: "owner-a", matchId: "match-a", attemptId: "attempt-a" };
+    const token = coordinator.acquireTransportLease(identity)!;
+
+    expect(coordinator.ownsTransportLease({ ...identity, token })).toBe(true);
+    expect(coordinator.ownsTransportLease({ ...identity, ownerId: "owner-b", token })).toBe(false);
+    expect(coordinator.ownsTransportLease({ ...identity, matchId: "match-b", token })).toBe(false);
+    expect(coordinator.ownsTransportLease({ ...identity, token: `${token}-stale` })).toBe(false);
+    expect(coordinator.releaseTransportLease({ ...identity, ownerId: "owner-b", token })).toBe(false);
+    expect(coordinator.releaseTransportLease({ ...identity, token: `${token}-stale` })).toBe(false);
+    expect(coordinator.acquireTransportLease({ ownerId: "owner-b", matchId: "match-b", attemptId: "attempt-b" })).toBeNull();
+    expect(coordinator.releaseTransportLease({ ...identity, token })).toBe(true);
+    expect(coordinator.acquireTransportLease({ ownerId: "owner-b", matchId: "match-b", attemptId: "attempt-b" })).toEqual(expect.any(String));
+  });
+
+  it("notifies a waiting owner on release so it can acquire after availability changes", () => {
+    const coordinator = lifecycleCoordinator();
+    const first = { ownerId: "owner-a", matchId: "match-a", attemptId: "attempt-a" };
+    const waiting = { ownerId: "owner-b", matchId: "match-b", attemptId: "attempt-b" };
+    const token = coordinator.acquireTransportLease(first)!;
+    const acquired: Array<string | null> = [];
+    const unsubscribe = coordinator.subscribe((available) => {
+      if (available) acquired.push(coordinator.acquireTransportLease(waiting));
+    });
+
+    expect(coordinator.acquireTransportLease(waiting)).toBeNull();
+    expect(coordinator.releaseTransportLease({ ...first, token })).toBe(true);
+    expect(acquired).toEqual([expect.any(String)]);
+    unsubscribe();
+  });
+
+  it("locks navigation to only the exact foul pathname and rejects stale release", () => {
+    const coordinator = lifecycleCoordinator();
+    const lock = { ownerId: "owner-a", matchId: "match-a", pathname: "/operator/matches/match-a/fouls" };
+
+    expect(coordinator.acquireNavigationLock(lock)).toBe(true);
+    expect(coordinator.canNavigate(lock.pathname)).toBe(true);
+    for (const pathname of [
+      "/operator/matches/match-a/corrections",
+      "/operator/matches/match-b/fouls",
+      "/operator/matches",
+      "/",
+      "/login"
+    ]) {
+      expect(coordinator.canNavigate(pathname)).toBe(false);
+    }
+    expect(coordinator.releaseNavigationLock({ ...lock, ownerId: "owner-b" })).toBe(false);
+    expect(coordinator.canNavigate("/")).toBe(false);
+    expect(coordinator.releaseNavigationLock(lock)).toBe(true);
+    expect(coordinator.canNavigate("/")).toBe(true);
+  });
+});
 
 const player = {
   playerId: "player-home-1",
@@ -212,14 +293,15 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     }
   });
 
-  it("holds one global foul request ownership across every envelope until transport settles", () => {
-    expect(foulRouteSource).toContain("const foulRequestInFlightRef = useRef(false)");
-    expect(foulRouteSource).toContain("if (foulRequestInFlightRef.current) return");
+  it("uses the module-wide coordinator as transport authority and checks immutable ownership around async completion", () => {
+    expect(appSource).toContain("const foulLifecycleCoordinator = createFoulLifecycleCoordinator()");
+    expect(foulRouteSource).toContain("acquireTransportLease({");
+    expect(foulRouteSource).toContain("ownsTransportLease(lease)");
 
-    const ownershipIndex = foulRouteSource.indexOf("foulRequestInFlightRef.current = true");
+    const ownershipIndex = foulRouteSource.indexOf("acquireTransportLease({");
     const requestIndex = foulRouteSource.indexOf("api.addPlayerFoul(matchId, activeEnvelope)");
     const finallyIndex = foulRouteSource.indexOf("finally {", requestIndex);
-    const releaseIndex = foulRouteSource.indexOf("foulRequestInFlightRef.current = false", finallyIndex);
+    const releaseIndex = foulRouteSource.indexOf("releaseTransportLease(lease)", finallyIndex);
 
     expect(ownershipIndex).toBeGreaterThan(-1);
     expect(ownershipIndex).toBeLessThan(requestIndex);
@@ -228,10 +310,10 @@ describe("RM-06-P2 foul route review and confirmation", () => {
   });
 
   it("freezes discard recovery while a foul request is pending without freezing enqueue", () => {
-    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey || foulRequestInFlightRef.current) return;");
-    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey || foulRequestInFlightRef.current) return;");
-    expect(foulRouteSource).toContain("if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
-    expect(foulRouteSource).toContain("if (pendingKey || foulRequestInFlightRef.current || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
+    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey || ownerHasTransportLease) return;");
+    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey || ownerHasTransportLease) return;");
+    expect(foulRouteSource).toContain("if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
+    expect(foulRouteSource).toContain("if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
     expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardActiveFoul}");
     expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardAllFouls}");
     expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={retryAmbiguousFoul}");
@@ -266,6 +348,24 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     expect(foulRouteSource).toContain("let acceptedByServer = false");
     expect(foulRouteSource).toContain("acceptedByServer = true");
     expect(foulRouteSource).toContain('reason: acceptedByServer ? "REFRESH_FAILED" : "NETWORK_AMBIGUOUS"');
+  });
+
+  it("guards route navigation, popstate, logout, beforeunload, and live-match links with the global lock", () => {
+    expect(appSource).toContain("if (!foulLifecycleCoordinator.canNavigate(to)) return false;");
+    expect(appSource).toContain("window.history.replaceState({}, \"\", lockedPathname)");
+    expect(appSource).toContain('window.addEventListener("beforeunload"');
+    expect(appSource).toContain('if (!foulLifecycleCoordinator.canNavigate("/login")) return;');
+    expect(foulRouteSource).toContain("unresolvedNavigationPath={correctionBlocked ? foulPathname : undefined}");
+    expect(appSource).toContain("unresolvedNavigationPath ? [] : navigation");
+  });
+
+  it("does not discard unresolved state on match transitions and verifies generation after authoritative awaits", () => {
+    const matchEffectStart = foulRouteSource.indexOf("useEffect(() => {", foulRouteSource.indexOf("async function loadState"));
+    const matchEffectEnd = foulRouteSource.indexOf("}, [matchId]);", matchEffectStart);
+    expect(foulRouteSource.slice(matchEffectStart, matchEffectEnd)).not.toContain('dispatchFoulQueue({ type: "DISCARD_ALL" })');
+    expect(foulRouteSource).toContain("isCurrentFoulOwner(owner)");
+    expect(foulRouteSource).toContain("if (!foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;");
+    expect(foulRouteSource).toContain("foulMountedRef.current = false;");
   });
 });
 
