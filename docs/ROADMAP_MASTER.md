@@ -1804,15 +1804,18 @@ RM-06-P2 authorization/contract gate evidence:
   `EVENT_MODEL_CHANGE_REQUIRED=false`; `DB_SCHEMA_CHANGE_REQUIRED=false`;
   `NEW_CAPABILITY_REQUIRED=false`.
 - Authorized implementation allowlist only: `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`,
-  `apps/web/src/lib/apiClient.ts` only for caller-supplied immutable foul command identity/timestamp,
-  new `apps/web/src/lib/foulIntentQueue.ts`, new `tests/web/rm06-p2-foul-intent-queue.test.ts`, and
-  `tests/web/rm06-p1-foul-effective-access.test.ts` only for focused regression assertions. No component extraction;
-  if another production file is genuinely required, stop for scope approval.
+  `apps/web/src/lib/apiClient.ts` only for caller-supplied immutable foul command identity/timestamp and an optional
+  caller-owned `AbortSignal` on that same player-foul request, new `apps/web/src/lib/foulIntentQueue.ts`, new
+  `tests/web/rm06-p2-foul-intent-queue.test.ts`, and `tests/web/rm06-p1-foul-effective-access.test.ts` only for
+  focused regression assertions. No component extraction; if another production file is genuinely required, stop for scope approval.
 - Scope amendment: strict-TDD discovery proved that `addPlayerFoul()` regenerated command/correlation identity and
   timestamp on every call. The Product Owner explicitly authorized only `apps/web/src/lib/apiClient.ts` as the
   minimum additional file. It may accept and preserve the queue's exact first-attempt envelope for ambiguous retry
   while retaining the existing endpoint and wire schema; no package contract, server, socket, event, DB, or
-  capability change is authorized.
+  capability change is authorized. A further fail-closed review proved that an unbounded hanging foul fetch could
+  permanently retain the sole client transport lease. The same file may therefore accept a caller-owned optional
+  `AbortSignal` only for the existing player-foul call so a bounded client timeout can abort transport and enter
+  `NETWORK_AMBIGUOUS`; endpoint, body/wire schema, retry identity, and all architecture flags remain unchanged.
 - Required tests: immutable snapshots and distinct identities; same-side/cross-side FIFO; one active request;
   dispatch-time latest `expectedSeq`; roster/side/status/access revalidation; preview drift pause; accepted
   reconciliation before next dispatch; no replay/drain after sync, rejection, ambiguity, reconnect, or access loss;
