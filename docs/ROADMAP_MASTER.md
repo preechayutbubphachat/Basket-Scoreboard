@@ -161,7 +161,7 @@ RM-06-D1 = DISCOVERY COMPLETE
 RM-06-P1 = IMPLEMENTATION COMPLETE
 RM-06-P2 and later = PENDING (NOT AUTHORIZED)
 RM-07 through RM-18 = PENDING
-Next safe step: RM-06-P1 - Personal Player Foul Contract and Effective Access Gate
+Next safe step: RM-06-P2 authorization/contract gate; RM-06-P2 is PENDING (NOT AUTHORIZED)
 ```
 
 ## 6. Straight-Line Diagram
@@ -336,7 +336,7 @@ There is no parallel top-level path.
 - Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
   coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
   and fail-closed.
-- Next milestone: RM-07 after RM-06 integration; next authorized slice is RM-06-P1 only.
+- Next milestone: RM-07 after RM-06 integration; next safe step is the RM-06-P2 authorization/contract gate. RM-06-P2 remains pending and is not authorized to begin.
 
 ### RM-07 - Timeout Dashboard
 
