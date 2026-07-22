@@ -440,7 +440,8 @@ export function prepareFoulIntentDispatch(
   if (!authoritative.access.canRead || !authoritative.access.canOperateFoul) {
     return pause("ACCESS_LOST", "Foul access is no longer available.");
   }
-  if (authoritative.status === "FINISHED" || authoritative.status === "FINAL") {
+  const status = authoritative.status.toUpperCase();
+  if (status === "FINISHED" || status === "FINAL") {
     return pause("MATCH_NOT_LIVE", "The match no longer permits live foul control.");
   }
   const player = authoritative.players.find((candidate) => candidate.playerId === intent.playerId);

@@ -267,6 +267,29 @@ describe("RM-06-P2 exact-envelope retry revalidation", () => {
     expect(validated.activeEnvelope?.expectedSeq).toBe(80);
     expect(validated.activeEnvelope?.clientTimestamp).toBe("2026-07-19T03:00:00.000Z");
   });
+
+  it.each(["finished", "FiNaL"])(
+    "denies retained-envelope retry for case-insensitive terminal status %s without changing identity",
+    (status) => {
+      let state = foulIntentQueueReducer(initialFoulIntentQueueState, { type: "ENQUEUE", intent: intent("terminal-retry") });
+      state = foulIntentQueueReducer(state, { type: "START_NEXT" });
+      state = prepareFoulIntentDispatch(state, authoritative({ currentSeq: 80 }), "2026-07-19T03:00:00.000Z");
+      const activeIntent = state.activeIntent;
+      const envelope = state.activeEnvelope;
+      state = foulIntentQueueReducer(state, { type: "PAUSE", reason: "NETWORK_AMBIGUOUS", detail: "unknown" });
+      state = foulIntentQueueReducer(state, { type: "RETRY_AMBIGUOUS" });
+
+      const denied = prepareFoulIntentDispatch(
+        state,
+        authoritative({ status, currentSeq: 999 }),
+        "2026-07-19T04:00:00.000Z"
+      );
+
+      expect(denied.pauseReason).toBe("MATCH_NOT_LIVE");
+      expect(denied.activeIntent).toBe(activeIntent);
+      expect(denied.activeEnvelope).toBe(envelope);
+    }
+  );
 });
 
 function authoritative(overrides: Record<string, unknown> = {}) {
@@ -660,6 +683,8 @@ describe("RM-06-P2 fail-closed authoritative revalidation", () => {
     ["access error", { access: { lifecycle: "ACCESS_ERROR", canRead: false, canOperateFoul: false } }, "ACCESS_ERROR"],
     ["finished status", { status: "FINISHED" }, "MATCH_NOT_LIVE"],
     ["final status", { status: "FINAL" }, "MATCH_NOT_LIVE"],
+    ["lowercase finished status", { status: "finished" }, "MATCH_NOT_LIVE"],
+    ["mixed-case final status", { status: "FiNaL" }, "MATCH_NOT_LIVE"],
     ["missing player", { players: [] }, "PLAYER_MISSING"],
     ["inactive player", { players: [{ ...player, status: "INACTIVE" }] }, "PLAYER_INACTIVE"],
     ["benched player", { players: [{ ...player, status: "BENCH" }] }, "PLAYER_INACTIVE"],
