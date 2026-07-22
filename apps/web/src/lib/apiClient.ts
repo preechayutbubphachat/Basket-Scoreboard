@@ -163,7 +163,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     const method = (init.method ?? "GET").toUpperCase();
     const isWrite = !["GET", "HEAD", "OPTIONS"].includes(method);
     if (isWrite && !csrfToken && !options.skipCsrf) {
-      await ensureCsrfToken();
+      await ensureCsrfToken(false, init.signal ?? undefined);
     }
     const headers = createApiRequestHeaders({
       headers: init.headers,
@@ -195,7 +195,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
 
       if (recoverable && !retryingCsrf) {
         csrfToken = null;
-        await ensureCsrfToken(true);
+        await ensureCsrfToken(true, init.signal ?? undefined);
       }
 
       throw new ApiClientError({
@@ -213,11 +213,15 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     return payload.data;
   }
 
-  async function ensureCsrfToken(force = false) {
+  async function ensureCsrfToken(force = false, signal?: AbortSignal) {
     if (csrfToken && !force) {
       return csrfToken;
     }
-    const data = await request<{ csrfToken: string }>("/auth/csrf", { method: "GET" }, true);
+    const data = await request<{ csrfToken: string }>(
+      "/auth/csrf",
+      signal ? { method: "GET", signal } : { method: "GET" },
+      true
+    );
     csrfToken = data.csrfToken;
     return csrfToken;
   }
@@ -476,10 +480,10 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       });
       return data.player;
     },
-    async getMatchRosters(matchId: string) {
+    async getMatchRosters(matchId: string, signal?: AbortSignal) {
       return request<MatchRostersResponse>(
         `/matches/${encodeURIComponent(matchId)}/rosters`,
-        {},
+        signal ? { signal } : {},
         false,
         { acceptRawSuccess: false }
       );
@@ -520,17 +524,18 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
-    async getMatchProjection(matchId: string) {
+    async getMatchProjection(matchId: string, signal?: AbortSignal) {
       return request<ScoreboardProjection>(
         `/matches/${encodeURIComponent(matchId)}/projection`,
-        {},
+        signal ? { signal } : {},
         false,
         { acceptRawSuccess: true }
       );
     },
-    async getEffectiveMatchAccess(matchId: string) {
+    async getEffectiveMatchAccess(matchId: string, signal?: AbortSignal) {
       return request<EffectiveMatchAccess>(
-        `/matches/${encodeURIComponent(matchId)}/effective-access`
+        `/matches/${encodeURIComponent(matchId)}/effective-access`,
+        signal ? { signal } : {}
       );
     },
     async getMatchSummary(matchId: string) {
@@ -628,10 +633,10 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
-    async syncMatch(matchId: string, lastEventSeq: number) {
+    async syncMatch(matchId: string, lastEventSeq: number, signal?: AbortSignal) {
       return request<MatchSyncResponse>(
         `/matches/${encodeURIComponent(matchId)}/sync?lastEventSeq=${encodeURIComponent(String(lastEventSeq))}`,
-        {},
+        signal ? { signal } : {},
         false,
         { acceptRawSuccess: true }
       );
@@ -683,11 +688,13 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
       expectedSeq: number;
       clientTimestamp?: string;
       payload: PlayerFoulAddedPayload;
+      signal?: AbortSignal;
     }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/foul/player/add`,
         {
           method: "POST",
+          ...(input.signal ? { signal: input.signal } : {}),
           body: JSON.stringify({
             commandId: input.commandId ?? createCommandId(),
             matchId,

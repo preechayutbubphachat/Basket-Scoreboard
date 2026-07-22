@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import React, { FormEvent, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type {
   AlphaCorrectionResponse,
   CommandResult,
@@ -122,6 +122,10 @@ import {
   createFoulIntent,
   foulIntentQueueReducer,
   initialFoulIntentQueueState,
+  restoreFoulQueueSession,
+  serializeFoulQueueSession,
+  type FoulIntentQueueAction,
+  type FoulIntentQueueState,
   type FoulTransportLease
 } from "./lib/foulIntentQueue";
 import {
@@ -526,7 +530,50 @@ function parseRoute(pathname: string): Route {
 }
 
 const foulLifecycleCoordinator = createFoulLifecycleCoordinator();
+const FOUL_QUEUE_STORAGE_KEY = "basket-scoreboard:rm06:foul-queue:v1";
+const FOUL_TRANSPORT_TIMEOUT_MS = 15_000;
 let foulOwnerGeneration = 0;
+
+function raceFoulTransportDeadline<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException("Foul transport deadline exceeded", "AbortError"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException("Foul transport deadline exceeded", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    operation.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function readPersistedFoulQueueSession() {
+  try {
+    const raw = window.sessionStorage.getItem(FOUL_QUEUE_STORAGE_KEY);
+    const restored = restoreFoulQueueSession(raw);
+    if (raw && !restored) window.sessionStorage.removeItem(FOUL_QUEUE_STORAGE_KEY);
+    return restored;
+  } catch {
+    return null;
+  }
+}
+
+function persistFoulQueueSession(matchId: string, pathname: string, principalId: string, state: FoulIntentQueueState) {
+  try {
+    const serialized = serializeFoulQueueSession(matchId, pathname, principalId, state);
+    if (serialized) window.sessionStorage.setItem(FOUL_QUEUE_STORAGE_KEY, serialized);
+    else window.sessionStorage.removeItem(FOUL_QUEUE_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const recoveredFoulQueueSession = readPersistedFoulQueueSession();
+const recoveredFoulNavigationLock = recoveredFoulQueueSession ? Object.freeze({
+  matchId: recoveredFoulQueueSession.matchId,
+  ownerId: "foul-owner-recovered",
+  pathname: recoveredFoulQueueSession.pathname
+}) : null;
+if (recoveredFoulNavigationLock) {
+  foulLifecycleCoordinator.acquireNavigationLock(recoveredFoulNavigationLock);
+}
 
 function navigate(to: string) {
   if (!foulLifecycleCoordinator.canNavigate(to)) return false;
@@ -536,7 +583,13 @@ function navigate(to: string) {
 }
 
 function useRoute() {
-  const [route, setRoute] = useState(() => parseRoute(window.location.pathname));
+  const [route, setRoute] = useState(() => {
+    const lockedPathname = foulLifecycleCoordinator.getLockedPathname();
+    if (lockedPathname && window.location.pathname !== lockedPathname) {
+      window.history.replaceState({}, "", lockedPathname);
+    }
+    return parseRoute(lockedPathname ?? window.location.pathname);
+  });
 
   useEffect(() => {
     const update = () => {
@@ -3536,15 +3589,24 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   );
 }
 
-function OperatorFoulPage({ matchId }: { matchId: string }) {
-  const { api } = useCurrentUser();
+function OperatorFoulPage({
+  claimFoulQueuePrincipal,
+  dispatchFoulQueue: commitFoulQueue,
+  foulQueue,
+  matchId
+}: {
+  claimFoulQueuePrincipal: (principalId: string) => void;
+  dispatchFoulQueue: React.Dispatch<FoulIntentQueueAction>;
+  foulQueue: FoulIntentQueueState;
+  matchId: string;
+}) {
+  const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [foulQueue, dispatchFoulQueue] = useReducer(foulIntentQueueReducer, initialFoulIntentQueueState);
   const foulOwnerRef = useRef<{ matchId: string; ownerId: string } | null>(null);
   if (!foulOwnerRef.current) {
     foulOwnerRef.current = Object.freeze({ matchId, ownerId: `foul-owner-${++foulOwnerGeneration}` });
@@ -3553,6 +3615,12 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   const foulQueueRef = useRef(foulQueue);
   foulQueueRef.current = foulQueue;
   const activeFoulLeaseRef = useRef<FoulTransportLease | null>(null);
+  const activeFoulAbortRef = useRef<AbortController | null>(null);
+  const activeFoulRevalidationRef = useRef<{
+    abortController: AbortController;
+    intentId: string;
+    owner: { matchId: string; ownerId: string };
+  } | null>(null);
   const dispatchedFoulEnvelopeRef = useRef<string | null>(null);
   const previousFoulAccessRef = useRef(false);
   const previousFoulRealtimeRef = useRef<string | null>(null);
@@ -3566,7 +3634,22 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   } | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const [leaseAvailabilityVersion, setLeaseAvailabilityVersion] = useState(0);
+  const [revalidationPersistenceBlocked, setRevalidationPersistenceBlocked] = useState(false);
+  const [revalidationRetryVersion, setRevalidationRetryVersion] = useState(0);
   const foulPathname = `/operator/matches/${encodeURIComponent(matchId)}/fouls`;
+  const dispatchFoulQueue = useCallback((action: FoulIntentQueueAction) => {
+    const currentState = foulQueueRef.current;
+    const nextState = foulIntentQueueReducer(currentState, action);
+    if (!persistFoulQueueSession(matchId, foulPathname, currentUser?.userId ?? "", nextState) &&
+      (blocksFoulCorrectionNavigation(currentState) || blocksFoulCorrectionNavigation(nextState))) {
+      setMessage({ tone: "error", text: "Unable to preserve the unresolved foul safely. No action was sent." });
+      return false;
+    }
+    foulQueueRef.current = nextState;
+    commitFoulQueue(action);
+    setRevalidationPersistenceBlocked(false);
+    return true;
+  }, [commitFoulQueue, currentUser?.userId, foulPathname, matchId]);
   function isCurrentFoulOwner(candidate: { matchId: string; ownerId: string }) {
     return foulMountedRef.current && foulOwnerRef.current === candidate && candidate.matchId === matchId;
   }
@@ -3584,13 +3667,26 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     : resolvedAccess.access;
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
-  async function refreshAuthoritativeState(requestOwner = foulOwnerRef.current!) {
-    const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
-      api.getMatchProjection(matchId),
-      api.getMatchRosters(matchId),
-      api.getEffectiveMatchAccess(matchId)
-    ]);
-    if (!isCurrentFoulOwner(requestOwner)) return null;
+  async function refreshAuthoritativeState(
+    requestOwner = foulOwnerRef.current!,
+    signal?: AbortSignal,
+    lease?: FoulTransportLease,
+    isPhaseCurrent?: () => boolean
+  ) {
+    const [nextProjection, nextRosters, nextEffectiveAccess] = signal
+      ? await Promise.all([
+        api.getMatchProjection(matchId, signal),
+        api.getMatchRosters(matchId, signal),
+        api.getEffectiveMatchAccess(matchId, signal)
+      ])
+      : await Promise.all([
+        api.getMatchProjection(matchId),
+        api.getMatchRosters(matchId),
+        api.getEffectiveMatchAccess(matchId)
+      ]);
+    if (signal?.aborted || !isCurrentFoulOwner(requestOwner) ||
+      (lease && !foulLifecycleCoordinator.ownsTransportLease(lease)) ||
+      (isPhaseCurrent && !isPhaseCurrent())) return null;
     setProjection(nextProjection);
     setRosters(nextRosters);
     setEffectiveAccess(nextEffectiveAccess);
@@ -3622,6 +3718,12 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   useEffect(() => {
     if (foulOwnerRef.current!.matchId !== matchId) {
       if (blocksFoulCorrectionNavigation(foulQueueRef.current) || activeFoulLeaseRef.current) return;
+      setSelectedFoulPlayer(null);
+      setReason("");
+      setProjection(null);
+      setRosters(null);
+      setEffectiveAccess(null);
+      setMessage(null);
       foulOwnerRef.current = Object.freeze({ matchId, ownerId: `foul-owner-${++foulOwnerGeneration}` });
     }
     dispatchedFoulEnvelopeRef.current = null;
@@ -3636,8 +3738,14 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     foulMountedRef.current = true;
     return () => {
       foulMountedRef.current = false;
+      activeFoulRevalidationRef.current?.abortController.abort();
+      const lease = activeFoulLeaseRef.current;
+      if (lease && foulLifecycleCoordinator.ownsTransportLease(lease) && blocksFoulCorrectionNavigation(foulQueueRef.current)) {
+        dispatchFoulQueue({ type: "OWNER_LOST", hasActiveTransport: true });
+        activeFoulAbortRef.current?.abort();
+      }
     };
-  }, []);
+  }, [dispatchFoulQueue]);
 
   useEffect(() => {
     const currentOwner = foulOwnerRef.current!;
@@ -3696,16 +3804,18 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     previousFoulRealtimeRef.current = realtimeState;
   }, [foulQueue.activeIntent, foulQueue.queuedIntents.length, realtimeState]);
 
-  async function refreshAfterCommand(lastSeq: number) {
+  async function refreshAfterCommand(lastSeq: number, signal: AbortSignal, lease: FoulTransportLease) {
     const requestOwner = foulOwnerRef.current!;
-    await api.syncMatch(matchId, lastSeq);
-    if (!isCurrentFoulOwner(requestOwner)) return false;
-    const refreshed = await refreshAuthoritativeState(requestOwner);
-    return Boolean(refreshed && isCurrentFoulOwner(requestOwner));
+    await api.syncMatch(matchId, lastSeq, signal);
+    if (signal.aborted || !isCurrentFoulOwner(requestOwner) ||
+      !foulLifecycleCoordinator.ownsTransportLease(lease)) return false;
+    const refreshed = await refreshAuthoritativeState(requestOwner, signal, lease);
+    return Boolean(refreshed && !signal.aborted && isCurrentFoulOwner(requestOwner) &&
+      foulLifecycleCoordinator.ownsTransportLease(lease));
   }
 
   function confirmPlayerFoul() {
-    if (!projection || !selectedFoulPlayer || !canEnqueueFoul) return;
+    if (!currentUser || !projection || !selectedFoulPlayer || !canEnqueueFoul) return;
     const previousSeq = projection.currentSeq;
     if (!Number.isSafeInteger(previousSeq) || previousSeq < 0) return;
     const intent = createFoulIntent({
@@ -3725,16 +3835,22 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
       teamLabel: selectedFoulPlayer.teamLabel
     });
     const currentOwner = foulOwnerRef.current!;
-    const lockAcquired = foulLifecycleCoordinator.acquireNavigationLock({
+    claimFoulQueuePrincipal(currentUser.userId);
+    const lock = {
       matchId: currentOwner.matchId,
       ownerId: currentOwner.ownerId,
       pathname: foulPathname
-    });
+    };
+    const lockAcquired = foulLifecycleCoordinator.acquireNavigationLock(lock);
     if (!lockAcquired) {
       setMessage({ tone: "error", text: "Unresolved foul state is owned by another active page. No new foul was queued." });
       return;
     }
-    dispatchFoulQueue({ type: "ENQUEUE", intent });
+    if (!dispatchFoulQueue({ type: "ENQUEUE", intent })) {
+      foulLifecycleCoordinator.releaseNavigationLock(lock);
+      return;
+    }
+    setRevalidationPersistenceBlocked(false);
     setMessage(null);
     setReason("");
     setSelectedFoulPlayer(null);
@@ -3746,15 +3862,44 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
   }, [foulQueue.activeIntent, foulQueue.pauseReason, foulQueue.queuedIntents.length]);
 
   useEffect(() => {
-    if (foulQueue.lifecycle !== "REVALIDATING" || !foulQueue.activeIntent || foulQueue.pauseReason) return;
+    if (revalidationPersistenceBlocked ||
+      !["REVALIDATING", "REVALIDATING_RETRY"].includes(foulQueue.lifecycle) ||
+      !foulQueue.activeIntent || foulQueue.pauseReason) return;
+    if (activeFoulRevalidationRef.current) return;
     const requestOwner = foulOwnerRef.current!;
+    const revalidationIntentId = foulQueue.activeIntent.localIntentId;
+    const revalidationAbortController = new AbortController();
+    const revalidationPhase = {
+      abortController: revalidationAbortController,
+      intentId: revalidationIntentId,
+      owner: requestOwner
+    };
+    activeFoulRevalidationRef.current = revalidationPhase;
+    const revalidationTimeout = window.setTimeout(
+      () => revalidationAbortController.abort(),
+      FOUL_TRANSPORT_TIMEOUT_MS
+    );
+    setPendingKey(`REVALIDATE-${revalidationIntentId}`);
+    const isCurrentRevalidationPhase = () =>
+      activeFoulRevalidationRef.current === revalidationPhase &&
+      isCurrentFoulOwner(requestOwner) &&
+      foulQueueRef.current.activeIntent?.localIntentId === revalidationIntentId &&
+      ["REVALIDATING", "REVALIDATING_RETRY"].includes(foulQueueRef.current.lifecycle);
     void (async () => {
       try {
-        const refreshed = await refreshAuthoritativeState(requestOwner);
-        if (!refreshed || !isCurrentFoulOwner(requestOwner)) return;
+        const refreshed = await raceFoulTransportDeadline(
+          refreshAuthoritativeState(
+            requestOwner,
+            revalidationAbortController.signal,
+            undefined,
+            isCurrentRevalidationPhase
+          ),
+          revalidationAbortController.signal
+        );
+        if (!refreshed || !isCurrentRevalidationPhase()) return;
         const { nextEffectiveAccess, nextProjection, nextRosters } = refreshed;
         const nextResolvedAccess = resolveFoulEffectiveAccess(matchId, "ready", nextEffectiveAccess);
-        dispatchFoulQueue({
+        if (!dispatchFoulQueue({
           type: "PREPARE_DISPATCH",
           authoritative: {
             access: nextResolvedAccess,
@@ -3778,16 +3923,25 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
             status: nextProjection.status
           },
           clientTimestamp: new Date().toISOString()
-        });
+        })) {
+          setRevalidationPersistenceBlocked(true);
+          return;
+        }
       } catch (error) {
-        if (!isCurrentFoulOwner(requestOwner)) return;
+        if (!isCurrentRevalidationPhase()) return;
         setAccessPhase("error");
         setEffectiveAccess(null);
         setMessage(toUiMessage(error));
-        dispatchFoulQueue({ type: "PAUSE", reason: "REFRESH_FAILED", detail: "Projection, roster, and access refresh failed. Review is required." });
+        if (!dispatchFoulQueue({ type: "PAUSE", reason: "REFRESH_FAILED", detail: "Projection, roster, and access refresh failed. Review is required." })) {
+          setRevalidationPersistenceBlocked(true);
+        }
+      } finally {
+        window.clearTimeout(revalidationTimeout);
+        if (activeFoulRevalidationRef.current === revalidationPhase) activeFoulRevalidationRef.current = null;
+        if (isCurrentFoulOwner(requestOwner)) setPendingKey(null);
       }
     })();
-  }, [api, foulQueue.activeIntent, foulQueue.lifecycle, foulQueue.pauseReason, matchId]);
+  }, [api, foulQueue.activeIntent, foulQueue.lifecycle, foulQueue.pauseReason, matchId, revalidationPersistenceBlocked, revalidationRetryVersion]);
 
   useEffect(() => {
     const activeEnvelope = foulQueue.activeEnvelope;
@@ -3803,12 +3957,21 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
     if (!token) return;
     const lease: FoulTransportLease = { attemptId: attemptKey, matchId: owner.matchId, ownerId: owner.ownerId, token };
     activeFoulLeaseRef.current = lease;
+    const dispatchAbortController = new AbortController();
+    activeFoulAbortRef.current = dispatchAbortController;
+    const dispatchTimeout = window.setTimeout(() => dispatchAbortController.abort(), FOUL_TRANSPORT_TIMEOUT_MS);
+    let reconciliationAbortController: AbortController | null = null;
+    let reconciliationTimeout: number | null = null;
     dispatchedFoulEnvelopeRef.current = attemptKey;
     setPendingKey(`PLAYER-${activeEnvelope.payload.playerId}`);
     void (async () => {
       let acceptedByServer = false;
       try {
-        const result = await api.addPlayerFoul(matchId, activeEnvelope);
+        const result = await raceFoulTransportDeadline(
+          api.addPlayerFoul(matchId, { ...activeEnvelope, signal: dispatchAbortController.signal }),
+          dispatchAbortController.signal
+        );
+        window.clearTimeout(dispatchTimeout);
         if (!foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;
         setMessage(getFoulControlFeedback(result));
         if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
@@ -3820,49 +3983,80 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
           return;
         }
         acceptedByServer = true;
-        dispatchFoulQueue({ type: "ACCEPTED_PENDING_RECONCILIATION" });
-        const reconciled = await refreshAfterCommand(activeEnvelope.expectedSeq);
+        if (!dispatchFoulQueue({ type: "ACCEPTED_PENDING_RECONCILIATION" })) return;
+        reconciliationAbortController = new AbortController();
+        activeFoulAbortRef.current = reconciliationAbortController;
+        reconciliationTimeout = window.setTimeout(
+          () => reconciliationAbortController?.abort(),
+          FOUL_TRANSPORT_TIMEOUT_MS
+        );
+        const reconciled = await raceFoulTransportDeadline(
+          refreshAfterCommand(activeEnvelope.expectedSeq, reconciliationAbortController.signal, lease),
+          reconciliationAbortController.signal
+        );
         if (!reconciled || !foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;
         dispatchFoulQueue({ type: "RECONCILED_ACCEPTED" });
       } catch (error) {
         if (!foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;
         setMessage(toUiMessage(error));
-        dispatchFoulQueue({
-          type: "PAUSE",
-          reason: acceptedByServer ? "REFRESH_FAILED" : "NETWORK_AMBIGUOUS",
-          detail: acceptedByServer
-            ? "The foul was accepted, but authoritative reconciliation failed. Refresh and explicit review are required."
-            : "Delivery outcome is unknown. Explicit exact-envelope retry or discard is required."
-        });
+        if (!acceptedByServer && error instanceof ApiClientError) {
+          dispatchFoulQueue({
+            type: "PAUSE",
+            reason: error.reasonCode === "INVALID_EXPECTED_SEQ" ? "SYNC_REQUIRED" : "REJECTED",
+            detail: "The server definitively rejected the foul. It will not replay automatically."
+          });
+        } else {
+          dispatchFoulQueue({
+            type: "PAUSE",
+            reason: acceptedByServer ? "REFRESH_FAILED" : "NETWORK_AMBIGUOUS",
+            detail: acceptedByServer
+              ? "The foul was accepted, but authoritative reconciliation failed. Refresh and explicit review are required."
+              : "Delivery outcome is unknown. Explicit exact-envelope retry or discard is required."
+          });
+        }
       } finally {
+        window.clearTimeout(dispatchTimeout);
+        if (reconciliationTimeout !== null) window.clearTimeout(reconciliationTimeout);
         foulLifecycleCoordinator.releaseTransportLease(lease);
         if (activeFoulLeaseRef.current === lease) activeFoulLeaseRef.current = null;
+        if (activeFoulAbortRef.current === dispatchAbortController ||
+          activeFoulAbortRef.current === reconciliationAbortController) activeFoulAbortRef.current = null;
         if (isCurrentFoulOwner(owner)) setPendingKey(null);
       }
     })();
   }, [api, foulQueue.activeEnvelope, foulQueue.lifecycle, foulQueue.pauseReason, leaseAvailabilityVersion, matchId, pendingKey]);
 
   function retryAmbiguousFoul() {
-    if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
+    if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== "NETWORK_AMBIGUOUS") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RETRY_AMBIGUOUS" });
   }
 
   function discardActiveFoul() {
-    if (pendingKey || ownerHasTransportLease) return;
+    if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;
     dispatchedFoulEnvelopeRef.current = null;
-    dispatchFoulQueue({ type: "DISCARD_ACTIVE" });
+    if (!dispatchFoulQueue({ type: "DISCARD_ACTIVE" })) return;
+    setRevalidationPersistenceBlocked(false);
   }
 
   function discardAllFouls() {
-    if (pendingKey || ownerHasTransportLease) return;
+    if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;
     dispatchedFoulEnvelopeRef.current = null;
-    dispatchFoulQueue({ type: "DISCARD_ALL" });
+    if (!dispatchFoulQueue({ type: "DISCARD_ALL" })) return;
+    setRevalidationPersistenceBlocked(false);
     setMessage({ tone: "success", text: "All unresolved foul intents were discarded." });
   }
 
+  function retryBlockedRevalidation() {
+    if (!revalidationPersistenceBlocked || !foulQueue.activeIntent ||
+      !["REVALIDATING", "REVALIDATING_RETRY"].includes(foulQueue.lifecycle) ||
+      pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;
+    setRevalidationPersistenceBlocked(false);
+    setRevalidationRetryVersion((version) => version + 1);
+  }
+
   function resumeWaitingFouls() {
-    if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
+    if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== "WAITING_REVIEW") return;
     dispatchedFoulEnvelopeRef.current = null;
     dispatchFoulQueue({ type: "RESUME_WAITING" });
   }
@@ -3897,10 +4091,11 @@ function OperatorFoulPage({ matchId }: { matchId: string }) {
            <p><strong>{foulQueue.lifecycle}</strong>{foulQueue.pauseDetail ? `: ${foulQueue.pauseDetail}` : ""}</p>
            <p>Waiting intents: {foulQueue.queuedIntents.length}</p>
            <div className="button-row">
-             {foulQueue.pauseReason === "NETWORK_AMBIGUOUS" ? <button type="button" disabled={Boolean(pendingKey)} onClick={retryAmbiguousFoul}>Retry exact foul envelope</button> : null}
-             {foulQueue.activeIntent ? <button type="button" className="secondary" disabled={Boolean(pendingKey)} onClick={discardActiveFoul}>Discard active foul</button> : null}
-             <button type="button" className="secondary" disabled={Boolean(pendingKey)} onClick={discardAllFouls}>Discard all foul intents</button>
-             {foulQueue.pauseReason === "WAITING_REVIEW" ? <button type="button" disabled={Boolean(pendingKey)} onClick={resumeWaitingFouls}>Review and resume waiting fouls</button> : null}
+             {foulQueue.pauseReason === "NETWORK_AMBIGUOUS" ? <button type="button" disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={retryAmbiguousFoul}>Retry exact foul envelope</button> : null}
+             {revalidationPersistenceBlocked && ["REVALIDATING", "REVALIDATING_RETRY"].includes(foulQueue.lifecycle) ? <button type="button" disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={retryBlockedRevalidation}>Retry authoritative revalidation</button> : null}
+             {foulQueue.activeIntent ? <button type="button" className="secondary" disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={discardActiveFoul}>Discard active foul</button> : null}
+             <button type="button" className="secondary" disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={discardAllFouls}>Discard all foul intents</button>
+             {foulQueue.pauseReason === "WAITING_REVIEW" ? <button type="button" disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={resumeWaitingFouls}>Review and resume waiting fouls</button> : null}
            </div>
          </section>
        ) : null}
@@ -6867,6 +7062,48 @@ function formatDate(value: string | null | undefined) {
 }
 
 function RoutedApp({ route }: { route: Route }) {
+  const { currentUser, state: authState } = useCurrentUser();
+  const [recoverySession, setRecoverySession] = useState(recoveredFoulQueueSession);
+  const [foulQueuePrincipal, setFoulQueuePrincipal] = useState<string | null>(recoveredFoulQueueSession?.principalId ?? null);
+  const [foulQueue, dispatchFoulQueue] = useReducer(
+    foulIntentQueueReducer,
+    recoverySession?.state ?? initialFoulIntentQueueState
+  );
+  const recoveryIdentityMismatch = Boolean(
+    !authState.loading && blocksFoulCorrectionNavigation(foulQueue) && foulQueuePrincipal &&
+    (!currentUser || currentUser.userId !== foulQueuePrincipal)
+  );
+  useEffect(() => {
+    if (authState.loading) return;
+    if (!blocksFoulCorrectionNavigation(foulQueue)) {
+      if (foulQueuePrincipal) setFoulQueuePrincipal(null);
+      return;
+    }
+    if (currentUser && !foulQueuePrincipal) {
+      setFoulQueuePrincipal(currentUser.userId);
+      return;
+    }
+    if (!recoveryIdentityMismatch) return;
+    try {
+      window.sessionStorage.removeItem(FOUL_QUEUE_STORAGE_KEY);
+    } catch {
+      // Ignore unavailable browser storage after invalidating the in-memory recovery state.
+    }
+    dispatchFoulQueue({ type: "DISCARD_ALL" });
+    foulLifecycleCoordinator.clearNavigationLock();
+    setFoulQueuePrincipal(null);
+    setRecoverySession(null);
+    if (!currentUser) navigate("/login");
+  }, [authState.loading, currentUser, foulQueue, foulQueuePrincipal, recoveryIdentityMismatch]);
+  useEffect(() => {
+    if (route.name !== "operator-fouls" || !currentUser || recoveryIdentityMismatch) return;
+    persistFoulQueueSession(
+      route.matchId,
+      `/operator/matches/${encodeURIComponent(route.matchId)}/fouls`,
+      currentUser.userId,
+      foulQueue
+    );
+  }, [currentUser, foulQueue, recoveryIdentityMismatch, route]);
   const content = useMemo(() => {
     switch (route.name) {
       case "login":
@@ -7012,7 +7249,12 @@ function RoutedApp({ route }: { route: Route }) {
       case "operator-fouls":
         return (
           <ProtectedRoute requireOperator>
-            <OperatorFoulPage matchId={route.matchId} />
+            <OperatorFoulPage
+              claimFoulQueuePrincipal={setFoulQueuePrincipal}
+              dispatchFoulQueue={dispatchFoulQueue}
+              foulQueue={foulQueue}
+              matchId={route.matchId}
+            />
           </ProtectedRoute>
         );
       case "operator-clock":
@@ -7074,7 +7316,11 @@ function RoutedApp({ route }: { route: Route }) {
       case "home":
         return <HomePage />;
     }
-  }, [route]);
+  }, [foulQueue, route]);
+
+  if (recoveryIdentityMismatch) {
+    return <StatusPanel title="Foul recovery locked" message="Stored foul recovery belongs to a different or expired authenticated session and is being cleared." />;
+  }
 
   if (
     route.name === "admin" ||

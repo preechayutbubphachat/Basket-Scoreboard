@@ -6,13 +6,17 @@ import {
   blocksFoulCorrectionNavigation,
   canEnqueueFoulIntent,
   createFoulIntent,
+  pauseFoulIntentQueueForOwnerLoss,
   initialFoulIntentQueueState,
   prepareFoulIntentDispatch,
+  restoreFoulQueueSession,
+  serializeFoulQueueSession,
   foulIntentQueueReducer
 } from "../../apps/web/src/lib/foulIntentQueue";
 
 const appSource = readFileSync("apps/web/src/App.tsx", "utf8").replace(/\r\n/g, "\n");
 const foulRouteSource = appSource.slice(appSource.indexOf("function OperatorFoulPage"), appSource.indexOf("function OperatorClockPage"));
+const apiClientSource = readFileSync("apps/web/src/lib/apiClient.ts", "utf8").replace(/\r\n/g, "\n");
 
 function lifecycleCoordinator() {
   const createCoordinator = (foulIntentQueueModule as typeof foulIntentQueueModule & {
@@ -92,6 +96,27 @@ describe("RM-06-P2 route-independent foul lifecycle coordinator", () => {
     expect(coordinator.releaseNavigationLock(lock)).toBe(true);
     expect(coordinator.canNavigate("/")).toBe(true);
   });
+
+  it("transfers the same match/path lock to a remounted owner and rejects stale release", () => {
+    const coordinator = lifecycleCoordinator();
+    const pathname = "/operator/matches/match-a/fouls";
+    const oldOwner = { ownerId: "owner-old", matchId: "match-a", pathname };
+    const newOwner = { ownerId: "owner-new", matchId: "match-a", pathname };
+
+    expect(coordinator.acquireNavigationLock(oldOwner)).toBe(true);
+    expect(coordinator.acquireNavigationLock(newOwner)).toBe(true);
+    expect(coordinator.releaseNavigationLock(oldOwner)).toBe(false);
+    expect(coordinator.releaseNavigationLock(newOwner)).toBe(true);
+  });
+
+  it("does not transfer a navigation lock across a different match or pathname", () => {
+    const coordinator = lifecycleCoordinator();
+    const lock = { ownerId: "owner-old", matchId: "match-a", pathname: "/operator/matches/match-a/fouls" };
+
+    expect(coordinator.acquireNavigationLock(lock)).toBe(true);
+    expect(coordinator.acquireNavigationLock({ ...lock, ownerId: "owner-new", pathname: "/operator/matches/match-a/score" })).toBe(false);
+    expect(coordinator.acquireNavigationLock({ ...lock, ownerId: "owner-new", matchId: "match-b" })).toBe(false);
+  });
 });
 
 const player = {
@@ -115,6 +140,134 @@ function intent(id: string, overrides: Partial<Parameters<typeof createFoulInten
     ...overrides
   });
 }
+
+describe("RM-06-P2 forced-unmount owner loss", () => {
+  function readyState() {
+    let state = foulIntentQueueReducer(initialFoulIntentQueueState, { type: "ENQUEUE", intent: intent("1") });
+    state = foulIntentQueueReducer(state, { type: "ENQUEUE", intent: intent("2") });
+    state = foulIntentQueueReducer(state, { type: "START_NEXT" });
+    return prepareFoulIntentDispatch(state, authoritative({ currentSeq: 91 }), "2026-07-19T03:00:00.000Z");
+  }
+
+  it("retains the exact active intent, envelope, and queue while pausing an unknown transport", () => {
+    const state = readyState();
+    const paused = pauseFoulIntentQueueForOwnerLoss(state, true);
+
+    expect(paused.pauseReason).toBe("NETWORK_AMBIGUOUS");
+    expect(paused.activeIntent).toBe(state.activeIntent);
+    expect(paused.activeEnvelope).toBe(state.activeEnvelope);
+    expect(paused.queuedIntents).toBe(state.queuedIntents);
+    expect(foulIntentQueueReducer(paused, { type: "START_NEXT" })).toBe(paused);
+  });
+
+  it("pauses accepted reconciliation owner loss as REFRESH_FAILED", () => {
+    const state = foulIntentQueueReducer(readyState(), { type: "ACCEPTED_PENDING_RECONCILIATION" });
+    const paused = pauseFoulIntentQueueForOwnerLoss(state, true);
+
+    expect(paused.pauseReason).toBe("REFRESH_FAILED");
+    expect(paused.activeEnvelope).toBe(state.activeEnvelope);
+    expect(paused.activeIntent).toBe(state.activeIntent);
+  });
+
+  it("does not invent a pause without active transport or unresolved state", () => {
+    const unresolved = readyState();
+
+    expect(pauseFoulIntentQueueForOwnerLoss(unresolved, false)).toBe(unresolved);
+    expect(pauseFoulIntentQueueForOwnerLoss(initialFoulIntentQueueState, true)).toBe(initialFoulIntentQueueState);
+  });
+});
+
+describe("RM-06-P2 durable reload recovery", () => {
+  function readyPersistentState() {
+    let state = foulIntentQueueReducer(initialFoulIntentQueueState, { type: "ENQUEUE", intent: intent("persist") });
+    state = foulIntentQueueReducer(state, { type: "START_NEXT" });
+    return prepareFoulIntentDispatch(state, authoritative({ currentSeq: 92 }), "2026-07-19T03:00:00.000Z");
+  }
+
+  it("restores an in-flight envelope as paused ambiguous without changing its identity", () => {
+    const state = readyPersistentState();
+    const raw = serializeFoulQueueSession("match-1", "/operator/matches/match-1/fouls", "user-1", state);
+    const restored = restoreFoulQueueSession(raw);
+
+    expect(restored?.matchId).toBe("match-1");
+    expect(restored?.principalId).toBe("user-1");
+    expect(restored?.pathname).toBe("/operator/matches/match-1/fouls");
+    expect(restored?.state.pauseReason).toBe("NETWORK_AMBIGUOUS");
+    expect(restored?.state.lifecycle).toBe("PAUSED");
+    expect(restored?.state.activeEnvelope).toEqual(state.activeEnvelope);
+    expect(restored?.state.activeIntent).toEqual(state.activeIntent);
+  });
+
+  it("restores reconciling state as REFRESH_FAILED and rejects malformed storage", () => {
+    const reconciling = foulIntentQueueReducer(readyPersistentState(), { type: "ACCEPTED_PENDING_RECONCILIATION" });
+    const raw = serializeFoulQueueSession("match-1", "/operator/matches/match-1/fouls", "user-1", reconciling);
+
+    expect(restoreFoulQueueSession(raw)?.state.pauseReason).toBe("REFRESH_FAILED");
+    expect(restoreFoulQueueSession("not-json")).toBeNull();
+    expect(restoreFoulQueueSession(JSON.stringify({ version: 1, state: {} }))).toBeNull();
+    expect(serializeFoulQueueSession("match-1", "/operator/matches/match-1/fouls", "user-1", initialFoulIntentQueueState)).toBeNull();
+  });
+
+  it("rejects stored routes and envelopes that do not belong to the persisted match and intent", () => {
+    const valid = JSON.parse(serializeFoulQueueSession(
+      "match-1",
+      "/operator/matches/match-1/fouls",
+      "user-1",
+      readyPersistentState()
+    )!);
+
+    expect(restoreFoulQueueSession(JSON.stringify({ ...valid, pathname: "/operator/matches/match-2/fouls" }))).toBeNull();
+    expect(restoreFoulQueueSession(JSON.stringify({
+      ...valid,
+      state: {
+        ...valid.state,
+        activeEnvelope: { ...valid.state.activeEnvelope, payload: { ...valid.state.activeEnvelope.payload, playerId: "other-player" } }
+      }
+    }))).toBeNull();
+    expect(restoreFoulQueueSession(JSON.stringify({ ...valid, state: { ...valid.state, lifecycle: "READY_TO_DISPATCH" } }))).toBeNull();
+    expect(restoreFoulQueueSession(JSON.stringify({
+      ...valid,
+      state: { ...valid.state, activeEnvelope: null, pauseReason: "NETWORK_AMBIGUOUS" }
+    }))).toBeNull();
+    expect(restoreFoulQueueSession(JSON.stringify({
+      ...valid,
+      state: { ...valid.state, pauseReason: "WAITING_REVIEW" }
+    }))).toBeNull();
+    expect(restoreFoulQueueSession(JSON.stringify({ ...valid, state: { ...valid.state, injected: true } }))).toBeNull();
+  });
+});
+
+describe("RM-06-P2 exact-envelope retry revalidation", () => {
+  it("retains the first envelope while requiring fresh authority before retry dispatch", () => {
+    let state = foulIntentQueueReducer(initialFoulIntentQueueState, { type: "ENQUEUE", intent: intent("retry") });
+    state = foulIntentQueueReducer(state, { type: "START_NEXT" });
+    state = prepareFoulIntentDispatch(state, authoritative({ currentSeq: 80 }), "2026-07-19T03:00:00.000Z");
+    const envelope = state.activeEnvelope;
+    state = foulIntentQueueReducer(state, { type: "PAUSE", reason: "NETWORK_AMBIGUOUS", detail: "unknown" });
+    state = foulIntentQueueReducer(state, { type: "RETRY_AMBIGUOUS" });
+
+    expect(state.lifecycle).toBe("REVALIDATING_RETRY");
+    expect(state.activeEnvelope).toBe(envelope);
+
+    const drifted = foulIntentQueueReducer(state, {
+      type: "PREPARE_DISPATCH",
+      authoritative: authoritative({ status: "FINISHED", currentSeq: 999 }),
+      clientTimestamp: "2026-07-19T04:00:00.000Z"
+    });
+    expect(drifted.pauseReason).toBe("MATCH_NOT_LIVE");
+    expect(drifted.activeEnvelope).toBe(envelope);
+
+    const validated = foulIntentQueueReducer(state, {
+      type: "PREPARE_DISPATCH",
+      authoritative: authoritative({ currentSeq: 999 }),
+      clientTimestamp: "2026-07-19T04:00:00.000Z"
+    });
+    expect(validated.lifecycle).toBe("READY_TO_DISPATCH");
+    expect(validated.activeEnvelope).toBe(envelope);
+    expect(validated.activeEnvelope?.expectedSeq).toBe(80);
+    expect(validated.activeEnvelope?.clientTimestamp).toBe("2026-07-19T03:00:00.000Z");
+  });
+});
 
 function authoritative(overrides: Record<string, unknown> = {}) {
   return {
@@ -150,6 +303,7 @@ describe("RM-06-P2 foul intent activation and FIFO dispatch", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, data: { csrfToken: "csrf-token" } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ACCEPTED", currentSeq: 74 }), { status: 200 }));
     const api = createApiClient({ baseUrl: "/api/v1", fetchImpl });
+    const abortController = new AbortController();
     const envelope = {
       commandId: "command-retained",
       correlationId: "correlation-retained",
@@ -163,13 +317,20 @@ describe("RM-06-P2 foul intent activation and FIFO dispatch", () => {
       }
     };
 
-    await api.addPlayerFoul("match-1", envelope);
+    await api.addPlayerFoul("match-1", { ...envelope, signal: abortController.signal });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/auth/csrf",
+      expect.objectContaining({ signal: abortController.signal })
+    );
 
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
       "/api/v1/matches/match-1/commands/foul/player/add",
       expect.objectContaining({
         method: "POST",
+        signal: abortController.signal,
         body: JSON.stringify({
           commandId: envelope.commandId,
           matchId: "match-1",
@@ -252,6 +413,27 @@ describe("RM-06-P2 foul intent activation and FIFO dispatch", () => {
 });
 
 describe("RM-06-P2 foul route review and confirmation", () => {
+  it("persists queue ownership in RoutedApp and injects it into the foul page", () => {
+    const routedSource = appSource.slice(appSource.indexOf("function RoutedApp"), appSource.indexOf("export default function App"));
+
+    expect(routedSource).toContain("useReducer(\n    foulIntentQueueReducer,");
+    expect(routedSource).toContain("recoverySession?.state ?? initialFoulIntentQueueState");
+    expect(routedSource).toContain("<OperatorFoulPage");
+    expect(routedSource).toContain("foulQueue={foulQueue}");
+    expect(routedSource).toContain("dispatchFoulQueue={dispatchFoulQueue}");
+    expect(foulRouteSource).not.toContain("useReducer(foulIntentQueueReducer, initialFoulIntentQueueState)");
+  });
+
+  it("pauses persisted owner state during unmount before stale completions can pass guards", () => {
+    const cleanupIndex = foulRouteSource.indexOf("foulMountedRef.current = false;");
+    const pauseIndex = foulRouteSource.indexOf('type: "OWNER_LOST"', cleanupIndex);
+    const ownerCheckIndex = foulRouteSource.indexOf("isCurrentFoulOwner(owner)", cleanupIndex);
+
+    expect(cleanupIndex).toBeGreaterThan(-1);
+    expect(pauseIndex).toBeGreaterThan(cleanupIndex);
+    expect(ownerCheckIndex).toBeGreaterThan(pauseIndex);
+  });
+
   it("uses pause, access, and status eligibility instead of pending transport to gate enqueue", () => {
     expect(foulRouteSource).toContain("canEnqueueFoulIntent({");
     expect(foulRouteSource).toContain("pauseReason: foulQueue.pauseReason");
@@ -277,15 +459,15 @@ describe("RM-06-P2 foul route review and confirmation", () => {
   });
 
   it("owns FIFO dispatch, refreshes all authority before first attempt, and sends the retained envelope", () => {
+    expect(appSource).toContain("useReducer(\n    foulIntentQueueReducer,");
     for (const signal of [
-      "useReducer(foulIntentQueueReducer",
       "dispatchFoulQueue({ type: \"ENQUEUE\", intent })",
       "dispatchFoulQueue({ type: \"START_NEXT\" })",
       "type: \"PREPARE_DISPATCH\"",
-      "api.getMatchProjection(matchId)",
-      "api.getMatchRosters(matchId)",
-      "api.getEffectiveMatchAccess(matchId)",
-      "api.addPlayerFoul(matchId, activeEnvelope)",
+      "api.getMatchProjection(matchId, signal)",
+      "api.getMatchRosters(matchId, signal)",
+      "api.getEffectiveMatchAccess(matchId, signal)",
+      "api.addPlayerFoul(matchId, { ...activeEnvelope, signal: dispatchAbortController.signal })",
       "ACCEPTED_PENDING_RECONCILIATION",
       "RECONCILED_ACCEPTED"
     ]) {
@@ -299,7 +481,7 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     expect(foulRouteSource).toContain("ownsTransportLease(lease)");
 
     const ownershipIndex = foulRouteSource.indexOf("acquireTransportLease({");
-    const requestIndex = foulRouteSource.indexOf("api.addPlayerFoul(matchId, activeEnvelope)");
+    const requestIndex = foulRouteSource.indexOf("api.addPlayerFoul(matchId, { ...activeEnvelope, signal: dispatchAbortController.signal })");
     const finallyIndex = foulRouteSource.indexOf("finally {", requestIndex);
     const releaseIndex = foulRouteSource.indexOf("releaseTransportLease(lease)", finallyIndex);
 
@@ -310,18 +492,47 @@ describe("RM-06-P2 foul route review and confirmation", () => {
   });
 
   it("freezes discard recovery while a foul request is pending without freezing enqueue", () => {
-    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey || ownerHasTransportLease) return;");
-    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey || ownerHasTransportLease) return;");
-    expect(foulRouteSource).toContain("if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
-    expect(foulRouteSource).toContain("if (pendingKey || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
-    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardActiveFoul}");
-    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={discardAllFouls}");
-    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={retryAmbiguousFoul}");
-    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey)} onClick={resumeWaitingFouls}");
+    expect(foulRouteSource).toContain("function discardActiveFoul() {\n    if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;");
+    expect(foulRouteSource).toContain("function discardAllFouls() {\n    if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;");
+    expect(foulRouteSource).toContain("if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== \"NETWORK_AMBIGUOUS\") return;");
+    expect(foulRouteSource).toContain("if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease || !canSubmitFoul || foulQueue.pauseReason !== \"WAITING_REVIEW\") return;");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={discardActiveFoul}");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={discardAllFouls}");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={retryAmbiguousFoul}");
+    expect(foulRouteSource).toContain("disabled={Boolean(pendingKey) || ownerHasTransportLease} onClick={resumeWaitingFouls}");
 
     const enqueuePolicyStart = foulRouteSource.indexOf("const canEnqueueFoul = projection ? canEnqueueFoulIntent({");
     const enqueuePolicyEnd = foulRouteSource.indexOf("}) : false;", enqueuePolicyStart);
     expect(foulRouteSource.slice(enqueuePolicyStart, enqueuePolicyEnd)).not.toContain("pendingKey");
+  });
+
+  it("owns and bounds authoritative revalidation by exact active intent", () => {
+    expect(foulRouteSource).toContain("activeFoulRevalidationRef");
+    expect(foulRouteSource).toContain("const revalidationAbortController = new AbortController()");
+    expect(foulRouteSource).toContain("const revalidationIntentId = foulQueue.activeIntent.localIntentId");
+    expect(foulRouteSource).toContain("foulQueueRef.current.activeIntent?.localIntentId === revalidationIntentId");
+    expect(foulRouteSource).toContain("activeFoulRevalidationRef.current === revalidationPhase");
+    expect(foulRouteSource).toContain("revalidationAbortController.abort()");
+    expect(foulRouteSource).toContain("raceFoulTransportDeadline(");
+  });
+
+  it("offers explicit recovery when a revalidation transition cannot persist", () => {
+    expect(foulRouteSource).toContain("revalidationPersistenceBlocked");
+    expect(foulRouteSource).toContain("if (!dispatchFoulQueue({\n          type: \"PREPARE_DISPATCH\"");
+    expect(foulRouteSource).toContain("if (!dispatchFoulQueue({ type: \"PAUSE\", reason: \"REFRESH_FAILED\"");
+    expect(foulRouteSource).toContain("setRevalidationPersistenceBlocked(true)");
+    expect(foulRouteSource).toContain("function retryBlockedRevalidation()");
+    expect(foulRouteSource).toContain("setRevalidationRetryVersion((version) => version + 1)");
+    expect(foulRouteSource).toContain("Retry authoritative revalidation");
+    expect(foulRouteSource).toContain("commitFoulQueue(action);\n    setRevalidationPersistenceBlocked(false);");
+    expect(foulRouteSource).toContain('revalidationPersistenceBlocked && ["REVALIDATING", "REVALIDATING_RETRY"].includes(foulQueue.lifecycle)');
+    expect(foulRouteSource).toContain('!["REVALIDATING", "REVALIDATING_RETRY"].includes(foulQueue.lifecycle)');
+  });
+
+  it("keeps a persisted pause from automatically starting or dispatching after lease availability wakes effects", () => {
+    expect(foulRouteSource).toContain('if (foulQueue.activeIntent || foulQueue.pauseReason || foulQueue.queuedIntents.length === 0) return;');
+    expect(foulRouteSource).toContain('if (foulQueue.lifecycle !== "READY_TO_DISPATCH" || !activeEnvelope || foulQueue.pauseReason) return;');
+    expect(foulRouteSource).toContain("leaseAvailabilityVersion");
   });
 
   it("pauses fail closed and exposes only explicit retry, discard, review/resume, and blocked correction controls", () => {
@@ -354,7 +565,7 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     const confirmStart = foulRouteSource.indexOf("function confirmPlayerFoul()");
     const confirmEnd = foulRouteSource.indexOf("useEffect(() => {", confirmStart);
     const confirmSource = foulRouteSource.slice(confirmStart, confirmEnd);
-    const lockIndex = confirmSource.indexOf("foulLifecycleCoordinator.acquireNavigationLock({");
+    const lockIndex = confirmSource.indexOf("foulLifecycleCoordinator.acquireNavigationLock(lock)");
     const enqueueIndex = confirmSource.indexOf('dispatchFoulQueue({ type: "ENQUEUE", intent })');
 
     expect(lockIndex).toBeGreaterThan(-1);
@@ -377,6 +588,63 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     expect(foulRouteSource).toContain("isCurrentFoulOwner(owner)");
     expect(foulRouteSource).toContain("if (!foulLifecycleCoordinator.ownsTransportLease(lease) || !isCurrentFoulOwner(owner)) return;");
     expect(foulRouteSource).toContain("foulMountedRef.current = false;");
+  });
+
+  it("clears player preview and reason before loading a different match", () => {
+    const matchEffectStart = foulRouteSource.indexOf("useEffect(() => {", foulRouteSource.indexOf("async function loadState"));
+    const matchEffectEnd = foulRouteSource.indexOf("}, [matchId]);", matchEffectStart);
+    const matchEffect = foulRouteSource.slice(matchEffectStart, matchEffectEnd);
+
+    expect(matchEffect).toContain("setSelectedFoulPlayer(null)");
+    expect(matchEffect).toContain('setReason("")');
+    expect(matchEffect).toContain("setProjection(null)");
+  });
+
+  it("bounds and aborts the player-foul transport while classifying definite API responses fail closed", () => {
+    const effectSource = foulRouteSource.slice(
+      foulRouteSource.indexOf("const activeEnvelope = foulQueue.activeEnvelope"),
+      foulRouteSource.indexOf("function retryAmbiguousFoul")
+    );
+    expect(effectSource).toContain("const dispatchAbortController = new AbortController()");
+    expect(effectSource).toContain("reconciliationAbortController = new AbortController()");
+    expect(effectSource).toContain("reconciliationTimeout = window.setTimeout");
+    expect(effectSource).toContain("FOUL_TRANSPORT_TIMEOUT_MS");
+    expect(effectSource).toContain("signal: dispatchAbortController.signal");
+    expect(effectSource).toContain("raceFoulTransportDeadline(\n          api.addPlayerFoul");
+    expect(effectSource).toContain("raceFoulTransportDeadline(");
+    expect(effectSource).toContain("refreshAfterCommand(activeEnvelope.expectedSeq, reconciliationAbortController.signal, lease)");
+    expect(foulRouteSource).toContain("foulLifecycleCoordinator.ownsTransportLease(lease)");
+    expect(apiClientSource).toContain("async syncMatch(matchId: string, lastEventSeq: number, signal?: AbortSignal)");
+    expect(apiClientSource).toContain("async getMatchProjection(matchId: string, signal?: AbortSignal)");
+    expect(apiClientSource).toContain("async getMatchRosters(matchId: string, signal?: AbortSignal)");
+    expect(apiClientSource).toContain("async getEffectiveMatchAccess(matchId: string, signal?: AbortSignal)");
+    expect(effectSource).toContain('if (!dispatchFoulQueue({ type: "ACCEPTED_PENDING_RECONCILIATION" })) return;');
+    expect(effectSource).toContain("window.clearTimeout(dispatchTimeout)");
+    expect(effectSource).toContain("window.clearTimeout(reconciliationTimeout)");
+    expect(foulRouteSource).toContain("activeFoulAbortRef.current?.abort()");
+    expect(foulRouteSource).toContain("error instanceof ApiClientError");
+    expect(foulRouteSource).toContain('reason: error.reasonCode === "INVALID_EXPECTED_SEQ" ? "SYNC_REQUIRED" : "REJECTED"');
+  });
+
+  it("hydrates and persists unresolved queue state through session storage before rendering routes", () => {
+    expect(appSource).toContain("restoreFoulQueueSession(");
+    expect(appSource).toContain("serializeFoulQueueSession(");
+    expect(appSource).toContain("window.sessionStorage");
+    expect(appSource).toContain("recoveredFoulQueueSession?.principalId");
+    expect(appSource).toContain("currentUser.userId");
+    expect(appSource).toContain("foulQueuePrincipal");
+    expect(foulRouteSource).toContain("claimFoulQueuePrincipal(currentUser.userId)");
+    expect(appSource).toContain("claimFoulQueuePrincipal={setFoulQueuePrincipal}");
+    expect(appSource).toContain("foulLifecycleCoordinator.clearNavigationLock()");
+    expect(appSource).toContain("getLockedPathname()");
+  });
+
+  it("requires durable persistence before committing an unresolved foul action", () => {
+    expect(foulRouteSource).toContain("blocksFoulCorrectionNavigation(currentState) || blocksFoulCorrectionNavigation(nextState)");
+    expect(foulRouteSource).toContain("Unable to preserve the unresolved foul safely. No action was sent.");
+    expect(foulRouteSource).toContain("if (!dispatchFoulQueue({ type: \"ENQUEUE\", intent }))");
+    expect(foulRouteSource).toContain("foulLifecycleCoordinator.releaseNavigationLock(lock)");
+    expect(foulRouteSource).toContain('if (!dispatchFoulQueue({ type: "DISCARD_ALL" })) return;');
   });
 });
 
@@ -497,7 +765,7 @@ describe("RM-06-P2 dispatch outcomes and explicit recovery", () => {
     const retry = foulIntentQueueReducer(paused, { type: "RETRY_AMBIGUOUS" });
 
     expect(retry.activeEnvelope).toBe(envelope);
-    expect(retry.lifecycle).toBe("READY_TO_DISPATCH");
+    expect(retry.lifecycle).toBe("REVALIDATING_RETRY");
     expect(retry.pauseReason).toBeNull();
     expect(retry.queuedIntents).toEqual(prepared.queuedIntents);
   });

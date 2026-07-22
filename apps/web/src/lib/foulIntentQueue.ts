@@ -54,7 +54,7 @@ export type FoulQueuePauseReason =
   | "SYNC_REQUIRED"
   | "WAITING_REVIEW";
 
-export type FoulQueueLifecycle = "IDLE" | "QUEUED" | "REVALIDATING" | "READY_TO_DISPATCH" | "RECONCILING" | "PAUSED";
+export type FoulQueueLifecycle = "IDLE" | "QUEUED" | "REVALIDATING" | "REVALIDATING_RETRY" | "READY_TO_DISPATCH" | "RECONCILING" | "PAUSED";
 
 export type FoulIntentQueueState = {
   activeEnvelope: FoulDispatchEnvelope | null;
@@ -79,6 +79,7 @@ export type FoulIntentQueueAction =
   | { type: "RETRY_AMBIGUOUS" }
   | { type: "DISCARD_ACTIVE" }
   | { type: "RESUME_WAITING" }
+  | { type: "OWNER_LOST"; hasActiveTransport: boolean }
   | { type: "DISCARD_ALL" };
 
 export type FoulTransportLeaseIdentity = {
@@ -123,7 +124,10 @@ export function createFoulLifecycleCoordinator() {
 
   return {
     acquireNavigationLock(lock: FoulNavigationLock) {
-      if (navigationLock) return sameNavigationLock(lock);
+      if (navigationLock) {
+        if (sameNavigationLock(lock)) return true;
+        if (navigationLock.matchId !== lock.matchId || navigationLock.pathname !== lock.pathname) return false;
+      }
       navigationLock = Object.freeze({ ...lock });
       return true;
     },
@@ -136,6 +140,9 @@ export function createFoulLifecycleCoordinator() {
     },
     canNavigate(pathname: string) {
       return !navigationLock || pathname === navigationLock.pathname;
+    },
+    clearNavigationLock() {
+      navigationLock = null;
     },
     getLockedPathname() {
       return navigationLock?.pathname ?? null;
@@ -241,7 +248,7 @@ export function foulIntentQueueReducer(state: FoulIntentQueueState, action: Foul
       };
     case "RETRY_AMBIGUOUS":
       if (state.pauseReason !== "NETWORK_AMBIGUOUS" || !state.activeEnvelope || !state.activeIntent) return state;
-      return { ...state, lifecycle: "READY_TO_DISPATCH", pauseDetail: null, pauseReason: null };
+      return { ...state, lifecycle: "REVALIDATING_RETRY", pauseDetail: null, pauseReason: null };
     case "DISCARD_ACTIVE":
       if (!state.activeIntent) return state;
       return {
@@ -255,13 +262,154 @@ export function foulIntentQueueReducer(state: FoulIntentQueueState, action: Foul
     case "RESUME_WAITING":
       if (state.pauseReason !== "WAITING_REVIEW" || state.activeIntent) return state;
       return { ...state, lifecycle: state.queuedIntents.length > 0 ? "QUEUED" : "IDLE", pauseDetail: null, pauseReason: null };
+    case "OWNER_LOST":
+      return pauseFoulIntentQueueForOwnerLoss(state, action.hasActiveTransport);
     case "DISCARD_ALL":
       return initialFoulIntentQueueState;
   }
 }
 
-function pauseRevalidation(state: FoulIntentQueueState, reason: FoulQueuePauseReason, detail: string) {
-  return { ...state, activeEnvelope: null, lifecycle: "PAUSED" as const, pauseDetail: detail, pauseReason: reason };
+export function pauseFoulIntentQueueForOwnerLoss(
+  state: FoulIntentQueueState,
+  hasActiveTransport: boolean
+): FoulIntentQueueState {
+  if (!hasActiveTransport || !blocksFoulCorrectionNavigation(state)) return state;
+  const acceptedOutcomeUnknown = state.lifecycle === "RECONCILING";
+  return {
+    ...state,
+    lifecycle: "PAUSED",
+    pauseDetail: acceptedOutcomeUnknown
+      ? "The foul was accepted, but owner loss interrupted authoritative reconciliation. Explicit review is required."
+      : "The foul page closed during transport. Delivery outcome is unknown; use explicit exact-envelope retry or discard.",
+    pauseReason: acceptedOutcomeUnknown ? "REFRESH_FAILED" : "NETWORK_AMBIGUOUS"
+  };
+}
+
+export type PersistedFoulQueueSession = {
+  matchId: string;
+  pathname: string;
+  principalId: string;
+  state: FoulIntentQueueState;
+  version: 1;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: string[]) {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+
+function isStoredIntent(value: unknown): value is FoulIntent {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "commandId", "correlationId", "foulType", "gameClockRemainingMs", "jerseyNumber",
+    "localIntentId", "observedRosterStatus", "periodNumber", "playerId", "playerName",
+    "reason", "teamLabel", "teamSide"
+  ])) return false;
+  return ["commandId", "correlationId", "localIntentId", "playerId", "playerName", "teamLabel"]
+    .every((key) => typeof value[key] === "string" && value[key].length > 0) &&
+    value.foulType === "PERSONAL" &&
+    (value.teamSide === "HOME" || value.teamSide === "AWAY") &&
+    ["ACTIVE", "INACTIVE", "BENCH"].includes(value.observedRosterStatus as string) &&
+    Number.isSafeInteger(value.gameClockRemainingMs) && Number(value.gameClockRemainingMs) >= 0 &&
+    Number.isSafeInteger(value.periodNumber) && Number(value.periodNumber) > 0 &&
+    (value.jerseyNumber === null || typeof value.jerseyNumber === "string") &&
+    (value.reason === null || typeof value.reason === "string");
+}
+
+function isStoredEnvelope(value: unknown): value is FoulDispatchEnvelope {
+  if (!isRecord(value) || !hasExactKeys(value, ["clientTimestamp", "commandId", "correlationId", "expectedSeq", "payload"]) ||
+    !isRecord(value.payload) || !hasExactKeys(value.payload, ["foulType", "playerId", "reason", "teamSide"])) return false;
+  return typeof value.commandId === "string" && value.commandId.length > 0 &&
+    typeof value.correlationId === "string" && value.correlationId.length > 0 &&
+    typeof value.clientTimestamp === "string" && value.clientTimestamp.length > 0 &&
+    Number.isSafeInteger(value.expectedSeq) && Number(value.expectedSeq) >= 0 &&
+    typeof value.payload.playerId === "string" && value.payload.playerId.length > 0 &&
+    (value.payload.teamSide === "HOME" || value.payload.teamSide === "AWAY") &&
+    value.payload.foulType === "PERSONAL" &&
+    (value.payload.reason === null || typeof value.payload.reason === "string");
+}
+
+function isStoredQueueState(value: unknown): value is FoulIntentQueueState {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "activeEnvelope", "activeIntent", "lifecycle", "pauseDetail", "pauseReason", "queuedIntents"
+  ]) || !Array.isArray(value.queuedIntents)) return false;
+  const pauseReasons: FoulQueuePauseReason[] = [
+    "ACCESS_ERROR", "ACCESS_LOST", "ACCESS_MISMATCH", "MATCH_NOT_LIVE", "PLAYER_INACTIVE",
+    "PLAYER_MISSING", "PLAYER_PREVIEW_DRIFT", "PLAYER_SIDE_DRIFT", "REFRESH_FAILED",
+    "RECONNECT_REQUIRED", "NETWORK_AMBIGUOUS", "REJECTED", "SYNC_REQUIRED", "WAITING_REVIEW"
+  ];
+  if (value.lifecycle !== "PAUSED" || !pauseReasons.includes(value.pauseReason as FoulQueuePauseReason) ||
+    typeof value.pauseDetail !== "string" || !value.queuedIntents.every(isStoredIntent) ||
+    (value.activeIntent !== null && !isStoredIntent(value.activeIntent)) ||
+    (value.activeEnvelope !== null && !isStoredEnvelope(value.activeEnvelope))) return false;
+  if (!value.activeIntent && value.activeEnvelope) return false;
+  if (!value.activeIntent && value.queuedIntents.length === 0) return false;
+  const activeIntent = value.activeIntent as FoulIntent | null;
+  const activeEnvelope = value.activeEnvelope as FoulDispatchEnvelope | null;
+  if (value.pauseReason === "NETWORK_AMBIGUOUS" && (!activeIntent || !activeEnvelope)) return false;
+  if (value.pauseReason === "WAITING_REVIEW" && (activeIntent || activeEnvelope || value.queuedIntents.length === 0)) return false;
+  if (activeIntent && activeEnvelope) {
+    return activeEnvelope.commandId === activeIntent.commandId &&
+      activeEnvelope.correlationId === activeIntent.correlationId &&
+      activeEnvelope.payload.playerId === activeIntent.playerId &&
+      activeEnvelope.payload.teamSide === activeIntent.teamSide &&
+      activeEnvelope.payload.reason === activeIntent.reason;
+  }
+  return true;
+}
+
+function pauseFoulIntentQueueForReload(state: FoulIntentQueueState): FoulIntentQueueState {
+  if (state.pauseReason) return state;
+  if (state.lifecycle === "RECONCILING") {
+    return {
+      ...state,
+      lifecycle: "PAUSED",
+      pauseDetail: "The foul was accepted before reload, but reconciliation is incomplete. Explicit review is required.",
+      pauseReason: "REFRESH_FAILED"
+    };
+  }
+  if (state.activeEnvelope) return pauseFoulIntentQueueForOwnerLoss(state, true);
+  return {
+    ...state,
+    lifecycle: "PAUSED",
+    pauseDetail: state.activeIntent
+      ? "Reload interrupted authoritative foul validation. Explicit discard and review are required."
+      : "Reload interrupted waiting foul intents. Explicit review is required.",
+    pauseReason: state.activeIntent ? "REFRESH_FAILED" : "WAITING_REVIEW"
+  };
+}
+
+export function serializeFoulQueueSession(matchId: string, pathname: string, principalId: string, state: FoulIntentQueueState) {
+  if (!matchId || !pathname || !principalId || !blocksFoulCorrectionNavigation(state)) return null;
+  return JSON.stringify({ matchId, pathname, principalId, state: pauseFoulIntentQueueForReload(state), version: 1 });
+}
+
+export function restoreFoulQueueSession(raw: string | null): PersistedFoulQueueSession | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || !hasExactKeys(parsed, ["matchId", "pathname", "principalId", "state", "version"]) ||
+      parsed.version !== 1 || typeof parsed.matchId !== "string" || !parsed.matchId ||
+      parsed.pathname !== `/operator/matches/${encodeURIComponent(parsed.matchId)}/fouls` ||
+      typeof parsed.principalId !== "string" || !parsed.principalId || !isStoredQueueState(parsed.state) ||
+      !blocksFoulCorrectionNavigation(parsed.state)) return null;
+    return parsed as PersistedFoulQueueSession;
+  } catch {
+    return null;
+  }
+}
+
+function pauseRevalidation(state: FoulIntentQueueState, reason: FoulQueuePauseReason, detail: string, preserveEnvelope = false) {
+  return {
+    ...state,
+    activeEnvelope: preserveEnvelope ? state.activeEnvelope : null,
+    lifecycle: "PAUSED" as const,
+    pauseDetail: detail,
+    pauseReason: reason
+  };
 }
 
 export function prepareFoulIntentDispatch(
@@ -278,26 +426,32 @@ export function prepareFoulIntentDispatch(
   },
   clientTimestamp: string
 ): FoulIntentQueueState {
-  if (!state.activeIntent || state.activeEnvelope) return state;
+  const retryingRetainedEnvelope = state.lifecycle === "REVALIDATING_RETRY" && Boolean(state.activeEnvelope);
+  if (!state.activeIntent || (state.activeEnvelope && !retryingRetainedEnvelope)) return state;
   const intent = state.activeIntent;
+  const pause = (reason: FoulQueuePauseReason, detail: string) =>
+    pauseRevalidation(state, reason, detail, retryingRetainedEnvelope);
   if (authoritative.access.lifecycle === "ACCESS_MATCH_MISMATCH") {
-    return pauseRevalidation(state, "ACCESS_MISMATCH", "Effective match access does not match this route.");
+    return pause("ACCESS_MISMATCH", "Effective match access does not match this route.");
   }
   if (authoritative.access.lifecycle !== "ACCESS_READY") {
-    return pauseRevalidation(state, "ACCESS_ERROR", "Effective match access could not be verified.");
+    return pause("ACCESS_ERROR", "Effective match access could not be verified.");
   }
   if (!authoritative.access.canRead || !authoritative.access.canOperateFoul) {
-    return pauseRevalidation(state, "ACCESS_LOST", "Foul access is no longer available.");
+    return pause("ACCESS_LOST", "Foul access is no longer available.");
   }
   if (authoritative.status === "FINISHED" || authoritative.status === "FINAL") {
-    return pauseRevalidation(state, "MATCH_NOT_LIVE", "The match no longer permits live foul control.");
+    return pause("MATCH_NOT_LIVE", "The match no longer permits live foul control.");
   }
   const player = authoritative.players.find((candidate) => candidate.playerId === intent.playerId);
-  if (!player) return pauseRevalidation(state, "PLAYER_MISSING", "The selected player is no longer on the roster.");
-  if (player.status !== "ACTIVE") return pauseRevalidation(state, "PLAYER_INACTIVE", "The selected player is no longer active.");
-  if (player.teamSide !== intent.teamSide) return pauseRevalidation(state, "PLAYER_SIDE_DRIFT", "The selected player's side changed.");
+  if (!player) return pause("PLAYER_MISSING", "The selected player is no longer on the roster.");
+  if (player.status !== "ACTIVE") return pause("PLAYER_INACTIVE", "The selected player is no longer active.");
+  if (player.teamSide !== intent.teamSide) return pause("PLAYER_SIDE_DRIFT", "The selected player's side changed.");
   if (player.playerName.trim() !== intent.playerName || player.jerseyNumber !== intent.jerseyNumber) {
-    return pauseRevalidation(state, "PLAYER_PREVIEW_DRIFT", "The selected player's name or jersey changed.");
+    return pause("PLAYER_PREVIEW_DRIFT", "The selected player's name or jersey changed.");
+  }
+  if (retryingRetainedEnvelope) {
+    return { ...state, lifecycle: "READY_TO_DISPATCH" };
   }
   return {
     ...state,
