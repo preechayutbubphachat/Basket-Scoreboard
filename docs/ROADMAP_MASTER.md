@@ -159,10 +159,10 @@ RM-05-I = INTEGRATED
 RM-06 = CURRENT
 RM-06-D1 = DISCOVERY COMPLETE
 RM-06-P1 = IMPLEMENTATION COMPLETE
-RM-06-P2 = PENDING (AUTHORIZED TO BEGIN)
+RM-06-P2 = IMPLEMENTATION COMPLETE
 RM-06-P3 and later = PENDING (NOT AUTHORIZED)
 RM-07 through RM-18 = PENDING
-Next safe step: RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue
+Next safe step: decision/authorization gate for RM-06-P3; do not begin it automatically
 ```
 
 ## 6. Straight-Line Diagram
@@ -318,7 +318,7 @@ There is no parallel top-level path.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
 - Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
   `Personal Player Foul Contract and Effective Access Gate` is `IMPLEMENTATION COMPLETE`; RM-06-P2
-  `Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` is `PENDING (AUTHORIZED TO BEGIN)`. P3 and
+  `Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` is `IMPLEMENTATION COMPLETE`. P3 and
   later are not authorized.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
@@ -338,7 +338,7 @@ There is no parallel top-level path.
 - Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
   coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
   and fail-closed.
-- Next milestone: RM-07 after RM-06 integration; next safe step is RM-06-P2 implementation within the authorized player-only client-side allowlist.
+- Next milestone: RM-07 after RM-06 integration; next safe step is an explicit decision/authorization gate for RM-06-P3. Do not begin P3 automatically.
 
 ### RM-07 - Timeout Dashboard
 
@@ -1829,6 +1829,53 @@ RM-06-P2 authorization/contract gate evidence:
   `PENDING (AUTHORIZED TO BEGIN)`; RM-06-P3 and later remain `PENDING (NOT AUTHORIZED)`.
 - Next safe step: implement only `RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` under
   strict TDD and the stated allowlist. Do not auto-advance to P3.
+
+RM-06-P2 implementation closure evidence:
+
+- Branch: `feature/rm06-foul-dashboard`; implementation commit:
+  `da21262beba0732eef480a49fe8b7362c6123dcf` (`feat(web): add fail-closed foul intent queue`); implementation parent:
+  `c034157790d76f7d622d9b00d1dabd95ff82b82a`.
+- Changed files: `apps/web/src/App.tsx`, `apps/web/src/lib/apiClient.ts`,
+  `apps/web/src/lib/foulIntentQueue.ts`, and `tests/web/rm06-p2-foul-intent-queue.test.ts`. Pre-existing modified
+  `AGENTS.md` and untracked `docs/AI_HANDOFF.md` remained untouched and excluded from staging and the implementation
+  commit.
+- Attribution and queue: the operator deliberately selects and confirms an active HOME/AWAY roster player for fixed
+  `PERSONAL`; immutable distinct intent identities remain FIFO; rapid enqueue remains available; one global transport
+  lease permits at most one foul request; exact first-attempt identity/envelope is retained for explicit ambiguous retry.
+- Fail-closed authority: first dispatch and explicit retry refresh and jointly revalidate projection, roster,
+  EffectiveMatchAccess, live status, player, side, roster status, and preview attribution. Revalidation is an exact
+  owner/local-intent phase with its own AbortController and 15-second promise deadline. Stale, aborted, replaced, or
+  owner-lost phases cannot prepare, pause, or write authoritative UI state.
+- Transport and reconciliation: dispatch and accepted reconciliation use separate AbortControllers and fresh
+  independent 15-second deadlines. Signals propagate through the existing player-foul, sync, projection, roster, and
+  effective-access requests. The exact global lease is released in `finally`; late abort-insensitive completions cannot
+  transition the queue or write UI after owner/lease loss.
+- Persistence and recovery: every transition from or to unresolved state is persistence-gated and principal-, match-,
+  and canonical-path-bound. Restore accepts only strict exact-key PAUSED sessions with valid lifecycle relationships;
+  malformed or mismatched state is removed and never replayed. Failed enqueue, accepted-pending, pause, preparation,
+  discard, and terminal-removal persistence remain fail-closed. Revalidation persistence failure exposes explicit
+  operator retry without automatic replay or drain, while successful persisted transitions clear stale local recovery
+  state.
+- Scope/security: existing endpoint and player-foul wire schema remain unchanged; no server, socket, package contract,
+  event model/type, database/schema/migration, capability/RBAC, dependency, public contract, production configuration,
+  direct team-foul, special foul, foul-out, penalty, free-throw, possession, shot-clock, overtime, substitution, warning,
+  or official-consequence behavior changed.
+- TDD and review evidence: focused tests progressed through expected RED failures and close at 63/63; RM-06-P1
+  EffectiveMatchAccess regression passed 4/4. Exact-current independent fail-closed review `deleg_aceb61db` returned
+  `passed: true` with no logic or security blocker and exactly the four authorized implementation files.
+- Verification: `npm test` passed 717 tests with 31 database-dependent tests skipped; `npm run lint`, `npm run build`,
+  `npm run build:single`, and `git diff --check` passed. The existing Vite chunk-size warning remains unchanged.
+- Browser evidence: no new mounted browser/viewport run was performed in this P2 implementation closure; route-level
+  source/behavior contracts and full build/regression gates passed. Responsive browser closure and DB-backed production
+  verification remain future RM-06 gates and are not claimed here.
+- Known limitations: the 31 skipped database-dependent tests require their configured disposable database environment;
+  browser integration coverage for deferred-promise timeout/cleanup races remains a nonblocking future strengthening.
+  All special foul and official consequence semantics remain deferred pending product decisions and governing sources.
+- Production status: `NOT INTEGRATED / NOT DEPLOYED / NOT PROVEN`; no merge, push, deployment, Plesk/Hostatom operation,
+  production access, or production mutation occurred.
+- Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 and RM-06-P2 are `IMPLEMENTATION COMPLETE`; RM-06-P3 and later
+  remain `PENDING (NOT AUTHORIZED)`; RM-07 through RM-18 remain `PENDING`.
+- Next safe step: explicit decision/authorization gate for RM-06-P3. Do not begin P3 automatically.
 
 RM-04-P1 clock workspace hierarchy closure evidence:
 
