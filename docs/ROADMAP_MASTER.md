@@ -161,9 +161,10 @@ RM-06-D1 = DISCOVERY COMPLETE
 RM-06-P1 = IMPLEMENTATION COMPLETE
 RM-06-P2 = IMPLEMENTATION COMPLETE
 RM-06-P3 = IMPLEMENTATION COMPLETE
-RM-06-P4 and later = PENDING (NOT AUTHORIZED)
+RM-06-P4 = IMPLEMENTATION COMPLETE
+RM-06 later slices and integration = PENDING (NOT AUTHORIZED)
 RM-07 through RM-18 = PENDING
-Next safe step: decision/authorization gate for RM-06-P4; do not begin it automatically
+Next safe step: decision/authorization gate for remaining RM-06 work or integration; do not advance automatically
 ```
 
 ## 6. Straight-Line Diagram
@@ -323,7 +324,11 @@ There is no parallel top-level path.
   `Terminal Status Fail-Closed Guard` is `IMPLEMENTATION COMPLETE`. P3 evidence is Task
   `TASK-20260722-001-rm06-p3-terminal-status-guard` at verified commit
   `db9e271b712c311ffba4eedcaba34c7e12b7a6b2`, pushed to `origin/feature/rm06-foul-dashboard`; no PR, main merge,
-  deployment, or production verification is claimed. P4 and later are not authorized.
+  deployment, or production verification is claimed. RM-06-P4 `Foul LiveMatchShell Presentation Adoption` is
+  `IMPLEMENTATION COMPLETE` and verification complete: Task `TASK-20260723-001-rm06-p4-foul-live-shell` is
+  `CLOSED_VERIFIED_PASS` at local application commit `f43d0b59832e6e5a722962c6df5462d830520b0d`. That commit is not pushed;
+  no PR, main integration, deployment, or production verification is claimed. Later RM-06 work and integration remain
+  pending and are not authorized; RM-06 remains `CURRENT`.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
 - Database dependencies: append-only foul/correction events and projections.
@@ -342,7 +347,8 @@ There is no parallel top-level path.
 - Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
   coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
   and fail-closed.
-- Next milestone: RM-07 after RM-06 integration; next safe step is an explicit decision/authorization gate for RM-06-P4. Do not begin P4 automatically.
+- Next milestone: RM-07 after RM-06 integration; next safe step is an explicit decision/authorization gate for remaining
+  RM-06 work or integration. Do not advance automatically.
 
 ### RM-07 - Timeout Dashboard
 
