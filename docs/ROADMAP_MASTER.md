@@ -160,9 +160,10 @@ RM-06 = CURRENT
 RM-06-D1 = DISCOVERY COMPLETE
 RM-06-P1 = IMPLEMENTATION COMPLETE
 RM-06-P2 = IMPLEMENTATION COMPLETE
-RM-06-P3 and later = PENDING (NOT AUTHORIZED)
+RM-06-P3 = IMPLEMENTATION COMPLETE
+RM-06-P4 and later = PENDING (NOT AUTHORIZED)
 RM-07 through RM-18 = PENDING
-Next safe step: decision/authorization gate for RM-06-P3; do not begin it automatically
+Next safe step: decision/authorization gate for RM-06-P4; do not begin it automatically
 ```
 
 ## 6. Straight-Line Diagram
@@ -318,8 +319,11 @@ There is no parallel top-level path.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
 - Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
   `Personal Player Foul Contract and Effective Access Gate` is `IMPLEMENTATION COMPLETE`; RM-06-P2
-  `Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` is `IMPLEMENTATION COMPLETE`. P3 and
-  later are not authorized.
+  `Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` is `IMPLEMENTATION COMPLETE`; and RM-06-P3
+  `Terminal Status Fail-Closed Guard` is `IMPLEMENTATION COMPLETE`. P3 evidence is Task
+  `TASK-20260722-001-rm06-p3-terminal-status-guard` at verified commit
+  `db9e271b712c311ffba4eedcaba34c7e12b7a6b2`, pushed to `origin/feature/rm06-foul-dashboard`; no PR, main merge,
+  deployment, or production verification is claimed. P4 and later are not authorized.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
 - Database dependencies: append-only foul/correction events and projections.
@@ -338,7 +342,7 @@ There is no parallel top-level path.
 - Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
   coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
   and fail-closed.
-- Next milestone: RM-07 after RM-06 integration; next safe step is an explicit decision/authorization gate for RM-06-P3. Do not begin P3 automatically.
+- Next milestone: RM-07 after RM-06 integration; next safe step is an explicit decision/authorization gate for RM-06-P4. Do not begin P4 automatically.
 
 ### RM-07 - Timeout Dashboard
 
