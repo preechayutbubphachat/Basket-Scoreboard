@@ -2,6 +2,14 @@
 
 Production-grade basketball scoreboard and tournament management web application.
 
+## Implementation Start Here
+
+Start here for implementation work: [docs/ROADMAP_MASTER.md](docs/ROADMAP_MASTER.md)
+
+Repository agent protocol: [AGENTS.md](AGENTS.md)
+
+Canonical visual-target inventory: [docs/ui/UI_DESIGN_INVENTORY.md](docs/ui/UI_DESIGN_INVENTORY.md)
+
 ## Architecture Rules
 
 - Match events are the source of truth.
@@ -17,7 +25,7 @@ Production-grade basketball scoreboard and tournament management web application
 
 ## Current Scope
 
-This branch implements Phase 1 Foundation only:
+The repository currently includes Phase 1 Foundation and the Task 002 MariaDB migration foundation:
 
 - npm workspace monorepo
 - TypeScript base config
@@ -25,11 +33,12 @@ This branch implements Phase 1 Foundation only:
 - Vite React web skeleton
 - package skeletons for domain, event model, and API contracts
 - environment example
-- migration and tests folders
+- ordered MariaDB migration files for auth, competition, matches, event store, projections, and audit logs
 - API health check
 - placeholder API test
+- migration contract tests
 
-It intentionally does not implement dashboards, Socket.IO, match commands, projections, mutable scoreboard state, or basketball rules in UI.
+It intentionally does not implement dashboards, Socket.IO, match commands, mutable scoreboard state, or basketball rules in UI.
 
 ## Repository Layout
 
@@ -53,8 +62,182 @@ npm run dev
 npm run dev:web
 npm run build
 npm run test
+npm run test:db
+npm run db:check
+npm run migrate:status
 npm run migrate
 ```
+
+Migration commands require `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, and `DATABASE_PASSWORD`. They do not run automatically when the API server starts.
+
+## Production Session Auth And RBAC
+
+The API uses server-side session authentication backed by MariaDB. Users log in with email and password, the server stores only SHA-256 hashes of random session and CSRF tokens, and the browser receives an HttpOnly session cookie. Login responses return a CSRF token for private write requests.
+
+Production setup:
+
+```bash
+npm run migrate
+npm run auth:seed
+AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
+```
+
+After creating the admin, remove `AUTH_BOOTSTRAP_ENABLED`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_DISPLAY_NAME` from the server environment. Do not commit those values.
+
+Plesk production environment variables:
+
+- `AUTH_COOKIE_NAME=basket_session`
+- `AUTH_SESSION_TTL_MINUTES=480`
+- `AUTH_COOKIE_SECURE=true`
+- `AUTH_COOKIE_SAME_SITE=Lax`
+- `DEV_AUTH_ENABLED=false`
+- `AUTH_BOOTSTRAP_ENABLED=false`
+
+Protected browser write requests must send `x-csrf-token`. Public scoreboard reads remain unauthenticated and read-only.
+
+Development and tests can use controlled headers:
+
+- `x-dev-user-role: ADMIN | SCORER | REFEREE | VIEWER`
+- `x-dev-user-id: <uuid>`
+- `x-dev-match-ids: <comma-separated match IDs>`
+
+Dev auth headers are disabled in production unless `DEV_AUTH_ENABLED=true`. Keep `DEV_AUTH_ENABLED=false` by default and do not enable it on a public server.
+
+The frontend includes a minimal production session auth UI at `/login`. It hydrates the browser session from `GET /api/v1/auth/me`, uses the HttpOnly session cookie with `credentials: include`, and keeps the CSRF token only in memory for private write requests. The browser must not store a raw session token in `localStorage` or `sessionStorage`.
+
+Login troubleshooting:
+
+- `GET /api/v1/auth/me` returning `401` before login is normal and means the browser is not signed in yet.
+- `POST /api/v1/auth/login` creates the session and must not require a pre-login CSRF token.
+- `GET /api/v1/auth/csrf` should be called only after a session cookie exists, either after login or when refreshing CSRF for an authenticated private write.
+- `POST /api/v1/auth/login` returning `403` usually means CSRF middleware is applied too broadly. Login must validate credentials first, then create the session cookie and return a CSRF token.
+- Backend auth and CSRF guards must explicitly exempt only `POST /api/v1/auth/login`; all private writes after login still require the session cookie and `x-csrf-token`.
+- If `POST /api/v1/auth/login` returns `403` on Plesk, run `npm run auth:probe-login-route`. For the built-in bad-password probe, the expected result is `INVALID_CREDENTIALS`; any `403`, `CSRF_REQUIRED`, or `UNAUTHENTICATED` means the login route did not reach credential validation.
+
+The system is still not full match-day ready until complete match-day operator workflows exist.
+
+## Match Official Assignments
+
+Production SCORER and REFEREE sessions require an active `match_officials` assignment for the match before they can use match-scoped endpoints. Assignment is a scope check, not a permission grant: the user must still have the required role permission from `roles` / `permissions`.
+
+ADMIN users can manage assignments through authenticated API endpoints:
+
+```http
+POST /api/v1/matches/:matchId/officials
+GET /api/v1/matches/:matchId/officials
+DELETE /api/v1/matches/:matchId/officials/:assignmentId
+```
+
+Supported assignment role codes are `REFEREE`, `SCORER`, `ASSISTANT_SCORER`, `TIMER`, `SHOT_CLOCK_OPERATOR`, and `MATCH_OPERATOR`. Score operation is allowed only for assigned scorer-style roles when the user also has `match.score.operate`. Viewer users remain read-only even if an assignment row is created accidentally.
+
+`GET /api/v1/auth/me` returns `matchAssignments` for the authenticated user. Assignment changes are recorded in `audit_logs`; they do not append basketball `match_events`.
+
+The frontend admin assignment UI is available at:
+
+```text
+/admin/matches
+/admin/matches/:matchId/officials
+```
+
+Only authenticated ADMIN users should use these screens. `/admin/matches` loads the current MVP match list from `GET /api/v1/admin/matches` and links each match to its officials page. The officials page loads assignments through `GET /api/v1/matches/:matchId/officials`, creates assignments with `POST /api/v1/matches/:matchId/officials`, and revokes assignments with `DELETE /api/v1/matches/:matchId/officials/:assignmentId`. The UI hides admin controls from non-admin users, but the backend remains the authority for authorization and must reject forbidden requests.
+
+## Operator Match Landing
+
+Authenticated scorer/referee/operator users can open:
+
+```text
+/operator/matches
+```
+
+This page calls `GET /api/v1/operator/matches`. ADMIN users may see all current MVP matches for testing/navigation. SCORER and REFEREE users see only matches where they have an active `match_officials` assignment; revoked assignments are excluded. VIEWER users are denied for this operator route.
+
+The operator landing page shows the teams or fallback IDs, status, scheduled time, venue, active assignment roles, and current event sequence when available. Score Control and Public Scoreboard buttons open the minimal score-control and public polling screens. This task does not add foul, clock, timeout, correction UI, or Socket.IO UI.
+
+Current limitation: the live operator score UI only supports HOME/AWAY +1/+2/+3 score events. Create users/roles with the bootstrap scripts, create or locate matches through the API or smoke helper, then assign officials/operators through the admin assignment UI or API.
+
+## Production Browser Smoke Test
+
+Use this checklist on Plesk to verify the deployed app with a real MariaDB-backed match. The smoke helper is disabled unless `SMOKE_TEST_ENABLED=true` is set for that command.
+
+```bash
+git pull origin main
+npm install
+npm run build
+npm run migrate
+npm run auth:seed
+AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
+SMOKE_TEST_ENABLED=true SMOKE_TEST_HOME_NAME="HOME" SMOKE_TEST_AWAY_NAME="AWAY" npm run smoke:create-match
+```
+
+The smoke match command creates or reuses the match code `Smoke Test Match`, creates or reuses the HOME/AWAY demo teams, ensures `match_streams` and scoreboard projection rows exist, and prints only:
+
+```text
+matchId=<id>
+publicScoreboardPath=/public/scoreboard/<id>
+operatorScorePath=/operator/matches/<id>/score
+created=true|false
+```
+
+Browser checklist:
+
+1. Login as admin.
+2. Open `/admin/matches`.
+3. Assign a scorer to the smoke match.
+4. Login as the scorer.
+5. Open `/operator/matches`.
+6. Open score control for the smoke match.
+7. Click `HOME +2`.
+8. Open `/public/scoreboard/:matchId`.
+9. Verify the public score updates.
+10. Verify no private audit, session, password, token, or internal user data is visible.
+
+The optional scorer-account helper is intentionally not included in this task. Create scorer users through the existing production bootstrap/admin workflow or direct controlled database operations, then assign the scorer through the admin assignment UI.
+
+## Local MariaDB Verification
+
+Create a local MariaDB database outside Git, then export the connection settings in your shell. Do not commit `.env` or secrets.
+
+```bash
+export DATABASE_HOST=localhost
+export DATABASE_PORT=3306
+export DATABASE_NAME=basketball_scoreboard
+export DATABASE_USER=root
+export DATABASE_PASSWORD=your-local-password
+
+npm run db:check
+npm run migrate:status
+npm run migrate
+npm run migrate
+npm run test:db
+```
+
+Expected behavior:
+
+- `db:check` prints connection and migration status without printing the database password.
+- First `migrate` applies pending migrations on an empty database.
+- Second `migrate` is idempotent and skips already-applied migrations with matching checksums.
+- `test:db` is skipped when DB env vars are absent; when DB env vars are present, it connects to MariaDB and verifies migration status, migration execution, idempotency, and checksum mismatch detection.
+
+## AI Git Workflow Policy
+
+Before every commit, merge, or push to origin/main, AI coding agents must run `npm test` and `npm run build`. If database environment variables are available, they must also run `npm run test:db`, `npm run db:check`, and `npm run migrate:status`.
+
+See:
+[docs/agent/AI_GIT_WORKFLOW_POLICY.md](docs/agent/AI_GIT_WORKFLOW_POLICY.md)
+
+## Project Design Documents
+
+Canonical project contracts live under `docs/`:
+
+- Agent workflow: [docs/agent/AI_AGENT_RULES.md](docs/agent/AI_AGENT_RULES.md), [docs/agent/AGENT_TASK_TEMPLATE.md](docs/agent/AGENT_TASK_TEMPLATE.md), [docs/agent/CODE_REVIEW_CHECKLIST.md](docs/agent/CODE_REVIEW_CHECKLIST.md)
+- Product: [docs/product/PROJECT_BRIEF.md](docs/product/PROJECT_BRIEF.md)
+- Architecture: [docs/architecture/ARCHITECTURE_PRINCIPLES.md](docs/architecture/ARCHITECTURE_PRINCIPLES.md), [docs/architecture/DOMAIN_MODEL.md](docs/architecture/DOMAIN_MODEL.md), [docs/architecture/EVENT_MODEL.md](docs/architecture/EVENT_MODEL.md), [docs/architecture/PROJECTION_MODEL.md](docs/architecture/PROJECTION_MODEL.md), [docs/architecture/COMMAND_EVENT_TRACEABILITY.md](docs/architecture/COMMAND_EVENT_TRACEABILITY.md)
+- Rules: [docs/rules/RULES_PROFILE_FIBA.md](docs/rules/RULES_PROFILE_FIBA.md), [docs/rules/RULES_ENGINE_SPEC.md](docs/rules/RULES_ENGINE_SPEC.md)
+- Security: [docs/security/USER_ROLES_AND_PERMISSIONS.md](docs/security/USER_ROLES_AND_PERMISSIONS.md)
+- API: [docs/api/API_CONTRACTS.md](docs/api/API_CONTRACTS.md), [docs/api/SOCKET_CONTRACTS.md](docs/api/SOCKET_CONTRACTS.md)
+- Database: [docs/database/DATABASE_SCHEMA.md](docs/database/DATABASE_SCHEMA.md)
+- UI: [docs/ui/UI_DASHBOARDS.md](docs/ui/UI_DASHBOARDS.md), [docs/ui/KEYBOARD_SHORTCUTS.md](docs/ui/KEYBOARD_SHORTCUTS.md)
+- Quality: [docs/quality/TEST_PLAN.md](docs/quality/TEST_PLAN.md), [docs/quality/ACCEPTANCE_CRITERIA.md](docs/quality/ACCEPTANCE_CRITERIA.md), [docs/quality/EDGE_CASES.md](docs/quality/EDGE_CASES.md)
 
 API health endpoint:
 
@@ -62,9 +245,87 @@ API health endpoint:
 GET /api/v1/health
 ```
 
+## Plesk Deployment
+
+Recommended production mode is a single Node.js Fastify app on `https://scoreboard.ob-gate.com`. Fastify serves API routes under `/api/v1/*` and serves the React/Vite build from `apps/web/dist` for browser routes.
+
+Plesk Node.js settings:
+
+- Application Root: project root
+- Document Root: project root
+- Application Startup File: `app.js`
+- Application Mode: `production`
+- Proxy mode: ON
+- Smart static files processing: OFF
+- Serve static files directly by nginx: OFF
+- Preferred configuration: set database and secret values in Plesk Custom environment variables.
+- Alternative configuration: create a root `.env` file on the server only when Custom environment variables are not available.
+- Never commit `.env`.
+
+Before Restart App:
+
+```bash
+npm install
+npm run build:single
+npm run migrate
+npm run auth:seed
+AUTH_BOOTSTRAP_ENABLED=true ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='replace-with-12-plus-chars' ADMIN_DISPLAY_NAME='Admin' npm run auth:create-admin
+```
+
+Frontend production API base:
+
+```bash
+VITE_API_BASE_URL=
+```
+
+This keeps browser calls same-origin, for example:
+
+```text
+https://scoreboard.ob-gate.com/api/v1/auth/login
+```
+
+Do not point the browser at a separate API subdomain for production login. Keep `DEV_AUTH_ENABLED=false`, leave `AUTH_COOKIE_DOMAIN` empty for a host-only cookie, and do not change login, score, correction, or assignment writes to `GET`.
+
+Realtime projection sync:
+
+```bash
+SOCKET_IO_ENABLED=true
+REALTIME_SOCKET_TRANSPORTS=polling
+VITE_REALTIME_SOCKET_TRANSPORTS=polling
+POLLING_INTERVAL_PUBLIC_FAST_MS=300
+POLLING_INTERVAL_OPERATOR_FAST_MS=300
+VITE_POLLING_INTERVAL_PUBLIC_FAST_MS=300
+VITE_POLLING_INTERVAL_OPERATOR_FAST_MS=300
+```
+
+Use `REALTIME_SOCKET_TRANSPORTS=polling` and `VITE_REALTIME_SOCKET_TRANSPORTS=polling` on Plesk/Passenger deployments where WebSocket upgrades reconnect repeatedly. Socket.IO remains notification-only; REST polling remains the fallback and match events remain the source of truth.
+
+See [docs/deployment/SINGLE_NODE_APP_PLESK.md](docs/deployment/SINGLE_NODE_APP_PLESK.md) for the complete single-app Plesk configuration and environment example.
+
+Plesk SPA route troubleshooting:
+
+- Direct browser routes such as `/login`, `/admin/matches`, `/operator/matches`, and `/public/scoreboard/:matchId` must fall back to `apps/web/dist/index.html`.
+- If `/login` returns Fastify JSON such as `Route GET:/login not found`, the request is reaching the Node app without an SPA fallback or Plesk document routing is not serving the Vite build.
+- In single-app mode, Fastify handles `/assets/*`, `/api/*`, and browser route fallback. API misses stay JSON and browser routes serve the Vite index shell.
+
+Health check:
+
+```text
+https://scoreboard.ob-gate.com/api/v1/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "service": "basket-scoreboard-api"
+}
+```
+
 ## Next Safe Step
 
-Phase 2 should add the MariaDB-backed match event store MVP:
+Phase 2 should wire the MariaDB-backed match event store MVP into the API:
 
 - `match_streams`
 - append-only `match_events`

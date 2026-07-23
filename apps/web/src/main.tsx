@@ -1,14 +1,12 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-
-function App() {
-  return (
-    <main>
-      <h1>Basketball Scoreboard</h1>
-      <p>Phase 1 foundation shell. Match events will be the source of truth.</p>
-    </main>
-  );
-}
+import App from "./App";
+import "./styles/tokens.css";
+import "./styles/primitives.css";
+import "./styles/live-match-shell.css";
+import "./styles/clock-workspace.css";
+import "./styles/score-workspace.css";
+import "./styles.css";
 
 const rootElement = document.getElementById("root");
 

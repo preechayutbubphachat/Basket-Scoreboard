@@ -1,0 +1,83 @@
+:root {
+  /* Primitive palette */
+  --palette-ink-950: #020617;
+  --palette-ink-900: #080d17;
+  --palette-slate-800: #1e293b;
+  --palette-slate-700: #334155;
+  --palette-slate-500: #64748b;
+  --palette-slate-400: #94a3b8;
+  --palette-slate-300: #cbd5e1;
+  --palette-slate-200: #e2e8f0;
+  --palette-slate-50: #f8fafc;
+  --palette-cyan-300: #67e8f9;
+  --palette-blue-500: #3b82f6;
+  --palette-green-400: #4ade80;
+  --palette-amber-300: #fcd34d;
+  --palette-red-500: #ef4444;
+  --palette-red-600: #dc2626;
+
+  /* Semantic color roles */
+  --color-canvas: var(--palette-ink-950);
+  --color-surface: var(--palette-ink-900);
+  --color-surface-elevated: var(--palette-slate-800);
+  --color-surface-muted: color-mix(in srgb, var(--palette-slate-800) 72%, var(--palette-ink-950));
+  --color-border: color-mix(in srgb, var(--palette-slate-400) 28%, transparent);
+  --color-border-strong: color-mix(in srgb, var(--palette-cyan-300) 52%, transparent);
+  --color-text-primary: var(--palette-slate-50);
+  --color-text-secondary: var(--palette-slate-200);
+  --color-text-muted: var(--palette-slate-400);
+  --color-focus: var(--palette-slate-50);
+  --color-informational: var(--palette-cyan-300);
+  --color-success: var(--palette-green-400);
+  --color-warning: var(--palette-amber-300);
+  --color-danger: var(--palette-red-500);
+  --color-offline: var(--palette-slate-400);
+  --color-home-accent: var(--palette-cyan-300);
+  --color-away-accent: var(--palette-amber-300);
+  --color-score: var(--palette-slate-50);
+  --color-clock-game: var(--palette-cyan-300);
+  --color-clock-shot: var(--palette-red-500);
+
+  /* Typography roles */
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Arial Narrow", "Noto Sans Thai", var(--font-ui);
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --text-label: 0.75rem;
+  --text-body: 0.9375rem;
+  --text-title: 1.25rem;
+  --text-score: clamp(8.2rem, 28vh, 19rem);
+  --text-game-clock: clamp(4.8rem, 16vh, 10.5rem);
+  --text-shot-clock: clamp(3.6rem, 13vh, 8.2rem);
+
+  /* Spacing and geometry */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+  --border-thin: 1px;
+  --border-strong: 2px;
+  --shadow-elevated: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --glow-informational: 0 0 22px rgba(103, 232, 249, 0.18);
+  --glow-danger: 0 0 22px rgba(239, 68, 68, 0.2);
+
+  /* Controls, focus, motion, and layering */
+  --control-height-compact: 32px;
+  --control-height-default: 40px;
+  --control-height-large: 48px;
+  --focus-outline-width: 3px;
+  --focus-outline-offset: 3px;
+  --focus-separation-halo: 0 0 0 2px var(--palette-ink-950);
+  --motion-fast: 120ms;
+  --motion-normal: 200ms;
+  --motion-scene: 320ms;
+  --z-content: 1;
+  --z-controls: 20;
+  --z-dialog: 100;
+}

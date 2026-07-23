@@ -5,10 +5,12 @@ coverage/
 .vite/
 .turbo/
 *.tsbuildinfo
+.serena/
 
 .env
 .env.*
 !.env.example
+!apps/web/.env.production
 
 npm-debug.log*
 yarn-debug.log*

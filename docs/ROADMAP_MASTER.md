@@ -1,0 +1,1912 @@
+# Basketball Scoreboard & Tournament Management
+
+## Linear Roadmap Master
+
+Status: authoritative delivery roadmap
+
+Baseline recorded: 2026-07-16
+
+Fresh-session entrypoint: this file
+
+## 1. Authority And Purpose
+
+This document is the current source of truth for delivery order. Older roadmap, phase, slice, and release documents remain historical evidence and must not be deleted or rewritten to manufacture a new history.
+
+- No top-level milestone may be skipped.
+- Exactly one top-level milestone may be active at a time.
+- Sub-slices are allowed only inside the current milestone and only when discovered risk justifies them.
+- Visual completion does not equal production completion.
+- Fixture completion does not equal backend integration.
+- Integration does not equal production deployment.
+- A production status requires owner/deployment evidence, not a local build or merged commit.
+
+## 2. Mandatory Startup Protocol
+
+Every task must read, in order:
+
+1. `AGENTS.md`
+2. `docs/ROADMAP_MASTER.md`
+3. `README.md`
+4. `docs/product/PROJECT_BRIEF.md`
+5. `docs/ui/UI_DASHBOARDS.md`
+6. `docs/architecture/EVENT_MODEL.md`
+7. `docs/security/USER_ROLES_AND_PERMISSIONS.md`
+8. `docs/api/API_CONTRACTS.md`
+
+Then read milestone-specific architecture, rule, API/socket, database, UI, quality, and deployment files. Before editing, verify the branch, `main`, `origin/main`, working-tree cleanliness, current milestone, approved slice, and file allowlist.
+
+## 3. Baselines
+
+```text
+Pre-RM-02-I repository main baseline:
+84c1b92f4a333f3a76636bc6bca84f5ce721395e
+
+Pre-RM-02-I origin/main baseline:
+84c1b92f4a333f3a76636bc6bca84f5ce721395e
+
+Post-RM-02-I main/origin target:
+this RM-02 integration governance commit (`docs(roadmap): record rm02 integration gate`)
+
+Previous proven production before RM-02:
+50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8
+
+Owner-approved production Git target:
+d6183f783a017f7547dc9bd34d2e39f484be3b57
+
+Application-equivalent RM-02 integration state:
+5d2553aa1fc4a81e68feab4b847e1e97647a7644
+
+Production deployment status:
+PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+```
+
+Canonical visual-target directory (local evidence only; assets are not committed):
+
+```text
+C:\2025\web-69\BasketBallScoreBoard2026\web_ScoreBoard\UI-design
+```
+
+The directory contains the 15 expected targets plus one additional discovered target, `Main Live Scoreboard Dashboard.png`. See `docs/ui/UI_DESIGN_INVENTORY.md`.
+
+## 4. Status Vocabulary
+
+Use only these status values:
+
+| Status | Definition |
+|---|---|
+| `PENDING` | Not started; a prior top-level milestone is active or required. |
+| `CURRENT` | The only active top-level milestone. |
+| `DISCOVERY COMPLETE` | Discovery, evidence, risks, and contracts are documented; implementation has not been claimed. |
+| `IMPLEMENTATION COMPLETE` | Approved implementation is complete locally and focused checks pass; integration is not yet claimed. |
+| `INTEGRATED` | Approved commit is on `main` and `origin/main`; production is not implied. |
+| `READY FOR PRODUCTION` | Integrated and all approved pre-production gates passed; owner deployment is pending. |
+| `PRODUCTION COMPLETE` | Deployment and required production verification are proven. |
+| `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` | Production verification passed except for a documented, non-safety-critical observation that could not be exercised. |
+| `BLOCKED` | Work cannot proceed without resolving an explicit technical, evidence, access, or baseline blocker. |
+| `NEEDS PRODUCT DECISION` | Product-owner policy or behavior decision is required before implementation. |
+| `NEEDS SOURCE` | Governing basketball/tournament source is missing; official-rule automation must not be invented. |
+
+## 5. Linear Top-Level Roadmap
+
+| ID | Milestone | Status |
+|---|---|---|
+| RM-00 | Accessibility Integration Baseline | `INTEGRATED` |
+| RM-01 | Shared Design System & Application Shell | `INTEGRATED` |
+| RM-02 | Public Scoreboard Visual Parity Closure | `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION` |
+| RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
+| RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
+| RM-05 | Score Control Dashboard | `INTEGRATED` |
+| RM-06 | Foul Control Dashboard | `CURRENT` |
+| RM-07 | Timeout Dashboard | `PENDING` |
+| RM-08 | Lineup / Roster Dashboard | `PENDING` |
+| RM-09 | Match Pairing Dashboard | `PENDING` |
+| RM-10 | Court Operations Dashboard | `PENDING` |
+| RM-11 | Match Summary Dashboard | `PENDING` |
+| RM-12 | Historical Replay Dashboard | `PENDING` |
+| RM-13 | Admin Tournament Dashboard | `PENDING` |
+| RM-14 | Rule Profile Dashboard | `PENDING` |
+| RM-15 | Audit Log Dashboard | `PENDING` |
+| RM-16 | Public Schedule Dashboard | `PENDING` |
+| RM-17 | Public Standings Dashboard | `PENDING` |
+| RM-18 | Full-System UI, Security, Realtime & Production Closure | `PENDING` |
+
+Current milestone slice state:
+
+```text
+RM-00 = INTEGRATED
+RM-01 = INTEGRATED
+RM-02 = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+RM-02-D1 = DISCOVERY COMPLETE
+RM-02-P1 = IMPLEMENTATION COMPLETE
+RM-02-P2 = IMPLEMENTATION COMPLETE
+RM-02-P3 = IMPLEMENTATION COMPLETE
+RM-02-P4 = IMPLEMENTATION COMPLETE
+RM-02-P5-F1 = IMPLEMENTATION COMPLETE
+RM-02-P5 = IMPLEMENTATION COMPLETE
+RM-02-I = INTEGRATED
+RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+RM-03 = INTEGRATED
+RM-03-D1 = DISCOVERY COMPLETE
+RM-03-P1 = IMPLEMENTATION COMPLETE
+RM-03-P2 = IMPLEMENTATION COMPLETE
+RM-03-P2-F1 = IMPLEMENTATION COMPLETE
+RM-03-P3 = IMPLEMENTATION COMPLETE
+RM-03-P4 = IMPLEMENTATION COMPLETE
+RM-03-P5 = REGRESSION CLOSURE COMPLETE
+RM-03-P5-F1 = IMPLEMENTATION COMPLETE
+RM-03-P5 DB VERIFICATION LIMITATION = RESOLVED
+RM-03-P5-F1 DB COVERAGE = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
+DB COVERAGE GAP = CLOSED
+DB ENVIRONMENT / EXECUTION GATE = CLOSED
+DB AUTHORIZATION CLOSURE GATE = CLOSED
+RM-03-I = INTEGRATED
+RM-04 = INTEGRATED
+RM-04-D1 = DISCOVERY COMPLETE
+RM-04-P1 = IMPLEMENTATION COMPLETE
+RM-04-P2 = IMPLEMENTATION COMPLETE
+RM-04-P3 = IMPLEMENTATION COMPLETE
+RM-04-P4 = IMPLEMENTATION COMPLETE
+RM-04-P5 = REGRESSION CLOSURE COMPLETE
+RM-04-I = INTEGRATED
+RM-05 = INTEGRATED
+RM-05-D1 = DISCOVERY COMPLETE
+RM-05-P1 = IMPLEMENTATION COMPLETE
+RM-05-P2 = IMPLEMENTATION COMPLETE
+RM-05-P3 = IMPLEMENTATION COMPLETE
+RM-05-P4 = IMPLEMENTATION COMPLETE
+RM-05-P5 = REGRESSION CLOSURE COMPLETE
+RM-05-I = INTEGRATED
+RM-06 = CURRENT
+RM-06-D1 = DISCOVERY COMPLETE
+RM-06-P1 = IMPLEMENTATION COMPLETE
+RM-06-P2 = IMPLEMENTATION COMPLETE
+RM-06-P3 = IMPLEMENTATION COMPLETE
+RM-06-P4 = IMPLEMENTATION COMPLETE
+RM-06 later slices and integration = PENDING (NOT AUTHORIZED)
+RM-07 through RM-18 = PENDING
+Next safe step: decision/authorization gate for remaining RM-06 work or integration; do not advance automatically
+```
+
+## 6. Straight-Line Diagram
+
+```text
+RM-00
+  ↓
+RM-01
+  ↓
+RM-02
+  ↓
+RM-03
+  ↓
+RM-04
+  ↓
+RM-05
+  ↓
+RM-06
+  ↓
+RM-07
+  ↓
+RM-08
+  ↓
+RM-09
+  ↓
+RM-10
+  ↓
+RM-11
+  ↓
+RM-12
+  ↓
+RM-13
+  ↓
+RM-14
+  ↓
+RM-15
+  ↓
+RM-16
+  ↓
+RM-17
+  ↓
+RM-18
+```
+
+There is no parallel top-level path.
+
+## 7. Milestone Requirements
+
+### RM-00 - Accessibility Integration Baseline
+
+- Objective: integrate the approved public-display focus and keyboard baseline without changing domain behavior.
+- Visual target: shared public controls across `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
+- Intended roles: public display viewers and keyboard users.
+- Current implementation state: `INTEGRATED` at `4811444d11bfa2458dc2cd1c3266b716efe29a1a`; production deployment is unproven.
+- Domain/API/socket/database dependencies: none added; existing public read models only.
+- Security: public controls stay read-only; no auth/session/private metadata exposure.
+- Acceptance: native controls, visible focus, forced-colors fallback, reduced motion, and hidden-control focus recovery.
+- Tests: focused keyboard/focus contract plus existing public-display regressions.
+- Production gate: owner build/restart and read-only browser verification.
+- Known blockers: deployment evidence for `4811444d...` is absent.
+- Source requirements: WCAG behavior; no basketball rule dependency.
+- Next milestone: RM-01.
+
+### RM-01 - Shared Design System & Application Shell
+
+- Objective: establish shared tokens and reusable public/authenticated shell primitives for all target dashboards without redesigning domain behavior.
+- Visual target: common language across all files in `UI-design`.
+- Intended roles: public, operator, scorer, timer, shot-clock operator, referee, and admin.
+- Current implementation state: `INTEGRATED`; RM-01-D1 is `DISCOVERY COMPLETE`; RM-01-P1, RM-01-P1-I, RM-01-P2, RM-01-P2-I, RM-01-P3, RM-01-P3-I, RM-01-P4, RM-01-P4-I, and RM-01-P5 are `INTEGRATED`. Next safe step: RM-02 - Public Scoreboard Visual Parity Closure.
+- Domain dependencies: none; presentation only in the first slices.
+- API/socket dependencies: preserve current clients and contracts; no transport redesign.
+- Database dependencies: none.
+- Security: public and authenticated shells remain separate; no protected metadata in public composition.
+- Acceptance: token primitives reduce duplication without changing routes, commands, projections, or authorization.
+- Tests: token/component contracts, auth-boundary regressions, responsive and focus verification.
+- Production gate: integrate all RM-01 slices, complete local browser matrix, then owner-approved deployment gate.
+- Known blockers: the remaining product decisions listed in RM-01-D1.
+- Source requirements: existing design targets and WCAG; no new rule logic.
+- Next milestone: RM-02.
+
+### RM-02 - Public Scoreboard Visual Parity Closure
+
+- Objective: close public scoreboard parity while preserving public-safe real data.
+- Visual target: `PublicScoreBoard.png` and `Main Live Scoreboard Dashboard.png`.
+- Intended roles: public viewers and kiosk/display operators with no command authority.
+- Current implementation state: `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION`; RM-02-D1 is `DISCOVERY COMPLETE`; RM-02-P1 through RM-02-P5 and RM-02-P5-F1 are `IMPLEMENTATION COMPLETE`; RM-02-I is `INTEGRATED`; RM-02-P passed with the documented non-safety-critical observation limitations.
+- Domain dependencies: existing public live scoreboard and final-summary projections only.
+- API/socket dependencies: existing public HTTP/socket allowlist mappers; no private sequence or event payloads.
+- Database dependencies: existing derived projections; no mutable source-of-truth table.
+- Security: no auth bootstrap on public routes; read-only; sanitized DOM and payloads.
+- Acceptance: accessible zoom fallback, broadcast rail polish, local FINAL_SUMMARY browser fixture, and production closure.
+- Tests: public DOM/metadata/ticker/auth-boundary/final-summary tests plus five public broadcast viewports.
+- Production gate: owner deployment and read-only route/DOM/console verification.
+- Known blockers: none for RM-02 closure. Native fullscreen automation, native zoom automation, disposable database coverage, and a naturally available production FINAL_SUMMARY remain documented observation limitations.
+- Source requirements: no new basketball automation.
+- Next milestone: RM-03.
+
+### RM-03 - Unified LiveMatchShell Foundation
+
+- Objective: create one authenticated live-match shell shared by clock, score, foul, and timeout dashboards.
+- Visual target: Clock, Score, Foul, Timeout, and shared header regions in operator targets.
+- Intended roles: assigned scorer, assistant scorer, timer, shot-clock operator, match operator, and admin.
+- Current implementation state: `CURRENT`; RM-03-D1 is `DISCOVERY COMPLETE`; RM-03-P1, RM-03-P2-F1, RM-03-P2, and RM-03-P3 are `IMPLEMENTATION COMPLETE`; RM-03-P4 is `PENDING (AUTHORIZED TO BEGIN)`. The representative Score route now adopts the presentation-only shell while retaining route-owned fetch, realtime, polling, reconnect, and command behavior. Remaining live operator presentation adoption and shared realtime ownership are pending.
+- Domain dependencies: existing live projections and command-state models.
+- API/socket dependencies: protected REST plus current reconnect/polling/socket notification behavior.
+- Database dependencies: active `match_officials` assignment and existing projections/event stream.
+- Security: server-derived permissions and active assignment checks on every protected request.
+- Acceptance: shared hydration, stale/offline/permission states, navigation, and role-aware command surfaces without client-trusted permission.
+- Tests: cross-role route, reconnect, assignment revocation, command denial, and shell rendering.
+- Production gate: DB-backed authorization verification before deployment.
+- Known blockers: RM-03-P3 is complete and RM-03-P4 may begin. DB-backed active-assignment authorization evidence remains mandatory before RM-03 integration/deployment closure.
+- Source requirements: none for shell mechanics.
+- Next milestone: RM-04.
+
+### RM-04 - Clock & Shot Clock Dashboard
+
+- Objective: deliver the production-grade clock and shot-clock operator dashboard.
+- Visual target: `Clock and Shot Clock Dashboard.png`.
+- Intended roles: TIMER, SHOT_CLOCK_OPERATOR, MATCH_OPERATOR, ADMIN.
+- Current implementation state: `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`, RM-04-P1 through RM-04-P4 are `IMPLEMENTATION COMPLETE`, RM-04-P5 is `REGRESSION CLOSURE COMPLETE`, and RM-04-I is `PENDING (AUTHORIZED TO BEGIN)`. `/operator/matches/:matchId/clock` and `OperatorClockPage` retain route-owned data, realtime, command, and interpolation behavior.
+- Domain dependencies: server-authoritative deadline clocks; period lifecycle; correction events.
+- API/socket dependencies: existing protected clock/shot-clock commands, expected sequence, idempotency, reconnect.
+- Database dependencies: append-only events and clock projections.
+- Security: frontend command availability is derived from server-calculated `EffectiveMatchAccess`; TIMER game clock only and SHOT_CLOCK_OPERATOR shot reset/set only. `GAME_CLOCK_SET` and `SHOT_CLOCK_SET` remain domain-capability commands but are correction-style actions requiring confirmation and a non-empty server-validated reason.
+- Acceptance: large clocks; safe game start/stop/set and operator-selected shot reset 14/24/set controls; confirmation and stale-state handling. Shot-clock start/stop and period/lifecycle controls are outside RM-04 command scope.
+- Tests: role matrix, duplicate/concurrent commands, reconnect drift, correction, and responsive operator matrix.
+- Production gate: DB-backed command-denial/no-event proof and owner deployment.
+- Known blockers: none for the supported manual command surface. Automatic/context-aware shot-clock reset decisions remain deferred.
+- Source requirements: `[NEEDS SOURCE] Missing governing document: authoritative FIBA shot-clock operational rules required for automatic/context-aware 14/24 reset decisions.` Manual Reset 14 / Reset 24 remains an explicit operator-selected command and does not claim automatic FIBA reset selection.
+- Next milestone: RM-05.
+
+### RM-05 - Score Control Dashboard
+
+- Objective: deliver fast, safe, production-grade score operation.
+- Visual target: `UI Score Control Dashboard.png`.
+- Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
+- Current implementation state: `INTEGRATED`; RM-05-D1 is `DISCOVERY COMPLETE`, RM-05-P1 through RM-05-P4 are `IMPLEMENTATION COMPLETE`, RM-05-P5 is `REGRESSION CLOSURE COMPLETE`, and RM-05-I is `INTEGRATED`. `/operator/matches/:matchId/score` and `OperatorScorePage` retain route ownership.
+- Domain dependencies: score events, optional player attribution, correction workflow.
+- API/socket dependencies: protected score commands with server validation, expected sequence, idempotency, reconnect.
+- Database dependencies: append-only events and operator/public projections.
+- Security: active assignment and granular score permission; no direct score mutation.
+- Acceptance: large +1/+2/+3 controls, pending/accepted/rejected/sync states, recent events, correction entry.
+- Tests: authorization, duplicate clicks, stale sequence, concurrency, correction, keyboard, and responsive layouts.
+- Production gate: real DB command and public projection verification.
+- Known blockers: no blocker for the authorized +1/+2/+3 command surface when player attribution remains optional. Any policy that makes attribution mandatory or derives official player scoring semantics requires a separate product decision.
+- Source requirements: score values are domain facts; no invented rule automation.
+- Next milestone: RM-06.
+
+### RM-06 - Foul Control Dashboard
+
+- Objective: deliver player/team foul operation and correction safety.
+- Visual target: `UI Foul Control Dashboard.png`.
+- Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
+- Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
+  `Personal Player Foul Contract and Effective Access Gate` is `IMPLEMENTATION COMPLETE`; RM-06-P2
+  `Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` is `IMPLEMENTATION COMPLETE`; and RM-06-P3
+  `Terminal Status Fail-Closed Guard` is `IMPLEMENTATION COMPLETE`. P3 evidence is Task
+  `TASK-20260722-001-rm06-p3-terminal-status-guard` at verified commit
+  `db9e271b712c311ffba4eedcaba34c7e12b7a6b2`, pushed to `origin/feature/rm06-foul-dashboard`; no PR, main merge,
+  deployment, or production verification is claimed. RM-06-P4 `Foul LiveMatchShell Presentation Adoption` is
+  `IMPLEMENTATION COMPLETE` and verification complete: Task `TASK-20260723-001-rm06-p4-foul-live-shell` is
+  `CLOSED_VERIFIED_PASS` at local application commit `f43d0b59832e6e5a722962c6df5462d830520b0d`. That commit is not pushed;
+  no PR, main integration, deployment, or production verification is claimed. Later RM-06 work and integration remain
+  pending and are not authorized; RM-06 remains `CURRENT`.
+- Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
+- API/socket dependencies: protected foul commands with expected sequence/idempotency.
+- Database dependencies: append-only foul/correction events and projections.
+- Security: active assignment; correction permission remains independent.
+- Acceptance: first slice is limited to player-attributed `PERSONAL` fouls for an active match roster player on the
+  matching team side. One `PLAYER_FOUL_ADDED` increments player count and team count exactly once through projection;
+  do not append an additional `TEAM_FOUL_ADDED`. Count displays are allowed; official derived statuses and warnings
+  requiring new semantics are deferred unless already authoritative server projection fields exist.
+- Tests: P1 must prove unsupported foul types are rejected before append, player foul requires active roster and
+  matching team side, no additional `TEAM_FOUL_ADDED` is appended for a player foul, duplicate and stale commands stay
+  safe, EffectiveMatchAccess fails closed, reconnect refreshes projection and access together, correction eligibility
+  remains exact-target and append-only, and projection/replay clamps counts nonnegative.
+- Production gate: DB-backed role/assignment tests and owner verification.
+- Known blockers: direct team-foul product meaning/causation, special foul count/consequence semantics, foul-out
+  automation, team-penalty automation, overtime carry-forward automation, free throws, and possession consequences.
+- Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
+  coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
+  and fail-closed.
+- Next milestone: RM-07 after RM-06 integration; next safe step is an explicit decision/authorization gate for remaining
+  RM-06 work or integration. Do not advance automatically.
+
+### RM-07 - Timeout Dashboard
+
+- Objective: deliver production timeout operation with rule-aware availability and correction.
+- Visual target: `Timeout Dashboard.png`.
+- Intended roles: MATCH_OPERATOR and ADMIN for timeout/lifecycle commands; other roles only where server policy grants them.
+- Current implementation state: `/operator/matches/:matchId/timeouts` and `OperatorTimeoutPage` exist; full parity is pending.
+- Domain dependencies: timeout projection, lifecycle context, correction events.
+- API/socket dependencies: protected timeout commands with server validation, expected sequence, idempotency.
+- Database dependencies: append-only timeout events and projection.
+- Security: timeout and lifecycle remain limited to MATCH_OPERATOR/ADMIN unless policy changes.
+- Acceptance: quotas, active timeout state, warnings, grant/end/correction flows, no client rule decision.
+- Tests: authorization matrix, unavailable timeout, duplicates, stale state, correction, responsive UI.
+- Production gate: DB-backed command/no-event denial proof and owner verification.
+- Known blockers: detailed live/dead-ball timeout eligibility.
+- Source requirements: `[NEEDS SOURCE]` where official timeout interpretation is not loaded.
+- Next milestone: RM-08.
+
+### RM-08 - Lineup / Roster Dashboard
+
+- Objective: deliver roster readiness, starters, captain, lock, and correction workflows.
+- Visual target: `Lineup Dashboard.png`.
+- Intended roles: admin and authorized assigned scorer/operator.
+- Current implementation state: admin roster and lineup routes/components exist; production-grade visual and permission closure is pending.
+- Domain dependencies: tournament roster, match roster, lineup events/read models, eligibility.
+- API/socket dependencies: existing roster/lineup APIs; protected writes only.
+- Database dependencies: roster tables plus event/audit evidence for match-affecting changes.
+- Security: server validates eligibility, scope, locks, and correction authority.
+- Acceptance: home/away roster panels, starter selection, readiness checklist, lock confirmation, audit-safe correction.
+- Tests: eligibility, lock/revocation, role denial, duplicate actions, responsive table/touch behavior.
+- Production gate: real roster/assignment verification.
+- Known blockers: roster-lock and captain policy decisions.
+- Source requirements: tournament eligibility governing document where required.
+- Next milestone: RM-09.
+
+### RM-09 - Match Pairing Dashboard
+
+- Objective: provide real schedule pairing, readiness, court, official assignment, and guarded admin actions.
+- Visual target: `Match Pairing Dashboard.png`.
+- Intended roles: public viewer, operator, and admin with role-specific surfaces.
+- Current implementation state: tournament schedule and operator match-list routes exist; the complete pairing dashboard route is not implemented.
+- Domain dependencies: tournaments, stages/groups, teams, matches, rosters, officials, courts.
+- API/socket dependencies: schedule reads and protected scheduling/assignment/lifecycle APIs; gaps require discovery.
+- Database dependencies: competition, match, roster, court, and assignment tables.
+- Security: public published rows only; admin writes server-authorized and audited.
+- Acceptance: real pairing rows, filters, readiness, selected-match detail, guarded cancellation/change operations.
+- Tests: publication filtering, role scopes, incomplete data, conflicts, confirmation, responsive layout.
+- Production gate: real tournament data and audit verification.
+- Known blockers: exact pairing/edit/cancel contracts need discovery.
+- Source requirements: tournament scheduling policy.
+- Next milestone: RM-10.
+
+### RM-10 - Court Operations Dashboard
+
+- Objective: provide venue/court readiness, assignment timeline, staff/display health, and safe actions.
+- Visual target: `Court Dashboard.png`.
+- Intended roles: admin, venue manager if approved, match coordinator.
+- Current implementation state: dedicated court dashboard route/component is `NOT IMPLEMENTED`.
+- Domain dependencies: venue, court, schedule, display screens, assignments, readiness.
+- API/socket dependencies: venue/court/readiness/device-health contracts require discovery; no invented endpoint.
+- Database dependencies: existing venue/court schema plus any approved readiness model.
+- Security: protected operational data; public display status must not leak device/session identifiers.
+- Acceptance: real court cards/timeline/readiness, conflicts, safe assignment actions, audit trail.
+- Tests: role denial, conflict states, device/public boundary, responsive tablet layout.
+- Production gate: real multi-court data verification.
+- Known blockers: readiness and device-health contracts.
+- Source requirements: venue operating policy.
+- Next milestone: RM-11.
+
+### RM-11 - Match Summary Dashboard
+
+- Objective: deliver authoritative operator/admin summary and public-safe final result.
+- Visual target: `Match Summary Dashboard.png`.
+- Intended roles: assigned operator, admin, and public viewers for published allowlisted output.
+- Current implementation state: admin/operator summary routes and public FINAL_SUMMARY scene exist; full visual parity and production closure are pending.
+- Domain dependencies: authoritative final outcome, replay-consistent projections, correction state.
+- API/socket dependencies: existing summary/final-summary contracts; public allowlist remains unchanged unless separately approved.
+- Database dependencies: append-only events and rebuildable summary projections.
+- Security: public summary excludes player IDs, audit/correction reasons, sequence, actors, devices, and unpublished data.
+- Acceptance: final score, period breakdown, fouls/timeouts where authorized, official/publication state, guarded actions.
+- Tests: replay/snapshot/correction consistency, public unavailable state, authorization, responsive layout.
+- Production gate: real finalized match read-only verification; no destructive production correction test.
+- Known blockers: publication/lock/reopen policy.
+- Source requirements: official result and tournament publication policy.
+- Next milestone: RM-12.
+
+### RM-12 - Historical Replay Dashboard
+
+- Objective: reconstruct historical match state and correction chains without modifying official state.
+- Visual target: `Replay Dashboard.png`.
+- Intended roles: admin and authorized assigned operators; public only if separately published.
+- Current implementation state: admin/operator replay routes and `MatchReplayPage` exist; target parity is partial.
+- Domain dependencies: ordered event stream, projection replay, correction chain.
+- API/socket dependencies: existing replay reads; no command path from replay.
+- Database dependencies: append-only `match_events` and optional derived snapshots.
+- Security: read-only, scoped RBAC, private actor/audit detail protected.
+- Acceptance: event timeline, state-at-sequence, correction links, step/jump/play controls with no writes.
+- Tests: deterministic reconstruction, original-event preservation, correction chain, scope denial, responsive UI.
+- Production gate: read-only replay of a real match.
+- Known blockers: public replay policy and large-stream performance budget.
+- Source requirements: none beyond event schema.
+- Next milestone: RM-13.
+
+### RM-13 - Admin Tournament Dashboard
+
+- Objective: unify tournament setup, readiness, publishing, access, and audited actions.
+- Visual target: `Admin Tournament Dashboard.png`.
+- Intended roles: ADMIN only, plus future delegated roles only after policy approval.
+- Current implementation state: `/admin`, `/admin/tournaments`, schedule/standings/theme/display-screen pages exist; the visual target is partial.
+- Domain dependencies: tournament/stage/group/team/player/roster/match/court/official/result/rule data.
+- API/socket dependencies: existing admin APIs plus gaps discovered per module; no client-only authority.
+- Database dependencies: competition/auth/display/audit schemas.
+- Security: deny by default, CSRF on writes, confirmation/reason/audit for guarded actions.
+- Acceptance: real overview metrics, operations, modules, role access, publication state, recent audit activity.
+- Tests: admin-only routes, CSRF, permission boundaries, guarded actions, responsive desktop/tablet.
+- Production gate: authorized admin read/write verification using safe fixtures or owner-approved data.
+- Known blockers: delegated admin role policy and missing module contracts.
+- Source requirements: tournament governing documents for advancement/tiebreak actions.
+- Next milestone: RM-14.
+
+### RM-14 - Rule Profile Dashboard
+
+- Objective: manage versioned, source-backed rule profiles without claiming unsupported rules.
+- Visual target: `rule-profiles.png`.
+- Intended roles: ADMIN/rule administrator.
+- Current implementation state: dedicated route/component is `NOT IMPLEMENTED`; rule documents and some contract guidance exist.
+- Domain dependencies: versioned rule profile, source registry, validation status, assignment.
+- API/socket dependencies: rule-profile contracts require implementation/discovery; no socket command authority.
+- Database dependencies: existing rule profile schema if present; verify before implementation.
+- Security: admin-only writes, immutable used versions, confirmation/reason/audit.
+- Acceptance: source status, versioning, validation, assignment warnings, explicit `NEEDS SOURCE` states.
+- Tests: source absence, immutability, authorization, audit, assignment conflict.
+- Production gate: owner-approved governing documents and safe profile assignment test.
+- Known blockers: missing official documents and penalty/tiebreak matrices.
+- Source requirements: official source registry; never infer rules from images.
+- Next milestone: RM-15.
+
+### RM-15 - Audit Log Dashboard
+
+- Objective: provide authorized forensic audit search and correction-chain review.
+- Visual target: `Audit Log Dashboard.png`.
+- Intended roles: ADMIN and narrowly scoped authorized reviewers.
+- Current implementation state: match-scoped admin/operator audit pages exist; global `/admin/audit-logs` dashboard is `NOT IMPLEMENTED`.
+- Domain dependencies: audit logs plus event/correction linkage.
+- API/socket dependencies: protected paginated/filterable audit reads and exports; exact global contracts need discovery.
+- Database dependencies: append-only audit logs and match events.
+- Security: no public exposure; permission-checked export; private actor/device/session data remains protected.
+- Acceptance: filters, severity/status, detail, before/after, correction chain, read-only timeline, audited export.
+- Tests: authorization, filtering, redaction, export permission, tamper/append-only evidence.
+- Production gate: authorized admin read-only verification.
+- Known blockers: global audit/export contract.
+- Source requirements: retention/export policy.
+- Next milestone: RM-16.
+
+### RM-16 - Public Schedule Dashboard
+
+- Objective: deliver a published public schedule using real allowlisted data only.
+- Visual target: `Public Schedule Dashboard.png`.
+- Intended roles: unauthenticated public viewers.
+- Current implementation state: public tournament schedule and SCHEDULE display scene exist; visual parity is partial.
+- Domain dependencies: published tournament/match schedule projection.
+- API/socket dependencies: existing public schedule/display reads; no auth request and no write.
+- Database dependencies: derived published schedule data.
+- Security: exclude draft/cancelled/unknown/incomplete/private operational fields and IDs not in approved public contract.
+- Acceptance: real rows, filters, live/upcoming context, `Time TBD`, `Venue TBD`, safe empty state, no fake scores.
+- Tests: publication/filter/limit, incomplete rows, public metadata allowlist, responsive layout.
+- Production gate: read-only real schedule verification.
+- Known blockers: final public navigation/filter scope.
+- Source requirements: publication policy; no standings/tiebreak inference.
+- Next milestone: RM-17.
+
+### RM-17 - Public Standings Dashboard
+
+- Objective: deliver published standings from a server-derived, source-backed projection.
+- Visual target: `Public Standings Dashboard.png`.
+- Intended roles: unauthenticated public viewers.
+- Current implementation state: `/public/tournaments/:tournamentId/standings` and shared standings components exist; publication and visual closure remain pending.
+- Domain dependencies: finalized/published results and standings projection.
+- API/socket dependencies: public read-only standings contract; no auth request and no command.
+- Database dependencies: derived standings projection rebuilt from authoritative results.
+- Security: no private IDs, sequences, audit/correction metadata, or unpublished results.
+- Acceptance: real ranking/table/form/status data supported by governing rules, safe empty/unavailable states, responsive readability.
+- Tests: publication, correction rebuild, tie ambiguity, public allowlist, responsive layout.
+- Production gate: owner-approved tournament data and read-only verification.
+- Known blockers: tiebreak automation.
+- Source requirements: `[NEEDS SOURCE]` tournament standings and tiebreak governing document.
+- Next milestone: RM-18.
+
+### RM-18 - Full-System UI, Security, Realtime & Production Closure
+
+- Objective: close architecture, event integrity, RBAC, public/private boundaries, realtime, accessibility, production, recovery, and rollback.
+- Visual target: all inventoried dashboards and shared system states.
+- Intended roles: all approved roles and public viewers.
+- Current implementation state: `PENDING`; earlier milestone evidence is prerequisite.
+- Domain dependencies: complete event/replay/correction/tournament behavior from prior milestones.
+- API/socket dependencies: protected/public contracts, one match room, polling fallback, reconnect/catch-up, duplicate/concurrent command handling.
+- Database dependencies: migration integrity, append-only events/audits, rebuildable projections, backup/restore.
+- Security: full RBAC/CSRF/session/public-contract verification; no client-trusted authority.
+- Acceptance: all milestone criteria plus end-to-end match/tournament workflows, accessibility, responsive UI, recovery and rollback.
+- Tests: full regression, DB-backed authorization/event integrity, realtime reconnect, concurrency, security, visual matrix, production smoke.
+- Production gate: approved owner deployment, read-only and safe interactive verification, rollback proof.
+- Known blockers: all unresolved prior milestone limitations and missing governing sources.
+- Source requirements: all official basketball/tournament automation must have loaded governing evidence.
+- Next milestone: none; roadmap closure requires production evidence.
+
+## 8. Historical Roadmap Mapping
+
+Historical identifiers remain evidence and map forward as follows:
+
+| Historical ID | Roadmap mapping |
+|---|---|
+| 24G.3A | RM-02 completed baseline |
+| 24G.3B | RM-02 completed baseline |
+| 24G.3C | RM-02 completed baseline with natural-action observation limitation |
+| 24G.3D-D1 | RM-01/RM-02 design and accessibility evidence |
+| 24G.3D-P1 | RM-00 integrated accessibility baseline |
+| 24G.3D-P2 | RM-02 remaining work |
+| 24G.3D-P3 | RM-02 remaining work |
+| 24G.3D-P4 | RM-02 remaining work |
+| 24H.2B | RM-03 |
+
+Historical phase guidance in `docs/product/PROJECT_BRIEF.md` and screen guidance in `docs/ui/UI_DASHBOARDS.md` remain architectural/product evidence. They do not override this linear delivery order.
+
+## 9. Architecture Invariants
+
+```text
+match_events is append-only
+no UPDATE/DELETE/DROP/TRUNCATE of match_events
+no timer tick events
+no client-authoritative official state
+corrections use compensating events
+one socket room per match
+public clients are read-only
+protected commands require RBAC
+command payloads require server validation
+expected sequence is enforced
+duplicate commands are idempotent
+reconnect hydrates and catches up safely
+audit evidence is preserved
+```
+
+Match events are the source of truth. Projections and snapshots are derived, rebuildable state. Running clocks are calculated from server-authoritative timing data; they are not persisted as per-second events. Rejected commands do not append domain events.
+
+## 10. Public/Private Boundary
+
+Public pages, DOM, HTTP responses, sockets, display models, logs, and error details must not expose:
+
+```text
+actor
+role
+device
+session
+token
+csrf
+commandId
+correlationId
+causationId
+correction reason
+audit metadata
+internal event sequence
+projection sequence
+private player identity outside approved public contracts
+```
+
+Authenticated operator/admin projections may expose only role-authorized operational metadata. UI hiding is not authorization; the server denies by default and rechecks active scope/assignment for protected requests.
+
+## 11. Basketball-Rule Source Policy
+
+Use FIBA as the default only when loaded governing documents support the rule. Images are visual targets, not governing sources.
+
+```text
+[NEEDS SOURCE] Missing governing document:
+FIBA alternating-possession/possession-arrow operational semantics.
+```
+
+Tournament standings and tiebreak automation also require the tournament governing document. Unsupported or ambiguous official-rule behavior must stop at `NEEDS SOURCE`; it must not be inferred from UI examples, general knowledge, or fixture data.
+
+## 12. Delivery Protocol Per Milestone
+
+Every milestone follows:
+
+```text
+D1  Discovery and contract/visual gap audit
+P1  Narrow implementation
+T   Focused and regression testing
+I   Fast-forward integration to main
+V   Local visual/browser verification
+P   Production owner deployment and read-only verification when required
+C   Roadmap status update and closure
+```
+
+Additional sub-slices may be added only when discovery identifies a concrete risk that cannot safely fit the current slice. No sub-slice may bypass the top-level order.
+
+## 13. Visual Evidence Policy
+
+Every UI milestone must compare current output with its matching file in the local `UI-design` directory and provide local browser evidence at relevant viewports.
+
+Minimum public broadcast viewports:
+
+```text
+1920×1080
+1600×900
+1366×768
+1280×720
+1024×576
+```
+
+Minimum operator/admin viewports:
+
+```text
+1920×1080
+1600×900
+1536×1024
+1366×768
+```
+
+Screenshots may be generated for reports but must not be committed unless explicitly approved. Evidence must cover overflow/overlap, text fit, focus, reduced motion, forced colors when relevant, browser console, public metadata safety, and real-data/no-fake-data behavior.
+
+## 14. Deployment Policy
+
+- Codex never performs Plesk owner operations unless explicitly authorized and access is proven.
+- No migration, restart, or production write occurs during visual discovery.
+- Micro-slices are not deployed automatically.
+- Production deployment occurs only at approved milestone gates.
+- After integration approval, the owner receives exact Plesk instructions appropriate to the approved commit.
+- Rollback returns to the last proven production commit, currently `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`, until newer production evidence is recorded.
+- Never use force reset, destructive cleanup, or history rewriting as a deployment shortcut.
+
+## 15. Roadmap Update Rule
+
+Every completed slice must update:
+
+```text
+status
+commit
+parent
+changed files
+tests
+browser evidence
+known limitations
+production status
+next safe step
+```
+
+Roadmap updates must distinguish local implementation, integration, readiness, deployment, and production verification. They must not claim production completion without production evidence.
+
+## 16. Current Evidence And Next Step
+
+RM-01-D1 evidence is recorded in:
+
+- `docs/ui/UI_DESIGN_INVENTORY.md`
+- `docs/ui/RM01_DESIGN_SYSTEM_AUDIT.md`
+
+Current roadmap state after RM-02 production verification closure:
+
+```text
+RM-00 = INTEGRATED
+RM-01 = INTEGRATED
+RM-02 = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+RM-02-D1 = DISCOVERY COMPLETE
+RM-02-P1 = IMPLEMENTATION COMPLETE
+RM-02-P2 = IMPLEMENTATION COMPLETE
+RM-02-P3 = IMPLEMENTATION COMPLETE
+RM-02-P4 = IMPLEMENTATION COMPLETE
+RM-02-P5-F1 = IMPLEMENTATION COMPLETE
+RM-02-P5 = IMPLEMENTATION COMPLETE
+RM-02-I = INTEGRATED
+RM-02-P = PRODUCTION COMPLETE WITH OBSERVATION LIMITATION
+RM-03 = INTEGRATED
+RM-03-D1 = DISCOVERY COMPLETE
+RM-03-P1 = IMPLEMENTATION COMPLETE
+RM-03-P2 = IMPLEMENTATION COMPLETE
+RM-03-P2-F1 = IMPLEMENTATION COMPLETE
+RM-03-P3 = IMPLEMENTATION COMPLETE
+RM-03-P4 = IMPLEMENTATION COMPLETE
+RM-03-P5 = REGRESSION CLOSURE COMPLETE
+RM-03-P5-F1 = VERIFIED AGAINST DISPOSABLE LOCAL DATABASE
+RM-03-I = INTEGRATED
+RM-04 = INTEGRATED
+RM-04-D1 = DISCOVERY COMPLETE
+RM-04-P1 = IMPLEMENTATION COMPLETE
+RM-04-P2 = IMPLEMENTATION COMPLETE
+RM-04-P3 = IMPLEMENTATION COMPLETE
+RM-04-P4 = IMPLEMENTATION COMPLETE
+RM-04-P5 = REGRESSION CLOSURE COMPLETE
+RM-04-I = INTEGRATED
+RM-05 = CURRENT
+RM-05-D1 = DISCOVERY COMPLETE
+RM-05-P1 = IMPLEMENTATION COMPLETE
+RM-05-P2 = IMPLEMENTATION COMPLETE
+RM-05-P3 = IMPLEMENTATION COMPLETE
+RM-05-P4 = IMPLEMENTATION COMPLETE
+RM-05-P5 = REGRESSION CLOSURE COMPLETE
+RM-05-I = PENDING (AUTHORIZED TO BEGIN)
+RM-06 through RM-18 = PENDING
+```
+
+RM-01-P1 integration evidence:
+
+- Branch: `feature/rm01-p1-design-tokens-primitives`.
+- Implementation commit: `bb5e9348b02e9231ef004a078a98a24fd9856279`.
+- Implementation parent: `8ca25cc2fb2bbdcf81fcab4afee919cf6de26386`.
+- Scope: dedicated semantic token and primitive CSS layers; `UiPanel`, `UiBadge`, `UiButton`, and `UiStatusIndicator`; focused component/token/public regression tests; token-equivalent public focus and scoreboard aliases.
+- Production adoption: deferred to RM-01-P1-I because no current production component could be migrated without unnecessary visual risk; primitives were exercised through an external browser fixture and repository tests only.
+- Focused tests: PASS. Integration rerun passed 71 tests across the four changed test files; implementation evidence remains 89 passed across token, primitive, public display, and public auth-boundary suites.
+- Full validation: lint passed; 507 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: Chromium public scoreboard checks passed at 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576; primitive fixture checks passed at those sizes plus 1536x1024. No document overflow, console warning/error, failed resource, or public auth bootstrap request was observed.
+- Visual regression: Arena frame, scoreboard grid, game-clock rectangle, and shot-clock rectangle were unchanged at 1920x1080, 1366x768, and 1024x576. Score bounding-box measurements varied only while the existing score-pulse animation was active; score CSS geometry was not changed and visual inspection remained equivalent.
+- Accessibility: native button activation, disabled/busy states, heading association, visible status labels, focus-visible geometry, forced-colors fallback, and reduced-motion behavior passed.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; exact deterministic score-pixel comparison is not claimed because the existing score-pulse animation changes capture-time bounds.
+- Production status: `NOT DEPLOYED`; last proven production remains unchanged.
+
+RM-01-P2 implementation evidence:
+
+- Branch: `feature/rm01-p2-public-display-shell`.
+- Implementation commit: `c716eace47bf22ecf9165f3e17f2e592bf7e237f`.
+- Parent baseline: `50c0c3223aed9d43bd12f439af570dbe337a70a0`.
+- Scope: extracted `PublicDisplayShell` as a presentation-only boundary for the existing public frame, utility controls, fullscreen boundary, accessibility landmark, and scene content slot; scene models, public API mapping, polling, socket lifecycle, score/clock logic, and scene renderers remain outside the shell.
+- Focused tests: PASS. The six public display, focus, live, recent-action, final-summary, and auth-boundary files passed 54 tests; the final shell/focus rerun passed 9 tests.
+- Full validation: lint passed; 511 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: clean unauthenticated Chromium checks passed for LIVE, BLANK, SCHEDULE, and FINAL_SUMMARY. The LIVE -> BLANK -> SCHEDULE -> LIVE transition replaced scene content without stale ticker, metadata, or score DOM. No console warning/error, failed resource, public auth bootstrap request, or protected write request was observed.
+- Geometry evidence: outer frame, header, scoreboard grid, team panels, central clock panel, game-clock and shot-clock rectangles, ticker, utility controls, and status rail matched the pre-extraction baseline at 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576. Existing score-pulse animation caused capture-time text-box variance only; score containers and all structural geometry were unchanged.
+- Interaction and accessibility: utility tab order and native semantics are unchanged; refresh produced one public scoreboard request; fullscreen still targets `document.documentElement`; the single polite atomic ticker live region appears only for LIVE; focus-visible, forced-colors, and reduced-motion rules remain unchanged.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; exact deterministic score-text pixel comparison is not claimed because the existing score-pulse animation changes capture-time bounds; native fullscreen itself was not entered in headless Chromium, but target/API behavior was verified.
+- Production status: `NOT DEPLOYED`; current main is not claimed as deployed and last proven production remains unchanged.
+
+RM-01-P2-I integration evidence:
+
+- Integration method: fast-forward merge of `feature/rm01-p2-public-display-shell` into `main`; no merge commit, rebase, amend, squash, cherry-pick, reset, or force push.
+- Integrated implementation commit: `c716eace47bf22ecf9165f3e17f2e592bf7e237f`.
+- Implementation parent: `50c0c3223aed9d43bd12f439af570dbe337a70a0`.
+- Focused validation: PASS. `npm test -- tests/web/public-display-shell.test.ts tests/web/public-display-focus-keyboard.test.ts` passed 2 files and 9 tests.
+- Full implementation validation: 511 passed; 23 database-dependent skipped; lint PASS; build PASS; build:single PASS.
+- Scope: Roadmap closure only after integration; no implementation source edit was made during integration closure.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-01-P3 implementation evidence:
+
+- Branch: `feature/rm01-p3-authenticated-dashboard-shell`.
+- Parent baseline: `53358bcb8c529761a6eefa5138f471d557cc816a`.
+- Scope: added a presentation-only `AuthenticatedDashboardShell` with semantic header, named native-link navigation, labelled main content, display-only status/user/action slots, content density modes, and an optional secondary rail. Authentication, route guards, REST/socket authorization, CSRF, logout state, realtime ownership, command logic, and domain data remain outside the shell.
+- Production adoption: limited to the existing read-only `/admin` landing route. Command and socket-heavy operator routes were not migrated; no route path or backend behavior changed.
+- Focused validation: PASS. Authenticated shell, public auth isolation, public shell, and public focus suites passed 4 files and 33 tests.
+- Full validation: lint passed; 517 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: authenticated Chromium checks passed at 1920x1080, 1600x900, 1536x1024, and 1366x768 with one main landmark, no document overflow, no header/content overlap, visible unclipped keyboard focus, and an available secondary rail. The authenticated route retained the existing two `/api/v1/auth/me` requests under React StrictMode. Forced-colors and reduced-motion emulation passed.
+- Public regression: clean public Chromium checks passed for BLANK, SCHEDULE, and LIVE at 1024x576. Public pages rendered only `PublicDisplayShell`, made zero `/api/v1/auth/me` requests, remained overflow-free, kept the safe empty schedule/ticker states, and produced no console warning or error.
+- Bundle evidence: `index-p10hDsOJ.js` 528.06 kB (138.24 kB gzip) and `index-CZPp_Dbb.css` 65.20 kB (13.00 kB gzip). The existing Vite chunk-size warning remains.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; no authenticated command/socket-heavy route was adopted in this foundation slice.
+- Production status: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-01-P3-I integration evidence:
+
+- Integration method: fast-forward merge of `feature/rm01-p3-authenticated-dashboard-shell` into `main`; no merge commit, rebase, amend, squash, cherry-pick, reset, or force push.
+- Implementation commit: `590aa4b380d015bd1fc3d55b4c670d90d7df9126`.
+- Implementation parent: `53358bcb8c529761a6eefa5138f471d557cc816a`.
+- Focused validation: `PASS`.
+- Full validation: 517 passed; 23 DB-dependent skipped; lint `PASS`; build `PASS`; build:single `PASS`.
+- Scope: Roadmap closure only after integration; no implementation source edit was made during integration closure.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-01-P4 implementation evidence:
+
+- Branch: `feature/rm01-p4-status-command-table-primitives`.
+- Parent baseline: `aecdda868589d92f7fe420509c9da9eb98bdab39`.
+- Scope: added presentation-only connection status, command status, command safety panel, data table, and empty-state primitives. Network, socket, authentication, command execution, official rules, and domain calculations remain consumer- or server-owned.
+- Production adoption: limited to the existing read-only `/admin` landing route for authenticated connection context and command-safety guidance. Public routes and command-heavy operator routes were not migrated.
+- Focused validation: `PASS`. Status/command/table primitives, shared primitives, authenticated shell, public shell/focus, and public auth-boundary suites passed 6 files and 79 tests.
+- Full validation: lint passed; 540 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Browser evidence: authenticated Chromium checks passed at 1920x1080, 1600x900, 1536x1024, and 1366x768 with no document overflow, one main landmark, one navigation landmark, visible safety guidance, and unclipped keyboard focus. The public LIVE fixture passed at 1024x576 with no authenticated primitive DOM, no forbidden metadata, no document overflow, and no console warning or error.
+- Public visual regression: score digits remained off-white and non-wrapping; the game clock remained cyan; the shot clock remained red; secondary telemetry and the exact safe ticker empty state remained intact.
+- Accessibility: visible text accompanies semantic status color, live-region behavior is opt-in, loading states expose busy semantics, the table uses native caption/header structure and local keyboard-scroll overflow, focus-visible styling is present, and forced-colors/reduced-motion contracts are covered by focused tests and CSS.
+- Bundle evidence: `index-xvHp0H58.js` 530.76 kB (139.03 kB gzip) and `index-D_HkOqz-.css` 70.10 kB (13.72 kB gzip). The existing Vite chunk-size warning remains.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; forced-colors behavior was verified by CSS contract rather than browser emulation; the local public realtime fixture did not implement Socket.IO and therefore exercised the existing offline polling fallback.
+- Production status: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-01-P4-I integration evidence:
+
+- Implementation commit: `de8c8bad75e0ea35550410b32677f3ac6bae9433`.
+- Implementation parent: `aecdda868589d92f7fe420509c9da9eb98bdab39`.
+- Integration method: fast-forward merge to `main`; no merge commit, rebase, squash, amend, cherry-pick, reset, or force push.
+- Scope: approved implementation integrated unchanged, followed by this Roadmap-only closure commit.
+- Focused validation: `PASS`; `npx vitest run tests/web/status-command-table-primitives.test.ts tests/web/authenticated-dashboard-shell.test.ts tests/web/public-display-shell.test.ts tests/web/public-display-focus-keyboard.test.ts` passed 4 files and 38 tests.
+- Full implementation validation: 540 passed; 23 database-dependent tests skipped; lint `PASS`; build `PASS`; build:single `PASS`.
+- Known limitations: database-backed tests requiring a disposable configured database remained skipped; forced-colors browser emulation remained unavailable.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-01-P5 closure evidence:
+
+- RM-01 baseline final commit: `b2d13621f69b9cc7149a9361af4dc9bbac9fed59`.
+- Visual targets: all 16 local `UI-design` targets were reviewed with Gridgeist. The shared dark operational canvas, surface and border hierarchy, cyan/red operational accents, off-white dominant values, restrained team accents, semantic headers/navigation/context bars, status and command presentation, dense tables, warning panels, secondary rails, strong focus treatment, and public/authenticated layout separation are supported by the RM-01 foundation. Screen-specific parity remains assigned to RM-02 through RM-18.
+- Foundation closure: semantic design tokens; `UiPanel`; `UiBadge`; `UiButton`; `UiStatusIndicator`; `UiConnectionStatus`; `UiCommandStatus`; `UiCommandSafetyPanel`; `UiDataTable`; `UiEmptyState`; `PublicDisplayShell`; and `AuthenticatedDashboardShell` passed responsibility, semantic HTML, responsive, accessibility, public/private, network, socket, and domain-ownership review. No RM-01 source correction was required.
+- Public browser matrix: Chromium passed LIVE at 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576. The exact 1024x576 viewport had no document overflow; scores, game clock, shot clock, ticker, status rail, lower frame, and unclipped 3px focus treatment remained visible. LIVE -> BLANK -> SCHEDULE -> LIVE produced no stale scene content. A local FINAL_SUMMARY unavailable fixture rendered the public-safe unavailable state.
+- Authenticated browser matrix: Chromium passed `/admin` at 1920x1080, 1600x900, 1536x1024, and 1366x768 with one labelled main landmark, named navigation, semantic header, no document horizontal overflow, reachable navigation, visible unclipped focus, readable secondary rail, safe long Thai/English account context, and no layout overlap.
+- Accessibility closure: native control semantics, text-backed statuses, deliberate live regions, semantic caption/header table contracts, local table overflow, 3px focus-visible treatment, runtime forced-colors emulation, and runtime reduced-motion emulation passed. Native fullscreen entry and exit also passed in local Chromium.
+- Public/private and lifecycle closure: public fixture payloads and rendered DOM exposed no actor, role, device, session, token, CSRF, command/correlation/causation IDs, audit/correction metadata, or internal/projection sequence. Public auth requests and protected writes remained zero. RM-01 shells/primitives own no authentication, domain mutation, socket, reconnect, polling, timer, expected-sequence, idempotency, or server-authorization behavior.
+- Browser resources: console errors `0`; console warnings `0`; page errors `0`; failed normal-load resources `0`. Navigation-aborted Socket.IO polling cleanup was observed separately during scene navigation and is not a normal-load resource failure.
+- Focused validation: `PASS`; 12 frontend files and 156 tests passed across tokens, primitives, focus/keyboard, public shell, authenticated shell, status/command/table, public scoreboard, metadata, recent action, auth boundary, final summary, and brand-asset suites.
+- Full validation: lint `PASS`; 540 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-xvHp0H58.js` 530.76 kB (139.03 kB gzip) and `index-D_HkOqz-.css` 70.10 kB (13.72 kB gzip). The existing Vite chunk-size warning remains recorded; code splitting is deferred outside RM-01-P5.
+- Known limitation: 23 database-dependent tests requiring a disposable configured database remained skipped.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`.
+- Timezone formatter: `FOLLOW-UP`.
+- CSP: `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-02-P1 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `84c1b92f4a333f3a76636bc6bca84f5ce721395e`.
+- Strategy: RM-02 uses stacked linear implementation commits on `feature/rm02-public-scoreboard-parity`; integration into `main` occurs only at RM-02-I.
+- Scope: compact-height public-display utility rail positioning and header reservation only. Public API/socket contracts, projection mapping, polling/socket ownership, score/clock typography, normal scoreboard geometry, and scene data remain unchanged.
+- D1 root cause: the three-column grid and document width already shrank without horizontal overflow; the defect was the absolute utility rail extending below the compact header into match metadata.
+- Browser geometry: Chromium passed 1920x1080, 1600x900, 1536x864, 1366x768, 1280x720, 1024x576, and 960x540. Frame, header, metadata, grid, team panels, score containers, game clock, shot clock, ticker, and status rail remained unchanged or subpixel-equivalent at the required normal viewports. At 960x540, `clientWidth` and `scrollWidth` were both 960.
+- Compact controls: the rail fits inside the 46px compact header, does not intersect header title/metadata/badge, scores, game clock, or shot clock, and retains native NORMAL, REFRESH, FULLSCREEN order, four-second auto-hide, focus-within recovery, and an unclipped 3px focus treatment.
+- Accessibility: runtime forced-colors and reduced-motion emulation passed. Unsupported fullscreen omitted only FULLSCREEN while preserving NORMAL and REFRESH. Native browser zoom and fullscreen entry were not automated; the approved equivalent viewport matrix and target/API behavior were verified.
+- Scene and lifecycle evidence: LIVE -> BLANK -> SCHEDULE -> LIVE removed stale LIVE/ticker/metadata content and restored only the correct LIVE scene. The route retained one scene refresh interval and one public-scoreboard polling interval while LIVE, one public socket subscription per LIVE mount, zero public auth requests, and zero protected writes.
+- Public safety: no contract or rendered-model change; public sequence remains hidden, possession remains deferred `[NEEDS SOURCE]`, and the recent-action rail remains one polite atomic sanitized item with no fabricated feed.
+- Focused validation: `PASS`; `tests/web/public-display-focus-keyboard.test.ts` and `tests/web/public-live-scoreboard-display.test.ts` passed 13 tests.
+- Full validation: lint `PASS`; 541 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-DJ2riwX9.js` 530.76 kB (139.03 kB gzip) and `index-Fau7lclG.css` 70.44 kB (13.77 kB gzip). The existing Vite chunk-size warning remains.
+- Browser quality: console errors `0`; console warnings `0`; page errors `0`; failed normal-load resources `0`; public auth requests `0`; protected writes `0`.
+- Gridgeist: `PASS`; the compact rail remains visually secondary, uses safe margins, preserves broadcast readability and spacing rhythm, and introduces no score/clock typography shrink or additional visual noise.
+- Product decision: the recent-action rail remains one atomic sanitized item through RM-02-P1; a multi-item public feed remains deferred pending explicit product approval.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-02-P2 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `407106d052d70355b9a3dca67c93d564de5b1fe2`.
+- Strategy: RM-02 continues as stacked linear implementation commits on `feature/rm02-public-scoreboard-parity`; integration into `main` occurs only at RM-02-I.
+- Scope: presentation-only LIVE scoreboard hierarchy and rail polish. The public round, court, and venue fields now compose as a compact secondary row inside the existing header; absent metadata adds no decorative region; long Thai and English values remain in the DOM and truncate safely without document overflow.
+- Grid recovery: at 1672x941 the main grid moved from y=192.78 to y=149.08, recovering 43.70px and leaving about 1.08px to the measured target y=148. At 1920x1080 it recovered 46.43px, at 1366x768 it recovered 33.25px, and at 1024x576 it recovered 10px while preserving compact-control clearance.
+- Browser geometry: Chromium passed 1672x941, 1920x1080, 1600x900, 1366x768, 1280x720, 1024x576, and 960x540. Frame, integrated metadata, grid, team panels, center panel, ticker, status rail, and utility rail remained inside the document with zero horizontal overflow; utility controls did not intersect metadata or the main grid.
+- Rail hierarchy: the one-item recent-action ticker received restrained contrast improvement and remains one polite atomic sanitized item. The icon-first system rail is more readable at distance while remaining tertiary to score and clocks. No data field or scene text changed.
+- P1 and P3 boundaries: NORMAL, REFRESH, FULLSCREEN order, four-second auto-hide, focus-within reveal, 3px focus treatment, forced-colors, and reduced-motion behavior passed. Score, game-clock, shot-clock, and team-name scale variables plus scoreboard column ratios were not changed; intentional parity tuning remains RM-02-P3.
+- Color and public safety: scores remain fixed off-white, the game clock remains cyan, and shot-clock warning remains red. Public sequence and private operational metadata remain absent; possession remains deferred `[NEEDS SOURCE]`; public auth requests and protected writes were both zero.
+- Scene and lifecycle evidence: LIVE -> BLANK -> SCHEDULE -> LIVE rendered only scene-appropriate DOM with no stale ticker, metadata, or score content. Public polling and socket ownership were unchanged; normal-load console errors, warnings, page errors, and failed resources were zero.
+- Focused validation: `PASS`; all eight `tests/web/public-*.test.ts` files passed 72 tests. The P2 metadata/header and rail contract subset passed 21 tests after the expected test-first failure.
+- Full validation: lint `PASS`; 544 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-DfBwPxGE.js` 530.87 kB (139.06 kB gzip) and `index-DUHkgTaz.css` 70.65 kB (13.78 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS`; scoreboard dominance, compact header composition, metadata readability, restrained rail weight, utility-control subordination, distant readability, spacing rhythm, compact-height safety, and broadcast composition passed review.
+- Product decision: the recent-action rail remains one atomic sanitized item through RM-02-P2; a multi-item public feed remains deferred pending explicit product approval.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-02-P3 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `dc4b2626f6b149d1601205f4a1b29204107446b6`.
+- Strategy: RM-02 remains a stacked linear implementation branch; integration into `main` occurs only at RM-02-I. P4/P5/I were not started.
+- Scope: presentation-only LIVE scoreboard geometry and typography plus focused visual-contract tests. No component data model, REST/socket contract, auth behavior, public mapper, event logic, dependency, or scene payload changed.
+- Target geometry at 1672x941: the main grid remained y=149.08 and moved from 613.64px to 585.64px high. HOME/CENTER/AWAY became 597.25/364.34/597.25px, compared with the approximate 600/364/600px target. The shot-clock block became x=654.81, y=495.47, w=362.34, h=238.25, within the source-image measurement tolerance of the approximate x=654, y=496, w=364, h=237 target.
+- Hierarchy: team names moved to y=222.66-263.45; score regions aligned at y=315.31-535.50; metric bands became 136.02px high; game-clock and shot-clock tracks were rebalanced without changing authoritative labels or values. Score digits remain fixed off-white and tabular; game clock remains cyan; shot-clock warning remains red.
+- Responsive browser evidence: Chromium passed 1672x941, 1920x1080, 1600x900, 1366x768, 1280x720, 1024x576, and 960x540 with document horizontal and vertical overflow both zero. HOME/AWAY widths and score baselines remained symmetric at every viewport.
+- Stress evidence: short, long English, long Thai, and mixed Thai/English team names stayed bounded to two lines; scores 0, 9, 99, and 100 stayed visible and non-wrapping; game clocks 10:00, 2:14, and 0:09 fit; shot clocks 24, 14, 9, and 0 fit; REG P4 and OT P1 retained authoritative formatter output.
+- P1/P2 regression: compact NORMAL, REFRESH, FULLSCREEN semantics/order, four-second auto-hide, focus recovery, 3px focus treatment, reduced-motion behavior, integrated metadata hierarchy, ticker hierarchy, and secondary system rail remained intact. Header and metadata geometry remained unchanged; only the intended main-grid and lower-rail height allocation changed.
+- Scene and lifecycle evidence: LIVE -> BLANK -> SCHEDULE -> LIVE rendered only scene-appropriate DOM with no stale score, metadata, or ticker. Existing polling/socket ownership remained unchanged; no new socket, subscription, interval, or layout observer was added.
+- Public safety: public sequence remains hidden, possession remains deferred `[NEEDS SOURCE]`, and the recent-action rail remains one polite atomic sanitized item. Browser public auth requests and protected writes were both zero; console warnings/errors and failed normal-load resources were zero.
+- Focused validation: `PASS`; six public display, live-scoreboard, metadata, recent-action, focus, and auth-boundary files passed 66 tests. The final P3 visual-contract file passed 11 tests after the expected test-first failure.
+- Full validation: lint `PASS`; 546 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS`; column balance, score dominance, clock hierarchy, baseline alignment, long-name handling, metric density, distant readability, responsive scaling, compact safety, and broadcast composition passed review.
+- Product decision: the recent-action rail remains one atomic sanitized item through RM-02-P3; a multi-item public feed remains deferred pending explicit product approval.
+- Controlled historical rebuild: `DEFERRED / NOT RUN`. Branch cleanup: `NOT APPLICABLE` while RM-02 remains current. Timezone formatter and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`.
+
+RM-02-P4 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `1a1ab21f18e3385858d53514e0d072a841be2131`; implementation commit: this commit (`test(display): add final summary browser fixtures`).
+- Scope: test-only FINAL_SUMMARY public-display fixture coverage plus this Roadmap evidence. No application source, API/socket contract, public mapper, route, package, migration, event, timer, authentication, or production-data behavior changed.
+- Fixture mechanism: Playwright request interception supplies deterministic public `GET /api/v1/public/display/:screenSlug` responses to the existing generic public route. No test/debug query parameter, production fixture path, serialized initial state, or source-side fixture branch was added.
+- Contract evidence: the authoritative finalized fixture rendered match `final-summary-fixture`, FINAL status, Bangkok Thunder 88, Chiang Mai Falcons 84, HOME winner, authoritative winner display name, tournament/round/location labels, and completion time. Nullable winner and optional metadata rendered without `null`, invented winner/location/time copy, or frontend winner calculation. The unavailable fixture rendered only `FINAL RESULT`, `RESULT NOT AVAILABLE`, and `Final summary is not available.` with no score, winner, or internal reason.
+- Browser matrix: Chromium `149.0.7827.55` passed finalized and unavailable states at 1920x1080, 1600x900, 1366x768, 1280x720, 1024x576, and 960x540. Long English and Thai fixtures passed at 960x540 with bounded two-line clipping, visible off-white non-wrapping scores, and content contained inside the 16:9 frame. Nullable, forced-colors, and reduced-motion checks also passed.
+- Lifecycle and public safety: FINAL_SUMMARY retained exactly one scene-refresh interval, created zero public socket connections, made zero auth requests and zero protected writes, exposed no authenticated-shell DOM or focus targets, and rendered no LIVE scoreboard, ticker, or metadata DOM. Fixture payloads and rendered DOM exposed no role, device, session, token, CSRF, command/correlation/causation IDs, audit/correction details, or projection/event sequence internals.
+- LIVE regression: 1672x941, 1024x576, and 960x540 retained scores 88/84 in fixed off-white, cyan game clock, red shot clock, round/court/venue metadata, NORMAL/REFRESH/FULLSCREEN controls, focus rule, and `No public play updates available.`. No FINAL_SUMMARY change was made to LIVE, BLANK, or SCHEDULE behavior.
+- Browser quality: console warnings/errors `0`; page errors `0`; FINAL_SUMMARY failed resources `0`. Three expected `net::ERR_ABORTED` Socket.IO long-poll requests occurred only when the LIVE regression fixture navigated between viewports; they are explicit fixture navigation teardown, not normal-load resource failures.
+- Focused validation: `PASS`; seven public display, FINAL_SUMMARY, LIVE, metadata, recent-action, focus, shell, and auth-boundary files passed 74 tests. The FINAL_SUMMARY file passed 8 tests.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests because no disposable `DATABASE_*` environment was available (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS`; finalized, unavailable, compact, long-English, and long-Thai captures preserved scoreboard/result hierarchy, off-white score dominance, safe spacing, bounded text, contrast, broadcast composition, and kiosk readability without production CSS changes.
+- Product decision: the recent-action rail remains one atomic sanitized item; a multi-item public feed remains deferred pending explicit product approval. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup is `NOT APPLICABLE` while RM-02 remains current; timezone formatting and CSP remain `FOLLOW-UP`.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-02-P5 and RM-02-I were not started.
+
+RM-02-P5-F1 implementation evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `6611869169693a94a993aecbbeb051e7df09e42c`; implementation commit: this commit (`test(display): stabilize final summary browser lifecycle`).
+- Classification: `EXPECTED NAVIGATION TEARDOWN`. Detailed request tracing reproduced an old LIVE scoreboard polling `GET` ending as `net::ERR_ABORTED` only after the fixture intentionally began navigation to the next public scene. The application did not abort a steady-state public request.
+- Harness fix: fixture navigation now waits for the exact public scoreboard `200` response and response completion before LIVE assertions. Expected teardown accounting is narrowly allowlisted by completed LIVE assertions, exact GET path, exact `fetch` or Socket.IO `xhr` resource type, exact `net::ERR_ABORTED`, and a known scene-navigation transition. Other request failures remain test failures; no broad suppression or arbitrary timeout was added.
+- Scene lifecycle: deterministic `LIVE -> BLANK -> SCHEDULE -> LIVE_RETURN -> FINAL_SUMMARY -> UNAVAILABLE` navigation passed with stale scoreboard, ticker, metadata, final-score, and winner DOM excluded from subsequent scenes. FINAL_SUMMARY authoritative, nullable, and unavailable behavior remained intact.
+- Repeat evidence: three consecutive browser runs passed all six lifecycle scenes with auth requests `0`, protected writes `0`, console warnings/errors `0`, page errors `0`, and unexpected failed requests `0`. Expected LIVE HTTP navigation teardowns ranged from `0` to `2`; expected Socket.IO navigation teardowns were `5` per run.
+- LIVE regression: 1672x941, 1024x576, and 960x540 retained scores 88/84 in fixed off-white, cyan game clock, red shot clock, public metadata, controls, ticker empty state, and zero horizontal overflow. P1-P3 browser geometry and visual contracts remained intact.
+- Focused validation: `PASS`; eight public display, FINAL_SUMMARY, LIVE, metadata, recent-action, shell, focus, and auth-boundary files passed 77 tests.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests because no disposable `DATABASE_*` environment was available (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Scope: browser fixture lifecycle and Roadmap evidence only. No application source, API/socket contract, public mapper, route, dependency, migration, event-store, timer, authentication, production data, or public metadata behavior changed.
+- Gridgeist: `PASS`; the P1-P3 responsive smoke retained arena hierarchy, score dominance, clock contrast, ticker treatment, controls, and kiosk containment without production UI changes.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-02-P5 and RM-02-I remain pending. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup is `NOT APPLICABLE`; timezone formatting and CSP remain `FOLLOW-UP`.
+
+RM-02-P5 local closure evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; parent baseline: `afbc5dd06e8541006706fdfc5ee72f25802914a8`; closure commit: this commit (`docs(roadmap): record rm02 local scoreboard closure`). The fresh closure matrix passed P1 `407106d052d70355b9a3dca67c93d564de5b1fe2`, P2 `dc4b2626f6b149d1601205f4a1b29204107446b6`, P3 `1a1ab21f18e3385858d53514e0d072a841be2131`, P4 `6611869169693a94a993aecbbeb051e7df09e42c`, and P5-F1 `afbc5dd06e8541006706fdfc5ee72f25802914a8`.
+- Gridgeist parity: `PASS WITH LIMITATION`. At 1672x941 the header, integrated metadata, 597/364/597px column balance, 585.64px panel height, team-name hierarchy, off-white score dominance, cyan game clock, red shot-clock block, metrics, single ticker, tertiary status rail, hidden utilities, safe margins, and distant readability remained coherent against `PublicScoreBoard.png`. Remaining differences are `DATA-DEPENDENT` for optional logos/labels, `INTENTIONAL PRODUCT EVOLUTION` for the sanitized atomic ticker and secondary telemetry, `FUTURE PRODUCT DECISION` for a multi-item public feed, and `[NEEDS SOURCE]` for possession and bonus semantics; no `RM-02 DEFECT` remained.
+- Viewport matrix: fresh isolated-page Chromium checks passed 1672x941, 1920x1080, 1600x900, 1536x864, 1366x768, 1280x720, 1024x576, and 960x540. At every size `clientWidth` equaled `scrollWidth`; frame, header, metadata, grid, three panels, both scores, game clock, shot clock, ticker, status rail, and utilities stayed inside the document.
+- Zoom-equivalent matrix: 1920x1080, 1536x864, 1280x720, and 960x540 represented 100%, 125%, 150%, and 200% viewport equivalents with zero horizontal overflow and reachable scores, clocks, ticker, status rail, controls, and visible focus. This is viewport equivalence, not native browser zoom automation.
+- Stress matrix: scores 0, 9, 27, 99, and 100; game clocks 10:00, 4:13, 0:09, and 0:00; shot clocks 24, 14, 9, and 0; short English, long English, real long Thai, and mixed Thai/English names and metadata; and REGULATION/OVERTIME labels all passed at 960x540 with zero horizontal overflow, contained values, aligned score tracks, and safe wrapping/clamping.
+- Color policy: computed score color remained `rgb(248, 250, 252)` with tabular non-wrapping digits; game clock remained `rgb(103, 232, 249)`; shot clock remained `rgb(239, 68, 68)`. Team colors remained accents, borders, glows, and background tints only.
+- P1 closure: NORMAL, REFRESH, FULLSCREEN order and native semantics passed; Refresh issued one public scoreboard GET; mouse reveal, four-second auto-hide after focus leaves the rail, focus-within retention, compact containment, 3px focus, forced-colors, reduced-motion, and 960x540 overflow checks passed. Native fullscreen entry was not exercised in headless Chromium.
+- P2/P3 closure: integrated metadata omitted no-data rails, long English/Thai values stayed bounded, grid placement remained near the target top, columns stayed symmetric, panel height and score/clock hierarchy remained target-like, metrics stayed visible, REG/OT formatting passed, and the public ticker remained one polite atomic sanitized item. Possession remains excluded and bonus semantics remain `[NEEDS SOURCE]`.
+- P4/P5-F1 closure: three consecutive FINAL_SUMMARY browser runs passed the 12-case finalized/unavailable matrix, nullable FINAL, long English, long Thai, forced-colors, reduced-motion, and `LIVE -> BLANK -> SCHEDULE -> LIVE_RETURN -> FINAL_SUMMARY -> UNAVAILABLE` isolation. Unexpected normal-load failures, console warnings/errors, page errors, auth requests, and protected writes were all `0` in every run. Narrow expected public scoreboard HTTP navigation teardowns were `1`, `0`, and `0`; Socket.IO navigation teardowns were `5` per run; static/resource failures were `0`.
+- Public safety and realtime: public HTTP fixtures, public socket mapper contracts, rendered DOM, and fixture DOM remained clean for actor/role/device/session/token/CSRF, command/correlation/causation IDs, reasons, audit/correction details, and internal/projection sequence fields. The branch added zero socket, subscription, reconnect, polling, or timer-tick ownership; protected realtime and server-authoritative behavior remain unchanged.
+- Accessibility: one semantic main, ordered headings and team labels, visible 3px focus, forced-colors fallback, reduced-motion behavior, one `role=status` / `aria-live=polite` / `aria-atomic=true` ticker, non-live clocks, text-backed status, unclipped compact focus, and meaningful FINAL/UNAVAILABLE text passed. Native fullscreen and native zoom automation remain documented limitations.
+- Focused validation: `PASS`; eight public display, LIVE, FINAL_SUMMARY, metadata, recent-action, focus, shell, brand, and auth-boundary files passed 77 tests.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests because no disposable `DATABASE_*` environment was available (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Guard result: the working tree was clean before this Roadmap-only write. The RM-02 branch delta contains no production fixture route, new public endpoint, broad failure suppression, fetch mutation, socket emission/ownership, private sequence exposure, historical `match_events` mutation, mutable scoreboard-state table, timer-tick event, dependency, or production-data change.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. Recent action remains one atomic sanitized item and a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains `NOT APPLICABLE` until integration; timezone formatting and CSP remain `FOLLOW-UP`.
+
+Next safe step:
+
+```text
+RM-03-D1 - Unified LiveMatchShell discovery and contract/visual gap audit
+```
+
+RM-02-I integration evidence:
+
+- Branch: `feature/rm02-public-scoreboard-parity`; approved P5 closure: `4d85ce6067d1bb9cc3f95ab3e47c4a02d77dc8a7`; integration governance commit: this commit (`docs(roadmap): record rm02 integration gate`).
+- Commit chain: the branch is a six-commit linear descendant of `84c1b92f4a333f3a76636bc6bca84f5ce721395e`, containing P1 `407106d052d70355b9a3dca67c93d564de5b1fe2`, P2 `dc4b2626f6b149d1601205f4a1b29204107446b6`, P3 `1a1ab21f18e3385858d53514e0d072a841be2131`, P4 `6611869169693a94a993aecbbeb051e7df09e42c`, P5-F1 `afbc5dd06e8541006706fdfc5ee72f25802914a8`, and P5 closure `4d85ce6067d1bb9cc3f95ab3e47c4a02d77dc8a7`; no merge or unrelated commit was present.
+- Scope audit: eight files were approved across presentation-only LIVE scoreboard hierarchy/geometry, focused public visual and accessibility tests, deterministic FINAL_SUMMARY browser fixtures, lifecycle classification, and Roadmap evidence. No backend, API/socket contract, public mapper, auth/RBAC/CSRF, migration, dependency, deployment configuration, event-store, or production-data file changed.
+- Architecture and security: event sourcing, append-only `match_events`, compensating correction behavior, server authority, public allowlist mapping, route-owned polling/socket behavior, and read-only public access remain unchanged. No mutable scoreboard-state table, timer-tick event, production fixture route, application fixture flag, public sequence, or private operational metadata was added.
+- F1 guard: expected `net::ERR_ABORTED` teardown remains narrowly classified only after completed LIVE assertions, for the exact public scoreboard GET or Socket.IO polling path, exact resource type, and a known scene navigation. Every other failed request remains a test failure.
+- Focused validation: `PASS`; eight public brand, display shell, focus/keyboard, LIVE, metadata, recent-action, FINAL_SUMMARY, and auth-boundary files passed 77 tests.
+- Browser integration smoke: `PASS`; Chromium `149.0.7827.55` passed finalized/unavailable FINAL_SUMMARY, LIVE at 1672x941, 1024x576, and 960x540, and the LIVE -> BLANK -> SCHEDULE -> LIVE_RETURN -> FINAL_SUMMARY -> UNAVAILABLE lifecycle. Horizontal overflow, auth requests, protected writes, console warnings/errors, page errors, and unexpected failed resources were all `0`. Scores remained `rgb(248, 250, 252)`, game clock `rgb(103, 232, 249)`, shot clock `rgb(239, 68, 68)`, and the ticker remained one sanitized atomic empty state.
+- Full validation: lint `PASS`; 549 tests passed and 23 database-dependent tests skipped; `npm run test:db` passed 2 source-guard tests and skipped 18 database-dependent tests (`DB_DEPENDENT_TESTS_UNAVAILABLE`); `npm run build` and `npm run build:single` passed.
+- Bundle evidence: `index-CwWsRoZM.js` 530.87 kB (139.06 kB gzip) and `index-D6Sb-nSC.css` 71.12 kB (13.87 kB gzip). The existing Vite chunk-size warning remains.
+- Gridgeist: `PASS WITH LIMITATION`; parity, hierarchy, responsive containment, zoom-equivalent viewports, public safety, and scene isolation passed. Native fullscreen and native browser zoom were not automated.
+- Deferred policy: the recent-action rail remains one atomic sanitized item; a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; timezone formatting and CSP remain `FOLLOW-UP`. Possession and bonus automation remain excluded pending governing sources.
+- Integration method: approved fast-forward only; no squash, rebase, cherry-pick, merge commit, reset, or force push. Branch cleanup was not run and remains an owner follow-up after integration.
+- Production: `NOT DEPLOYED / NOT PROVEN`; last proven production remains `50f9b5ae7e3b7ee86e12f71fa37a4e98f7338ee8`. RM-03 remains `PENDING` until the RM-02 owner deployment and read-only production verification gate is completed.
+
+RM-02-P production closure evidence:
+
+- Owner checkpoint: the owner-operated coherent redeployment/restart checkpoint was completed before this read-only rerun. Codex performed no deployment, restart, production authentication, migration, historical rebuild, scene mutation, scoreboard command, correction, or production-data mutation.
+- Asset coherence: production root HTML directly referenced `index-CwWsRoZM.js`, `index-D6Sb-nSC.css`, and `scoreboard-favicon-BUI4TAzY.svg`; every reference returned HTTP 200 with the expected JavaScript, CSS, or SVG content type and the same `Thu, 16 Jul 2026 11:24:01 GMT` Last-Modified value. Classification: `COHERENT DEPLOYED ASSET SET`.
+- Corrected favicon evidence: production `scoreboard-favicon-BUI4TAzY.svg` is the 563-byte LF Git blob with SHA-256 `e394f4536664a2b294d368d63d4fccfdbcc07430953b0ca9ae6b71bd16a594bf`. Windows local `scoreboard-favicon-CIGaN-da.svg` is the same source normalized to 571-byte CRLF by `core.autocrlf=true`. The filename difference is platform-dependent content hashing, not an old or mixed deployment.
+- Deployed-build evidence: root, health, public display shell, and public display API returned HTTP 200; production LIVE behavior matched the integrated application state. Classification: `DEPLOYED BUILD BEHAVIOR VERIFIED`; content-hashed asset names are not treated as independent exact-SHA provenance.
+- Public scene: `court-1-main` remained naturally `LIVE_SCOREBOARD` for public-safe match `93bd90bd-040d-48f5-bb9c-1354d6e80077`. No production scene was changed and no fixture/debug route or query parameter was used.
+- Browser matrix: isolated Chromium checks passed 1920x1080, 1366x768, 1024x576, and 960x540. At every viewport document client width equaled scroll width and client height equaled scroll height; frame, scores, game clock, shot clock, ticker, metadata, compact status rail, and utility controls remained visible and contained.
+- Visual policy: both scores remained fixed off-white `rgb(248, 250, 252)` with non-wrapping digits; the game clock remained cyan `rgb(103, 232, 249)`; the shot clock remained red `rgb(239, 68, 68)`; team colors remained panel borders, gradients, and tints only. The recent-action rail remained exactly one polite atomic sanitized item with `No public play updates available.`, no marquee, and no rotation animation.
+- Public safety: public API, rendered DOM, and 20 captured Socket.IO response bodies exposed none of actor/role/device/session/token/CSRF, command/correlation/causation IDs, reasons, audit/correction details, expected/internal/projection sequence fields, or authenticated-shell DOM. Public auth requests and protected writes were both `0`.
+- Realtime: each isolated viewport produced one public Socket.IO handshake and the expected `match:join` with `PUBLIC_SCOREBOARD`; outgoing command-like events, authenticated channels, forbidden outgoing metadata, duplicate ownership, and abnormal reconnect loops were `0`.
+- Browser quality: console warnings/errors, page errors, failed steady-state requests, auth requests, and protected writes were all `0` at all four viewports. No navigation teardown was needed for the isolated checks.
+- Accessibility: NORMAL, REFRESH, FULLSCREEN retained native focus order; each received a visible solid 3px focus outline; focus-within revealed the utility rail; metadata, scores, clocks, ticker, and text-backed system status remained readable. Native fullscreen was not exercised, and native zoom remains represented by the accepted equivalent viewport evidence.
+- Scene scope: production naturally exposed LIVE only. FINAL_SUMMARY production behavior was not manufactured and remains covered by the accepted local P4 finalized/unavailable browser matrix.
+- Decision: `PRODUCTION VERIFIED WITH LIMITATION`; canonical Roadmap state is `PRODUCTION COMPLETE WITH OBSERVATION LIMITATION`. Disposable DB coverage unavailable, native fullscreen not automated, native zoom represented by equivalent viewports, and no naturally available production FINAL_SUMMARY are accepted non-safety-critical observation limitations.
+- Deferred policy: the recent-action rail remains one atomic sanitized item and a multi-item feed remains deferred. Controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup was not run and remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`. Possession remains excluded pending the missing FIBA alternating-possession/possession-arrow governing source.
+- Roadmap transition: RM-02 is production complete with the observations above. RM-03 is now `CURRENT`, but no RM-03 work began in this task. The exact next safe gate is RM-03-D1 discovery and contract/visual gap audit.
+
+RM-03-D1 discovery closure evidence:
+
+- Decision: `READY WITH ARCHITECTURE DECISIONS`; the read-only discovery audited all 16 visual targets, authenticated/operator routes, shell primitives, RBAC, realtime, command, event/projection, responsive, accessibility, and public/private ownership boundaries without changing source, tests, configuration, Git history, or production.
+- Composition: `LiveMatchShell` is a specialized authenticated live-match composition inside `AuthenticatedDashboardShell`; the authenticated dashboard shell remains the top-level shell and the final composition retains one semantic `main` landmark.
+- Ownership: RM-03-P1 is presentation-only and introduces no realtime provider. Fetching, socket creation, room subscription, polling, reconnect, resync, clock interpolation, command execution, and authoritative domain state remain route, consumer, provider, or backend owned.
+- Authorization: the server remains authoritative. Client roles are presentation hints only, and future role-aware navigation must derive from server-returned effective permissions and active assignments rather than client role assumptions.
+- Integration gate: DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remain required before RM-03 integration or deployment closure; this evidence does not block presentation-only RM-03-P1.
+- Scope boundary: RM-04 through RM-18 remain `PENDING`; RM-03-P1 must not adopt production routes or implement clock, score, foul, timeout, lineup, pairing, court, or later milestone behavior.
+- Deferred policy remains unchanged: the recent-action multi-item feed is `DEFERRED`; controlled historical rebuild is `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
+- Rule boundary remains unchanged: `[NEEDS SOURCE] Missing governing document: FIBA alternating-possession/possession-arrow operational semantics.` No possession, bonus, standings, or tiebreak behavior may be inferred from visual targets.
+- Authorization: RM-03-P1 is `PENDING (AUTHORIZED TO BEGIN)`.
+- Next safe step: `RM-03-P1 - LiveMatchShell Contract and Presentation Component`.
+
+RM-03-P1 implementation evidence:
+
+- Branch: `feature/rm03-live-match-shell`; parent baseline: `1f763d896c6bf39111338264be61cd06b9d38c46`.
+- Scope: added a presentation-only `LiveMatchShell` contract and component for match context, local navigation, canonical connection/command status, safety guidance, primary content, optional secondary rail, and explicit ready/degraded/offline/read-only presentation states. No production route adopted the shell.
+- Ownership boundary: fetching, protected REST, socket creation, room subscription, polling, reconnect, resync, clock interpolation, command execution, authorization, and authoritative domain state remain outside the component. Public display composition and contracts are unchanged.
+- Focused validation: `PASS`; six shell, primitive, authenticated-shell, public-shell, and auth-boundary files passed 91 tests, including 17 focused LiveMatchShell tests.
+- Full validation: lint passed; 566 tests passed and 23 database-dependent tests skipped; `npm run build` and `npm run build:single` passed. `npm run test:db` exited successfully with 2 source-guard tests passed and 18 database-dependent tests skipped because a disposable database environment was unavailable.
+- Browser and responsive evidence: Chromium passed 30 state/viewport combinations covering ready, degraded, offline, read-only, long English/Thai names, rail/no-rail, and 1920x1080, 1600x900, 1536x1024, 1366x768, 1280x720, and 1024x768. There was no horizontal overflow, console/page error, or failed request; one main landmark, named navigation, 44px targets, 3px focus, forced-colors, reduced-motion, and safe rail stacking passed.
+- Guard evidence: source-only ownership scans found no fetch, API client, socket, room subscription, polling/timer, command sequencing, timer-tick event, public route, or public display adoption. Repository event-store guards found no mutable scoreboard/display-state table or historical `match_events` mutation pattern.
+- Visual review: Gridgeist `PASS`; dense match context, stable hierarchy, bounded multilingual team names, explicit status hierarchy, responsive rail placement, and compact navigation containment meet the accepted RM-03-D1 presentation contract.
+- Known limitation: DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remains unavailable and mandatory before RM-03 integration or deployment closure. This presentation-only P1 is not deployed or production-proven.
+- Roadmap transition: RM-03-P1 is `IMPLEMENTATION COMPLETE`; subsequent authorization-input audit evidence supersedes the earlier P2 authorization recorded at P1 closure. RM-03 remains `CURRENT`; RM-03-I and RM-04 through RM-18 remain unchanged.
+- Next safe step at P1 closure was RM-03-P2; the governance reconciliation below records the blocking contract gap discovered before P2 implementation.
+
+RM-03-P2-G1 governance reconciliation evidence:
+
+- Decision: `GOVERNANCE_BLOCKER_RECORD_ALIGNED`; RM-03-P2 is blocked because existing protected responses do not expose server-calculated per-match effective navigation/access capabilities.
+- Available inputs: `/api/v1/auth/me` returns global permissions and active match assignments; `/api/v1/operator/matches` returns match presentation data; protected projections return authoritative match, period, and finality data; backend `requireMatchPermission` remains the canonical match-scoped authorization authority.
+- Missing contract: no existing protected response returns per-match `effectivePermissions`, `effectiveAccess`, `allowedCapabilities`, or an equivalent server-calculated capability decision.
+- Security decision: client role, global permission arrays alone, frontend route visibility, and client-side assignment-role interpretation are not authorization authority and must not be used to reproduce backend match-scoped decisions.
+- Corrective slice: RM-03-P2-F1 - `Server-Authoritative Effective Match Access Contract` is `PENDING (AUTHORIZED TO BEGIN)`. It may expose one protected, read-only, server-calculated per-match capability contract by reusing canonical backend authorization logic.
+- Corrective boundaries: RM-03-P2-F1 introduces no client-authoritative permission calculation, public exposure, event/projection mutation, realtime provider or behavior change, mutable access cache, database migration, or schema change.
+- Realtime ownership: existing route-owned socket, polling, reconnect, resync, clock interpolation, and command ownership remain unchanged; F1 addresses authorization contract sufficiency only.
+- Closure gate: DB-backed authorization evidence remains mandatory before RM-03 integration/deployment, including canonical Admin policy, assigned Referee/Scorer, Viewer/unauthorized denial, revoked assignment, cross-match denial, TIMER and SHOT_CLOCK isolation, and proof that denial produces no event/projection mutation. This evidence is not yet claimed.
+- Deferred policy: the recent-action multi-item feed remains `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
+- Rule boundary: `[NEEDS SOURCE] Missing governing document: FIBA alternating-possession/possession-arrow operational semantics.` Possession and bonus semantics remain excluded.
+- Roadmap transition: RM-03-P2 is `BLOCKED BY AUTHORITATIVE ACCESS CONTRACT GAP`; RM-03-P2-F1 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03-P3 is `PENDING (NOT AUTHORIZED)`; RM-04 through RM-18 remain `PENDING`.
+- Next safe step at governance reconciliation: `RM-03-P2-F1 - Server-Authoritative Effective Match Access Contract`.
+
+RM-03-P2-F1 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P2-F1`; the protected `GET /api/v1/matches/:matchId/effective-access` contract is server-calculated, match-scoped, deny-by-default, read-only, and active-assignment aware.
+- Authorization architecture: the canonical backend authorization decision was extracted into a shared evaluator used by both `requireMatchPermission` and the effective-access service. Client role, permission arrays, assignment role, and capability claims are not authorization authority.
+- Capability contract: match read, score, foul, game clock, shot clock, timeout, lifecycle, correction request/apply/reject, and audit read remain separately mapped to their canonical permissions. Game-clock and shot-clock capabilities remain isolated.
+- Safety evidence: the endpoint is authenticated and protected, preserves existing inaccessible-match behavior, returns an explicit allowlist only, and exposes no assignment row, session, token, CSRF, command, sequence, audit, correction-reason, or evaluator metadata.
+- Boundary evidence: no public route/socket contract, event-store/projection write, command dispatch, realtime ownership, polling, reconnect, resync, clock interpolation, migration, schema, or mutable capability cache changed.
+- Validation: focused authorization suites passed 21 tests with 2 existing environment-gated skips; lint passed; the full suite passed 576 tests with 24 skips; both production builds passed. `npm run test:db` passed 2 source guards while 19 DB-dependent tests were skipped because disposable `DATABASE_*` was unavailable (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Closure limitation: DB-backed canonical Admin, assigned Referee/Scorer, Viewer denial, revocation, cross-match, TIMER/SHOT_CLOCK isolation, and no-event/no-projection-mutation evidence remains mandatory before RM-03 integration/deployment. The committed DB test covers the endpoint behavior when a disposable database becomes available.
+- Deferred policy remains unchanged: the recent-action multi-item feed is `DEFERRED`; controlled historical rebuild is `DEFERRED / NOT RUN`; timezone formatting and CSP remain `FOLLOW-UP`.
+- Roadmap transition: RM-03-P2-F1 is `IMPLEMENTATION COMPLETE`; RM-03-P2 is `PENDING (AUTHORIZED TO RESUME)`; RM-03-P3 is `PENDING (NOT AUTHORIZED)`; RM-04 through RM-18 remain `PENDING`.
+- Next safe step: `RM-03-P2 - Shared Match Context / Navigation Adapter - RERUN`.
+
+RM-03-P2 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P2`; the shared match-context and navigation adapters are pure, deterministic presentation transforms and reuse the committed server-calculated `EffectiveMatchAccess` contract.
+- Context ownership: match ID, team display names, match status, tournament/court labels, and authoritative period/finality presentation are supplied by existing protected server-returned match summaries/projections or route context. Missing optional metadata is omitted safely; FINAL/FINISHED authoritative status produces read-only presentation without score, clock, period, or route inference.
+- Navigation mapping: Score, Fouls, Timeout, Lifecycle, and Audit use their direct capabilities; Clock is available for either independently authorized game-clock or shot-clock control; Corrections uses the existing correction-request route requirement; Summary and Replay use match-read. Stable ordering and current-item presentation are deterministic.
+- Authorization boundary: client role, global permissions, assignment rows/roles, route visibility, and current view never grant navigation. Missing access, zero capabilities, unauthorized/unknown current views, and match-ID mismatch fail closed without synthesized links.
+- Ownership boundary: adapters perform no fetch/API call, hydration, storage, socket, polling, reconnect, resync, clock interpolation, command execution, event/projection mutation, public coupling, or production route adoption. `App.tsx`, backend/API contracts, migrations, and public surfaces remain unchanged.
+- Browser evidence: local Chromium at 1366x768 and 1024x768 passed full, partial, zero-navigation, long Thai/English, missing-metadata, and read-only states with zero document overflow, correct current navigation, one main landmark, 44px targets, 3px focus, and zero console warnings/errors, page errors, or failed resources.
+- Validation: focused adapter/shell/auth compatibility suites passed 50 tests; lint passed; the full suite passed 593 tests with 24 environment-gated skips; both production builds passed with the existing 530.87 kB chunk-size warning. `npm run test:db` passed 2 source guards while 19 DB-dependent tests were skipped (`DB_DEPENDENT_TESTS_UNAVAILABLE`).
+- Gridgeist: `PASS`; match context hierarchy, full/partial/zero navigation clarity, long labels, focus/touch targets, and responsive containment remain coherent without visual redesign.
+- Closure limitation: DB-backed canonical Admin, assigned Referee/Scorer, Viewer denial, revocation, cross-match, TIMER/SHOT_CLOCK isolation, and denied-request no-event/no-projection-mutation evidence remains mandatory before RM-03 integration/deployment.
+- Carried-forward observations: RM-02 production observation limitations remain unchanged; recent-action multi-item feed remains `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; branch cleanup remains an owner follow-up; timezone formatting and CSP remain `FOLLOW-UP`.
+- Roadmap transition: RM-03-P2 is `IMPLEMENTATION COMPLETE`; RM-03-P3 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03 is not integrated; RM-04 through RM-18 remain `PENDING`.
+- Next safe step: `RM-03-P3 - Representative Score Route Adoption`.
+
+RM-03-P3 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P3`; the representative `/operator/matches/:matchId/score` route composes `AuthenticatedDashboardShell -> LiveMatchShell -> Score workspace` with exactly one `main` landmark.
+- Presentation inputs: the route uses the pure RM-03-P2 match-context adapter and builds live navigation only from the canonical server-calculated `EffectiveMatchAccess` response. Missing, mismatched, denied, not-found, and failed access hydration leaves navigation empty; role, global permission, and assignment claims are not navigation authority.
+- Ownership: `OperatorScorePage` retains protected projection and roster hydration, the existing public-notification realtime hook, one fallback polling interval, reconnect refresh, score command construction, projection-derived `expectedSeq`, API-client command/correlation identifiers, pending/success/rejection/conflict handling, and authoritative refresh. `LiveMatchShell` and the P2 adapters own no fetch, socket, polling, command, retry, or authorization behavior.
+- Scope and isolation: only Score adopted the shell. Fouls, Clock, Timeout, Lifecycle, Corrections, Summary, Replay, Audit, public display, and public scoreboard composition remain unchanged. Sequence and command internals are not rendered in Score shell/navigation.
+- Validation: focused P3, shell, adapter, effective-access, score, realtime, auth, and public-isolation suites passed 236 tests across 9 files. Full validation passed lint, 597 tests with 24 DB-dependent skips, production build, and single-app build. Browser verification passed 27 Score-shell cases at 1366x768, 1280x720, and 1024x768 with no horizontal overflow, duplicate main landmark, console warning/error, page error, or failed resource; 3px focus, forced-colors, reduced-motion, partial/zero navigation, connection states, command states, long labels, and FINAL read-only behavior passed.
+- Limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; `npm run test:db` passed 2 source guards and skipped 19 tests because no disposable `DATABASE_*` environment was available. DB-backed active-assignment authorization, revocation, cross-match denial, and denied-command no-event/no-projection-change evidence remain mandatory before RM-03 integration or deployment.
+- Roadmap transition: RM-03-P3 is `IMPLEMENTATION COMPLETE`; RM-03-P4 - `Remaining Live Operator Presentation Adoption` is `PENDING (AUTHORIZED TO BEGIN)` for the remaining Roadmap-authorized live operator presentation routes, including Foul, Clock, and Timeout. RM-03 is not integrated.
+- Next safe step: `RM-03-P4 - Remaining Live Operator Presentation Adoption`.
+
+RM-03-P4 implementation evidence:
+
+- Decision: `READY TO CLOSE RM-03-P4`; the Roadmap-authorized Foul, Clock, and Timeout operator routes now compose
+  `AuthenticatedDashboardShell -> LiveMatchShell -> existing feature workspace` with exactly one `main` landmark.
+- Presentation inputs: every adopted route uses the pure RM-03-P2 match-context and navigation adapters. Navigation
+  derives only from the canonical server-calculated `EffectiveMatchAccess`; missing, mismatched, or failed access
+  hydration fails closed to an empty navigation set without becoming command authorization.
+- Ownership: each route retains its protected projection hydration, public-notification realtime hook, single polling
+  interval, reconnect refresh, feature commands, projection-derived `expectedSeq`, API-client identifiers, conflict
+  refresh, and pending/error handling. Clock retains `useLiveClockNow` interpolation and reconciliation in the route.
+  LiveMatchShell and presentation adapters own no fetch, socket, polling, command, retry, or interpolation behavior.
+- Scope and isolation: Lifecycle and later operator routes remain outside P4. No backend, API, socket, event, database,
+  public-display contract, or future RM-04 through RM-07 feature-dashboard behavior changed. Sequence internals were
+  removed from the adopted route DOM.
+- Validation: focused shell, adapter, effective-access, auth, realtime, and public-isolation coverage passed 189 tests.
+  The full suite passed 603 tests with 24 environment-gated skips; lint and both production builds passed. Local
+  Chromium passed 81 route/state/viewport combinations at 1366x768, 1280x720, and 1024x768 with no horizontal
+  overflow, duplicate main landmark, console warning/error, page error, or failed resource; 3px focus, forced-colors,
+  reduced-motion, long labels, partial/zero navigation, command states, connection states, and FINAL read-only passed.
+- Limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; `npm run test:db` passed 2 source guards and skipped 19 tests because no
+  disposable `DATABASE_*` environment was available. DB-backed active-assignment authorization, revocation,
+  cross-match denial, TIMER/SHOT_CLOCK isolation, and denied-command no-event/no-projection-change evidence remain
+  mandatory before RM-03 integration or deployment.
+- Roadmap transition: RM-03-P4 is `IMPLEMENTATION COMPLETE`; RM-03-P5 is `PENDING (AUTHORIZED TO BEGIN)`; RM-03 remains
+  `CURRENT` and is not integrated. RM-04 through RM-18 remain `PENDING`.
+- Next safe step: `RM-03-P5 - Realtime / RBAC / Accessibility Regression Closure`.
+
+RM-03-P5 regression closure evidence:
+
+- Decision: `READY TO CLOSE RM-03-P5 WITH DB GATE OPEN`; all non-DB realtime, RBAC, accessibility, concurrency,
+  public/private, and route-adoption regression gates passed without changing production source, backend contracts,
+  sockets, persistence, event semantics, dependencies, or production state.
+- Ownership invariants: Score, Fouls, Clock, and Timeouts each retain exactly one route-owned realtime hook and one
+  polling interval. Routes retain projection/effective-access hydration, reconnect refresh, commands,
+  projection-derived `expectedSeq`, and conflict handling. Clock alone retains interpolation. LiveMatchShell and P2
+  adapters remain presentation-only and own no fetch, socket, polling, command, sequence, or clock behavior.
+- Authorization: EffectiveMatchAccess remains server-calculated and navigation-only. Missing/mismatched access and
+  failed hydration fail closed without role, global-permission, assignment-role, or route-visibility fallback.
+  Backend middleware remains authoritative for every protected request and command.
+- Regression validation: 21 focused files passed 296 tests with 2 environment-gated skips. The full suite passed 610
+  tests with 24 environment-gated skips; lint and both production builds passed. Public socket, correction, replay,
+  lifecycle/overtime, idempotency, stale-sequence, auth/CSRF, and public-isolation regressions remained green.
+- Browser evidence: local test-only authenticated fixtures passed 144 combinations covering Score, Fouls, Clock, and
+  Timeouts at 1920x1080, 1366x768, 1280x720, and 1024x768 across full/partial/zero navigation, ready/degraded/offline,
+  command pending/rejection/conflict, FINAL/read-only, and long multilingual labels. Horizontal overflow, duplicate
+  main landmarks, console warnings/errors, page errors, and failed resources were zero; 44px targets, 3px focus,
+  forced-colors, and reduced-motion passed.
+- DB limitation: `DB_DEPENDENT_TESTS_UNAVAILABLE`; no disposable `DATABASE_*` environment was present. `npm run
+  test:db` passed 2 source guards and skipped 19 DB-dependent tests. Therefore canonical Admin, assigned
+  Referee/Scorer, Viewer denial, revocation/inactivation, cross-match denial, TIMER/SHOT_CLOCK isolation, and
+  denial-without-event/projection-mutation are not claimed as executed DB evidence.
+- Gate status: `DB AUTHORIZATION CLOSURE GATE = OPEN`; RM-03 integration/deployment readiness is `NO`. RM-03-I remains
+  unauthorized and RM-03 is not integrated.
+- Roadmap transition: RM-03-P5 is `REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION`; RM-03-I is blocked on
+  the DB authorization closure gate. RM-04 through RM-18 remain `PENDING`.
+- Next safe step: provide disposable non-production `DATABASE_*` and run the committed RM-03 DB authorization closure
+  suite. Do not begin RM-03-I until that evidence passes and governance explicitly authorizes integration.
+
+RM-03 DB coverage gap governance reconciliation:
+
+- Decision: `READY_TO_RECORD_RM03_DB_COVERAGE_CORRECTIVE_SLICE`; the DB authorization closure gate remains `OPEN`
+  and RM-03-I remains blocked and unauthorized.
+- Environment blocker: required `DATABASE_*` values are missing and no disposable non-production database has been
+  confirmed. No database connection or verification run is authorized until disposability is proven.
+- Coverage gap: committed DB-backed verification is missing direct Admin effective-access behavior, assigned Referee
+  behavior, and explicit inactive-assignment behavior. These cases are not claimed as passed.
+- Corrective slice: `RM-03-P5-F1 - DB Authorization Coverage Completion` is `PENDING (AUTHORIZED TO BEGIN)`.
+- Corrective scope: add DB-backed tests only for canonical existing Admin effective access, assigned Referee access,
+  and explicit inactive-assignment denial. No production-source change is expected. Tests must not introduce an
+  Admin role bypass, duplicate authorization engine, client-authoritative RBAC, or weakened assertions.
+- Defect boundary: if the missing tests prove a real application-source defect, stop and require a separately
+  authorized corrective implementation slice. RM-03-P5-F1 does not authorize feature, authorization-policy, API,
+  socket, schema, migration, configuration, dependency, RM-03-I, or RM-04-and-later changes.
+- Required final DB matrix: Admin canonical policy; assigned Referee; assigned Scorer; Viewer/unauthorized denial;
+  inactive assignment; revocation; cross-match denial; TIMER isolation; SHOT_CLOCK isolation; denial without event
+  mutation; denial without projection mutation; optimistic concurrency; and idempotency/duplicate-append protection.
+- Security boundary: EffectiveMatchAccess remains server-calculated. Client role, global permissions alone, and
+  client assignment-role interpretation are not match-scoped authorization authority. DB verification must use only
+  confirmed disposable non-production infrastructure.
+- Required sequence: (1) complete the three missing DB-backed tests; (2) provide and confirm disposable
+  non-production `DATABASE_*`; (3) run the complete RM-03 DB authorization closure gate; (4) require zero mandatory
+  failures and zero mandatory skips; (5) only then may Guardian decide whether RM-03-I is authorized.
+- Preserved state: RM-03 remains `CURRENT`; RM-03-P1 through RM-03-P4 remain `IMPLEMENTATION COMPLETE`; RM-03-P5
+  remains `REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION`; the recent-action multi-item feed remains
+  `DEFERRED`; controlled historical rebuild remains `DEFERRED / NOT RUN`; timezone formatting and CSP remain
+  `FOLLOW-UP`.
+- Next safe step: `RM-03-P5-F1 - DB Authorization Coverage Completion`.
+
+RM-03-P5-F1 DB authorization coverage completion evidence:
+
+- Decision: `IMPLEMENTATION COMPLETE WITH DB EXECUTION LIMITATION`; the three previously missing DB-backed cases are
+  now committed for canonical direct Admin effective access, actively assigned Referee effective access, and
+  explicit inactive-assignment denial.
+- Coverage behavior: Admin is verified through the existing canonical policy without a match assignment; Referee
+  capabilities are derived from the existing role and active assignment policy; changing an existing assignment to
+  `INACTIVE` must deny the next effective-access request. Each case asserts no match event or projection mutation.
+- Scope: tests and roadmap only. No production source, authorization policy, API, socket, schema, migration,
+  configuration, dependency, event, projection, or production-data behavior changed.
+- Validation: focused policy/effective-access validation passed 18 tests and discovered all 6 tests in the DB matrix;
+  the 6 DB tests skipped only through the repository's canonical environment gate. Lint passed; the full suite
+  passed 610 tests with 27 environment-gated skips; both production builds passed. `npm run test:db` passed 2
+  source-guard tests and skipped 22 DB-dependent tests.
+- DB execution limitation: required disposable non-production `DATABASE_*` remains unavailable. The committed cases
+  are present and discoverable but are not claimed as executed against a database.
+- Gate status: the DB coverage gap is `CLOSED`; the DB environment/execution gate and DB authorization closure gate
+  remain `OPEN`. RM-03-I remains blocked and unauthorized until the complete mandatory DB matrix passes with zero
+  failures and zero mandatory skips.
+- Preserved state: RM-03 remains `CURRENT`; RM-03-P1 through RM-03-P4 remain `IMPLEMENTATION COMPLETE`; RM-03-P5
+  remains `REGRESSION CLOSURE COMPLETE WITH DB VERIFICATION LIMITATION`; RM-04 through RM-18 remain `PENDING`.
+- Next safe step: provide and confirm disposable non-production `DATABASE_*`, then run the complete RM-03 DB
+  authorization closure gate. Do not begin RM-03-I until that evidence passes and governance explicitly authorizes
+  integration.
+
+RM-03 DB authorization closure gate evidence:
+
+- Decision: `DB_AUTHORIZATION_CLOSURE_GATE_CLOSED`; the complete mandatory DB matrix executed against the confirmed
+  disposable local database with zero failures and zero skips. The RM-03-P5 DB verification limitation is resolved.
+- Corrective prerequisite: commit `63b489c59ee15a75cc54cdf7a455d5bd2077c53d` makes public metadata match fixtures
+  collision-resistant across immediate reruns and parallel workers without destructive cleanup or production-source
+  changes. The focused public metadata target passed twice consecutively with 4 tests per run.
+- DB authorization evidence: canonical Admin, assigned Referee, assigned Scorer, unauthorized denial, inactive and
+  revoked assignment denial, cross-match isolation, TIMER and SHOT_CLOCK capability isolation, protected mutation
+  denial, optimistic concurrency, and idempotency all passed through the server-authoritative DB-backed matrix.
+- Verification: the exact prior failure sequence passed `npm run test:db` with 24 tests and zero skips followed by
+  `npm test` with 637 tests and zero skips. The final sequence passed lint, `npm run test:db` (24 tests), `npm test`
+  (637 tests), a second `npm run test:db` (24 tests), `npm run build`, and `npm run build:single`. The same closure
+  matrix passed again from the corrective commit before this Roadmap-only closure.
+- Integrity and scope: no `UPDATE`, `DELETE`, `TRUNCATE`, or `DROP` operation targets `match_events`; append-only
+  history, effective-access policy, assignment and revocation semantics, CSRF/RBAC, public/private projections, API
+  contracts, and socket contracts remain unchanged. Production application source changes are zero.
+- Roadmap transition: RM-03 remains `CURRENT`; RM-03-P5 is `REGRESSION CLOSURE COMPLETE`; RM-03-P5-F1 DB coverage is
+  `VERIFIED AGAINST DISPOSABLE LOCAL DATABASE`; the DB environment/execution and authorization closure gates are
+  `CLOSED`. RM-03-I is `PENDING (AUTHORIZED TO BEGIN)` but was not begun. RM-04 through RM-18 remain `PENDING`.
+- Closure documentation: this Roadmap-only commit records the verified gate closure; its parent is the corrective
+  test commit `63b489c59ee15a75cc54cdf7a455d5bd2077c53d`.
+- Next safe step: `RM-03-I - Integration Gate`.
+
+RM-03-I integration-governance evidence:
+
+- Decision: `READY_FOR_FAST_FORWARD_INTEGRATION`; this Roadmap-only governance commit is the final verified feature
+  target for a local fast-forward of `feature/rm03-live-match-shell` into `main`.
+- Baseline and ancestry: starting feature head `781a97a320d1032c73e96a9ba14a84118b9b522f`; starting local `main` and
+  `origin/main` `1f763d896c6bf39111338264be61cd06b9d38c46`; the working tree was clean, `main` is the
+  merge base and an ancestor of the feature branch, and the range is 11 commits ahead with zero commits behind.
+- Scope audit: 24 changed files comprise 10 application-source files, one API-contract file, 12 test files, and this
+  Roadmap. Unauthorized commits, migrations, configuration or dependency changes, generated artifacts, secret-bearing
+  files, and production configuration changes are zero.
+- Security and integrity: effective access remains authenticated, server-calculated, assignment-scoped, and private;
+  the public scoreboard allowlist and public/private projection boundary remain protected. No `UPDATE`, `DELETE`,
+  `TRUNCATE`, or `DROP` operation targets `match_events`; append-only corrections and server authority remain intact.
+- Disposable DB evidence: the configured endpoint was confirmed as loopback port 3300 with the dedicated
+  `basket_rm03_test` database and user without exposing credentials. TCP, the repository `mysql2` handshake, and
+  `SELECT 1` passed.
+- Validation: lint `PASS`; `npm run test:db` passed 24 tests with zero failures and zero skips; `npm test` passed 637
+  tests with zero failures and zero skips; `npm run db:check`, `npm run migrate:status`, `npm run build`, and
+  `npm run build:single` passed. The existing Vite chunk-size warning remains non-blocking.
+- Browser evidence: accepted RM-03-P1 through RM-03-P5 browser, responsive, accessibility, and regression evidence is
+  unchanged; the integration gate adds no application behavior requiring a new browser run.
+- Integration method: local fast-forward only; no merge commit, squash, rebase, cherry-pick, reset, force operation,
+  push, deployment, production operation, or feature-branch cleanup is authorized in this task.
+- Status boundary: RM-03 remains `CURRENT` and RM-03-I remains incomplete until the local fast-forward is established.
+  Because push is prohibited, `origin/main` remains at the recorded baseline and RM-03 cannot be labeled `INTEGRATED`
+  under the canonical status vocabulary in this task.
+- Next safe step: fast-forward local `main` to this governance commit, then re-anchor Guardian. Do not begin RM-04.
+
+RM-03-I origin/main synchronization evidence:
+
+- Decision: `RM_03_INTEGRATED`; local `main` and `origin/main` were synchronized by normal fast-forward push after
+  remote-state verification. The synchronized pre-completion SHA was `2eecfc4055848def15d0ba55fbad09523e7cd52f`.
+- Remote guard: post-fetch `origin/main` before push remained `1f763d896c6bf39111338264be61cd06b9d38c46`;
+  `origin/main` was an ancestor of local `main`, and the range was 12 commits ahead with zero commits behind.
+- Scope audit: the pushed range contained only authorized RM-03 implementation, regression closure, DB coverage,
+  DB authorization closure, and integration-governance work. Unauthorized commits, secret-bearing files, production
+  configuration changes, generated artifacts, migrations, force operations, rebase, squash, and merge commits were
+  zero.
+- Validation before push: `npm test` passed 637 tests with zero failures; `npm run build` passed with the existing
+  Vite chunk-size warning. The repository event-store guard found zero `scoreboard_state` or historical
+  `match_events` mutation patterns.
+- Synchronization result: post-push fetch confirmed local `main` and `origin/main` both at
+  `2eecfc4055848def15d0ba55fbad09523e7cd52f` with a clean working tree. No feature branch deletion, Plesk/Hostatom
+  operation, production deployment, force push, rebase, squash, or merge commit occurred.
+- Roadmap transition: RM-03-I is `INTEGRATED`; RM-03 is `INTEGRATED`; RM-04 through RM-18 remain `PENDING` and RM-04
+  implementation was not begun in this task.
+- Next safe step: `RM-04 - Clock & Shot Clock Dashboard authorization gate`.
+
+RM-04-D1 clock rule and command contract closure evidence:
+
+- Decision: `RM04_CONTRACT_CLOSED_IMPLEMENTATION_AUTHORIZED`; the owner-approved supported surface is game clock
+  start, stop, and guarded manual set plus operator-selected shot-clock reset 14, reset 24, and guarded manual set.
+- Unsupported/deferred surface: shot-clock start/stop commands, events, endpoints, and controls are not authorized.
+  Period, overtime, and match lifecycle controls remain in the existing lifecycle domain and capability.
+- Reset policy: Reset 14 and Reset 24 are explicit operator-selected commands using the existing enum-validated
+  endpoint. The product does not claim automatic FIBA contextual reset selection. `[NEEDS SOURCE] Missing governing
+  document: authoritative FIBA shot-clock operational rules required for automatic/context-aware 14/24 reset
+  decisions.`
+- Manual-set safety contract: `GAME_CLOCK_SET` requires `gameClockOperate`; `SHOT_CLOCK_SET` requires
+  `shotClockOperate`; both require explicit UI confirmation and a non-empty trimmed reason of at most 500 characters.
+  The server schema must reject missing, null, empty, and whitespace-only reasons before either implementation slice
+  closes. Existing audit insertion remains mandatory and receives the validated reason.
+- Contract implementation boundary: current schemas allow nullable reasons and current frontend payload builders can
+  produce null. The coordinated schema, client builder, confirmation UI, and focused tests are authorized for RM-04-P2
+  and RM-04-P3, not partially changed in D1. The command envelope, route permission middleware, append-only event
+  behavior, idempotency, expected-sequence enforcement, audit repository, sockets, and database schema remain unchanged.
+- Effective-access authority: `OperatorClockPage` must use the matching server-calculated `EffectiveMatchAccess` as
+  the command-surface authority. Missing, loading, failed, mismatched, or `matchRead=false` access denies command
+  dispatch by default. Role labels and `currentUser` assignment helpers are not final command-surface authority;
+  backend middleware remains authoritative for every request.
+- Ownership: `OperatorClockPage` retains projection/access fetch, realtime notification, polling, reconnect/resync,
+  command dispatch, projection-derived `expectedSeq`, and clock interpolation. `LiveMatchShell` remains
+  presentation/navigation only. No duplicate owner or second authoritative clock state is authorized.
+- Event/realtime/data boundary: the authorized event set remains `GAME_CLOCK_STARTED`, `GAME_CLOCK_STOPPED`,
+  `GAME_CLOCK_SET`, `SHOT_CLOCK_RESET`, and `SHOT_CLOCK_SET`. `match_events` remains append-only; projections remain
+  derived; no timer-tick event, socket contract change, database/schema change, or public/private boundary change is
+  authorized.
+- Linear slices: RM-04-P1 Clock Workspace Visual Hierarchy and Supported Command Surface; RM-04-P2 Game Clock Control
+  and Manual Correction Safety; RM-04-P3 Shot Clock Reset/Set and Manual Correction Safety; RM-04-P4 Effective Access,
+  Error/Reconnect, and Accessibility States; RM-04-P5 Responsive and Full Regression Closure; RM-04-I Integration Gate.
+- Acceptance: preserve route ownership; capability-isolate game and shot domains; fail closed during effective-access
+  hydration; keep `expectedSeq` projection-derived; render no shot-clock start/stop or lifecycle command; identify
+  manual reset selection honestly; require confirmation and validated reason for manual set; preserve audit,
+  append-only history, idempotency, realtime ownership, and public/private boundaries; and retain RM-03 regression.
+- Roadmap transition: RM-04 is `CURRENT`; RM-04-D1 is `DISCOVERY COMPLETE`; RM-04-P1 is
+  `IMPLEMENTATION COMPLETE`; RM-04-P2 is `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P2 - Game Clock Control and Manual Correction Safety`.
+
+RM-04-P2 game clock control and manual correction safety closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): guard game clock manual corrections`).
+- Contract and ownership: `GAME_CLOCK_SET` alone requires a trimmed non-empty reason of at most 500 characters;
+  its existing 0..600000ms bound, protected REST route, route-owned dispatch, projection-derived `expectedSeq`,
+  command identifiers, append-only event, projection, audit, and realtime ownership remain intact. Game start/stop
+  and every Shot Clock contract remain unchanged.
+- Operator safety: the route-owned two-stage modal validates minutes, seconds, and reason before presenting target
+  time, reason, and match context for explicit confirmation. Cancel and Escape dispatch nothing, focus returns to
+  the trigger, pending disables confirmation, accepted results close the flow, and stale state refreshes once then
+  requires an explicit operator retry without automatic command replay.
+- Database evidence: the dedicated disposable loopback target matched the required endpoint, database, and user.
+  Focused and canonical DB runs proved invalid corrections append no event, accepted corrections append one
+  `GAME_CLOCK_SET`, duplicate commands append nothing, concurrent stale commands return `SYNC_REQUIRED`, and the
+  canonical trimmed reason is identical in event payload, event reason, projection transition, and audit row.
+- Validation: focused contract/workspace tests passed 7/7 and the focused clock event-store test passed 1/1. The
+  five-viewport browser matrix (1920, 1600, 1366, 1280, and 1024 widths) passed with no horizontal overflow,
+  console error, failed request, or page error. Canonical lint, 644/644 full tests, 24/24 DB tests, production build,
+  single-app build, and diff checks passed.
+- Gridgeist review: `PASS`; the guarded flow reuses the existing grid, type, color, focus, forced-colors, and
+  reduced-motion system while preserving Game Clock dominance and the distinct Shot Clock domain.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P2 is `IMPLEMENTATION COMPLETE`; RM-04-P3 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P3 - Shot Clock Reset/Set and Manual Correction Safety`. Do not begin it automatically.
+
+RM-04-P3 shot clock reset/set and manual correction safety closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): guard shot clock manual corrections`).
+- Contract: `SHOT_CLOCK_SET` alone now requires a trimmed non-empty reason of at most 500 characters while retaining
+  the canonical 0..24000ms bound. Explicit Reset 14/24 retain their existing 14000/24000 payloads, nullable reason,
+  no correction confirmation, and `match.clock.shot.operate` authorization. Game Clock contracts are unchanged.
+- Operator safety: Shot Set uses a route-owned two-stage correction flow with required validation, explicit target,
+  canonical reason and match-context confirmation. Cancel, Escape and invalid input dispatch nothing; pending and
+  confirmation lifecycle prevent duplicate submission; stale state refreshes without automatic replay. Reset 14/24
+  remain distinct touch-safe operator choices and make no contextual FIBA correctness claim.
+- Event/audit evidence: rejected Shot Set requests append no event and do not mutate projection. Accepted commands
+  append one `SHOT_CLOCK_SET`; event payload, event reason and audit reason share the same canonical trimmed value.
+  Duplicate command IDs append nothing, stale expected sequence returns `SYNC_REQUIRED`, and concurrent Shot Set
+  commands produce one accepted event. Reset remains append-only and unsupported reset values remain rejected.
+- Validation: focused frontend/API tests passed 143/143 and focused DB tests passed 14/14. Canonical lint, 24/24 DB
+  tests with zero skips, 646/646 full tests, production build, single-app build and diff checks passed. DB integration
+  timeout remains 15000ms; global non-DB timeout remains 5000ms; retries and parallelism are unchanged.
+- Browser/GridGeist: all five viewports (1920x1080, 1600x900, 1366x768, 1280x720 and 1024x576) passed Reset 14/24,
+  Shot Set validation/confirmation/cancel/focus-return and confirmed-once interaction checks with no horizontal
+  overflow, critical dialog clipping, console error, page error or failed request. Existing tokens and correction
+  geometry were reused; no CSS redesign was required.
+- Scope guards: no shot-clock start/stop, automatic/contextual reset, socket, schema/migration, new event type,
+  capability, EffectiveAccess P4 refactor, production access, push or deployment occurred.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P3 is `IMPLEMENTATION COMPLETE`; RM-04-P4 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P4 - Effective Access, Error/Reconnect, and Accessibility States`. Do not begin it automatically.
+
+RM-04-P4 effective access, resilient state, and accessibility closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): enforce effective access and resilient states`).
+- Authority: `OperatorClockPage` now derives its entire Clock command surface from validated, match-bound
+  `EffectiveMatchAccess`. Loading, errors, malformed data, denied read access, and match mismatch fail closed;
+  legacy current-user and assignment helpers cannot grant Clock commands. Server RBAC remains final authority.
+- Capability presentation: match-read denial removes the operational workspace; read-only access preserves both
+  clocks without commands; game-only, shot-only, and dual access expose exactly their supported command domains.
+  Capability loss closes an open correction flow, moves focus to stable access status, and callbacks re-check the
+  current effective capability before dispatch.
+- Reconnect/accessibility: existing socket notifications retain route-owned authoritative resync and now refresh
+  projection plus effective access; polling remains route-owned and socket payloads remain non-authoritative.
+  Access, connection, and command transitions use concise non-color status text and polite atomic live regions,
+  while interpolated timers remain outside live regions.
+- Validation: focused Clock tests passed 9/9; canonical lint, 24/24 DB tests with zero skips, 649/649 full tests,
+  production build, single-app build, and diff checks passed. DB integration timeout remains 15000ms; global non-DB
+  timeout remains 5000ms; retries and parallelism are unchanged.
+- Browser/GridGeist: read-only, game-only, shot-only, dual, loading, error, denied, mismatch, reconnect/degraded,
+  pending, rejected and synchronization-required states passed at 1920x1080, 1600x900, 1366x768, 1280x720 and
+  1024x576 with no horizontal overflow. Keyboard dialog cancellation/focus return, non-color errors, forced colors,
+  reduced motion, touch target sizing, and the timer-announcement guard passed without console/page/request errors.
+- Scope guards: no API, socket, event model, schema/migration, capability, event type, production access, push, or
+  deployment change occurred; the event store remains append-only.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P4 is `IMPLEMENTATION COMPLETE`; RM-04-P5 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P5 - Responsive and Full Regression Closure`. Do not begin it automatically.
+
+RM-04-P5 responsive and full regression closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; closure commit: this commit
+  (`test(clock): close rm04 responsive regression`).
+- Scope audit: the aggregate RM-04 branch contains the authorized Clock presentation, guarded Game/Shot correction
+  contracts, EffectiveMatchAccess frontend integration, focused tests, browser/test tooling, and roadmap evidence.
+  There is no backend runtime, schema/migration, socket, event model, capability, or basketball-rule expansion.
+- Command/security closure: Game Start/Stop/Set and explicit Shot Reset 14/24/Set remain the complete supported
+  surface. Both Set commands require a trimmed reason of at most 500 characters; resets remain non-correction
+  commands. Shot Start/Stop and automatic/contextual reset remain absent. EffectiveMatchAccess stays the Clock
+  frontend authority and canonical server RBAC remains final.
+- Responsive/GridGeist: read-only, game-only, shot-only, dual, access-loading, access-error/mismatch, reconnecting,
+  degraded, pending, rejected, and sync-required states passed at 1920x1080, 1600x900, 1366x768, 1280x720, and
+  1024x576 without horizontal overflow or critical clipping. Game correction passed at 1920, 1366, and 1024;
+  Shot correction passed all five viewports. Equivalent 125%, 150%, and 200% zoom retained both timers and all
+  authorized controls. Keyboard focus return, forced colors, reduced motion, non-color status cues, and quiet timer
+  outputs passed without console, page, or request errors.
+- Data/realtime integrity: socket messages remain notification-only; route-owned resync refreshes projection and
+  effective access; no duplicate fetch, polling, reconnect, interpolation, dispatch, or expected-sequence owner was
+  introduced. Source and DB tests preserve append-only events, stale-state no-replay, idempotency, and concurrency.
+- Validation: lint passed; DB tests passed 24/24 with zero failures/skips; the full suite passed 649/649 with zero
+  failures/skips; `db:check`, `migrate:status` (13 applied, zero pending or checksum mismatch), production build,
+  single-app build, and diff checks passed. DB integration timeout remains 15000ms, global non-DB timeout remains
+  5000ms, retries remain zero, and parallelism is unchanged. The existing Vite chunk-size warning is unchanged.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P5 is `REGRESSION CLOSURE COMPLETE`; RM-04-I is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-I - Integration Gate`. Do not begin it automatically.
+
+RM-04-I integration-governance evidence:
+
+- Decision: `READY_FOR_RM04_FAST_FORWARD_INTEGRATION`; this Roadmap-only governance commit is the final audited
+  feature target for a local fast-forward of `feature/rm04-clock-dashboard` into `main`.
+- Baseline and ancestry: starting feature head `785d6b901903d8347bcbfa213ab2b84c4b8ac51d`; starting local `main`
+  `29688ac6f1a5da37da538e0347f720dca97b303e`; starting `origin/main`
+  `0b29e354c40fbac156fd2f658675ff5a5a19177f`. The tree was clean, local `main` is the merge base and an
+  ancestor of the feature branch, and the range is seven commits ahead with zero behind.
+- Commit and scope audit: all seven commits are authorized RM-04 browser/test tooling, DB-timeout correction, P1
+  Clock hierarchy, P2 Game correction safety, P3 Shot correction safety, P4 EffectiveAccess/resilient states, and
+  P5 regression closure work. The 24 changed files comprise frontend production source, one API-contract reason
+  validation file, tests/browser tooling, and Roadmap evidence. Unauthorized commits, migrations/schema changes,
+  backend runtime changes, generated artifacts, secret-bearing files, production configuration changes, socket
+  protocol changes, new event types, and new capabilities are zero.
+- Contract/security/integrity: Game Start/Stop/guarded Set and explicit Shot Reset 14/24/guarded Set remain the
+  supported surface; Shot Start/Stop and contextual reset remain absent. EffectiveMatchAccess is the Clock frontend
+  command authority and server RBAC remains final. Route-level ownership, private effective access, public allowlist,
+  append-only `match_events`, projection-derived expected sequence, idempotency, and no-replay resync remain intact.
+- Verification decision: immutable P5 evidence at the exact starting feature head is reused. It records five
+  viewports, 125/150/200 percent zoom equivalents, accessibility and reconnect matrices, lint, 24/24 DB tests,
+  649/649 full tests, `db:check`, `migrate:status`, production build, single-app build, and diff checks passing with
+  zero mandatory failures or skips. This integration gate adds only governance evidence and no application behavior,
+  so duplicate expensive verification and browser runs are not required.
+- Integration method: local fast-forward only; no merge commit, squash, rebase, cherry-pick, reset, force operation,
+  fetch, push, deployment, production operation, or feature-branch cleanup is authorized in this task.
+- Status boundary: RM-04 remains `CURRENT` and RM-04-I remains incomplete until the local fast-forward is established.
+  Canonical `INTEGRATED` status also requires `origin/main` synchronization; because push is prohibited, this task
+  must stop after local integration with origin synchronization pending.
+- Next safe step: fast-forward local `main` to this governance commit, then re-anchor Guardian. Do not begin RM-05.
+
+RM-04-I origin/main synchronization evidence:
+
+- Decision: `RM_04_INTEGRATED`; local `main` and `origin/main` were synchronized by normal fast-forward push after
+  remote-state, ancestry, commit-range, aggregate diff, event-store, and public/private security guards passed.
+- Synchronization baseline: pre-sync local `main` was `165603a5218b43de8839940c25b5906e4b7a0d50`; pre-fetch and
+  post-fetch `origin/main` were `0b29e354c40fbac156fd2f658675ff5a5a19177f`. `origin/main` was an ancestor of local
+  `main`, and the exact range was nine commits ahead with zero behind.
+- Scope audit: the synchronized range contains RM-04-D1 contract closure, RM-04 browser/test tooling, DB integration
+  timeout policy correction, RM-04-P1 through RM-04-P5 implementation and regression closure, and RM-04-I governance
+  status only. Unauthorized commits, migrations, schema changes, socket protocol changes, new clock event types, new
+  capabilities, generated artifacts, secret exposure, and unexpected production configuration changes are zero.
+- Integrity guard: `match_events` remains append-only; no `UPDATE match_events`, `DELETE FROM match_events`,
+  `TRUNCATE match_events`, `DROP TABLE match_events`, mutable `scoreboard_state` source-of-truth change, timer tick
+  event, Shot Clock Start/Stop command, or automatic/contextual 14/24 reset was introduced.
+- Security guard: `EffectiveMatchAccess` remains the protected/private Clock command-surface authority, server RBAC
+  remains final, and public/private boundaries remain unchanged.
+- Push result: first normal fast-forward push synchronized `origin/main` to
+  `165603a5218b43de8839940c25b5906e4b7a0d50`. No force push, rebase, squash, merge commit, production deployment,
+  Plesk/Hostatom operation, or feature branch cleanup occurred.
+- Roadmap transition: RM-04-I is `INTEGRATED`; RM-04 is `INTEGRATED`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05 - Score Control Dashboard authorization gate`. Do not begin RM-05 implementation
+  automatically.
+
+RM-05-D1 score dashboard authorization evidence:
+
+- Decision: `RM05_AUTHORIZED_FOR_IMPLEMENTATION`; the authorization applies only to the linear RM-05 slices below
+  and does not authorize RM-06, deployment, production access, or invented scoring rules.
+- Baseline: `main`, local HEAD, and `origin/main` were aligned at
+  `0e05ccd6a74271277f0743d0777cb68a669467e7` with a clean working tree before this documentation-only update.
+- Visual/GridGeist: `UI-design/UI Score Control Dashboard.png` was inspected as a visual target, not a command or
+  rule contract. Its two-team hierarchy, dominant current scores, large +1/+2/+3 controls, visible sequence,
+  connection and command feedback, recent-event context, and separate guarded correction entry are authorized
+  design requirements. Direct score mutation, an ordinary subtract command, artwork keyboard shortcuts, and new
+  rule automation are not authorized.
+- Ownership: `OperatorScorePage` retains projection and roster fetch, effective-access hydration, public
+  notification socket use, polling, reconnect/resync, command dispatch, projection-derived `expectedSeq`, and
+  API-client command/correlation IDs. Presentation helpers and shells remain free of network, command, retry, and
+  authority ownership.
+- Implemented score contract: protected REST `score/add` accepts only HOME/AWAY and +1/+2/+3 intent with optional
+  active-roster player attribution, period and game-clock context. Authentication, CSRF, match-scoped server RBAC,
+  path/envelope match validation, schema validation, optimistic concurrency, command idempotency, append-only
+  `SCORE_ADDED`, authoritative projection derivation, audit logging, and notification-only realtime are retained.
+- Correction contract: scoring subtraction is not an ordinary scoring command. The existing recent-event workflow
+  uses a reason-required, match-scoped, append-only `SCORE_UNDO` compensation producing `SCORE_CORRECTED`, preserving
+  target sequence, actor, role, device, timestamp, old/new values, delta, correlation, causation, and event sequence.
+  RM-05 may integrate a guarded entry to that existing workflow, but may not invent direct score totals or a new
+  correction event. Explicit confirmation and capability-driven presentation are required before dispatch.
+- Security gap to close: the current Score route hydrates `EffectiveMatchAccess` for navigation but still enables
+  score commands through legacy current-user/assignment inference. RM-05 must make matching, successfully hydrated
+  `matchRead` and `scoreOperate` the frontend command-surface authority, fail closed on loading/error/mismatch, and
+  preserve server RBAC as final authority.
+- Realtime/data decision: no API, socket, event-model, database, or schema change is required for the authorized
+  surface. Socket payloads remain notification-only; route-owned refresh and polling remain authoritative recovery.
+- Linear slices: RM-05-P1 Score Workspace Hierarchy and Supported Command Surface; RM-05-P2 Rapid Scoring Controls
+  and Duplicate-Entry Safety; RM-05-P3 Score Correction and Compensating-Event Safety; RM-05-P4 Effective Access,
+  Reconnect, Error, and Accessibility States; RM-05-P5 Responsive and Full Regression Closure; RM-05-I Integration
+  Gate. Do not open more than one slice at a time.
+- Acceptance: preserve route ownership; render only +1/+2/+3; keep attribution optional; derive `expectedSeq` from
+  projection; distinguish legitimate consecutive events from accidental duplicates; fail closed through
+  EffectiveMatchAccess; preserve append-only correction history, confirmation/reason/audit evidence, authoritative
+  reconnect, server RBAC, public/private boundaries, and RM-03/RM-04 regression behavior.
+- Responsive/accessibility evidence required: 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576 plus 125%-200%
+  zoom equivalents; no horizontal overflow; both scores and authorized controls remain unambiguous and reachable;
+  semantic buttons, visible focus, practical 44x44 targets, non-color cues, logical keyboard order, forced colors,
+  reduced motion, concise command-result announcements, and no projection-refresh live-region spam.
+- Source boundary: existing 1/2/3 point command values require no new rule automation. `[NEEDS SOURCE] Missing
+  governing document: FIBA scoring-award and/or score-correction operational semantics required by any proposed
+  behavior beyond the implemented command and compensating-event contracts.`
+- Roadmap transition: RM-05 is `CURRENT`; RM-05-D1 is `DISCOVERY COMPLETE`; RM-05-P1 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P1 - Score Workspace Hierarchy and Supported Command Surface`. Do not begin it
+  automatically.
+
+RM-05-P1 score workspace hierarchy closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): establish rm05 score workspace hierarchy`).
+- Presentation: the Score route now composes a dedicated two-team `ScoreWorkspace` with dominant HOME and AWAY
+  scores, semantic and spatial team separation, optional existing player attribution, and exactly six supported
+  HOME/AWAY +1/+2/+3 controls. No subtract, direct-total, unsupported score value, new shortcut, fake recent-event
+  context, or new scoring/correction semantic was introduced.
+- Ownership: `OperatorScorePage` retains projection, roster and effective-access hydration, realtime notification,
+  polling, reconnect/resync, pending state, score callbacks, command dispatch, and projection-derived `expectedSeq`.
+  The API client retains command/correlation IDs. `ScoreWorkspace` is presentation-only and owns no fetch, API,
+  socket, polling, retry, permission inference, or command construction.
+- Slice isolation: current legacy `canOperateScore` gating and global pending behavior are preserved without
+  expansion. EffectiveMatchAccess command authority remains RM-05-P4; rapid consecutive-entry and duplicate safety
+  remains RM-05-P2; confirmation/reason/correction changes remain RM-05-P3. Existing correction capability and
+  `SCORE_UNDO` behavior are unchanged; the entry is only visually separated when the existing navigation adapter
+  exposes it.
+- Browser/GridGeist: 1920x1080, 1600x900, 1366x768, 1280x720, and 1024x576 passed with both scores visible, all six
+  controls reachable, unambiguous team identity, separated correction entry, 44px-or-larger targets, visible 3px
+  focus, no horizontal overflow, and no console, page, or request errors. Equivalent 125%, 150%, and 200% zoom
+  passed with vertical scrolling allowed and all essential score/control surfaces reachable.
+- Verification: focused Score tests passed 9/9; canonical lint passed; the full suite passed 654/654, including all
+  24 discovered DB-backed tests; production build and single-app build passed; diff checks passed. A separate
+  duplicate `test:db` invocation was not required because this slice changes presentation only and the full suite
+  already executed every DB test. The existing Vite chunk-size warning is unchanged.
+- Scope guards: API contract, socket contract, event model, database/schema, event type, capability, correction
+  contract, production access, push, and deployment changes are zero. `match_events` remains append-only and no
+  destructive event-store operation was introduced.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P1 is `IMPLEMENTATION COMPLETE`; RM-05-P2 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P2 - Rapid Scoring Controls and Duplicate-Entry Safety`. Do not begin it automatically.
+
+RM-05-P2 rapid scoring and duplicate-entry safety closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): support safe rapid scoring intents`).
+- Intent lifecycle: `OperatorScorePage` owns a FIFO score-intent queue, active dispatch, stable command/correlation
+  identity, projection reconciliation, and projection-derived `expectedSeq` at dispatch time. Each deliberate
+  activation creates a distinct intent; ambiguous transport retry retains the same command identity.
+- Safety: one score request is active at a time. Accepted results reconcile the authoritative projection before the
+  next dispatch. `SYNC_REQUIRED`, definite rejection, and ambiguous network failure pause draining without silent
+  replay or loss; explicit retry, resume, and discard actions preserve operator control.
+- Snapshot boundary: team side, points, optional player attribution, period, and game-clock context are captured at
+  activation. `expectedSeq` is deliberately not captured until dispatch. `ScoreWorkspace` remains presentation-only.
+- Browser/GridGeist: the five P1 viewports and 125%, 150%, and 200% zoom passed. Rapid FIFO and paused-state flows
+  passed at 1920x1080, 1366x768, and 1024x576 with all six controls reachable, no horizontal overflow, keyboard and
+  touch-sized activation preserved, and maximum concurrent score dispatch equal to one.
+- Verification: focused frontend 19/19 passed after the legacy ownership guard was included; focused DB 14/14,
+  `npm run lint`, `npm run test:db` 24/24, `npm test` 662/662, `npm run build`, `npm run build:single`, and
+  `git diff --check` passed. The existing Vite chunk-size warning is unchanged.
+- Scope guards: API wire contract, socket contract, event model, database/schema, event type, capability, correction
+  P3 behavior, EffectiveAccess P4 behavior, production access, push, and deployment changes are zero. `match_events`
+  remains append-only and no destructive event-store operation was introduced.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P2 is `IMPLEMENTATION COMPLETE`; RM-05-P3 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P3 - Score Correction and Compensating-Event Safety`. Do not begin it automatically.
+
+RM-05-P3 score correction and compensating-event safety closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): guard score correction workflow`).
+- Proven UI contract: the Score workspace enters `/operator/matches/:matchId/corrections`, reads the existing eligible
+  target endpoint, and submits the existing direct Alpha correction endpoint with `correctedEventSeq`,
+  `correctionKind=SCORE_UNDO`, a trimmed 5-500 character reason, and projection-derived `expectedSeq`. The server
+  appends `SCORE_CORRECTED`; the separate request/apply/reject workflow remains unchanged.
+- Confirmation safety: correction now requires prepare, review, and explicit confirm stages. The modal identifies the
+  exact sequence/event, team, scoring action, optional player, reason, match context, and a non-authoritative old/new
+  preview. Native dialog cancellation, Escape, visible focus, focus return, and a synchronous double-submit guard are
+  covered.
+- Target and queue safety: the route re-fetches authoritative projection and eligible targets immediately before
+  dispatch and fails closed when sequence, eligibility, type, kind, or target changes. It never auto-replays a stale
+  correction. Score-to-correction navigation is blocked while the P2 queue is active, queued, or paused, preserving
+  queued intents without changing P2 semantics.
+- Event-store integrity: original `SCORE_ADDED` rows remain untouched; `SCORE_CORRECTED` is append-only, audited, and
+  replayable. Duplicate and concurrent same-target commands produce at most one effective compensation; stale,
+  invalid, unauthorized, and cross-match targets do not mutate projection/history.
+- Browser/GridGeist: prepare/cancel/review/confirm, Escape, double-confirm, duplicate-target, invalidated-target, focus
+  return, clipping, and overflow passed at 1920x1080, 1366x768, and 1024x576. The existing P2 five-viewport and
+  125%/150%/200% zoom, FIFO rapid scoring, single-dispatch, pause/resume/discard matrix also passed.
+- Verification: focused frontend/P2 22/22, focused correction/API/DB/audit/replay 21/21, `npm run lint`,
+  `npm run test:db` 25/25, `npm test` 668/668, `npm run build`, `npm run build:single`, and `git diff --check` passed.
+  The existing Vite chunk-size warning is unchanged.
+- Scope guards: API wire contract, socket contract, event model, database/schema, event type, capability, direct score
+  setter/subtract behavior, EffectiveAccess P4 behavior, production access, push, and deployment changes are zero.
+  `match_events` remains append-only and no destructive event-store operation was introduced.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P3 is `IMPLEMENTATION COMPLETE`; RM-05-P4 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P4 - Effective Access, Reconnect, Error, and Accessibility States`. Do not begin it automatically.
+
+RM-05-P4 effective-access and resilient-state closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; implementation commit: this commit
+  (`feat(score): enforce effective access and resilient states`).
+- EffectiveMatchAccess is the fail-closed Score command-surface authority for match read, score operation, and the
+  independently gated correction entry. Loading, malformed/error, denied, and cross-match states expose no command
+  surface; legacy current-user role/assignment inference cannot grant Score commands. Server RBAC remains final.
+- Authoritative polling, reconnect/resync, and stale-command refresh reconcile both projection and access. Capability
+  loss blocks new enqueue and queue auto-drain, preserves remaining intents for review/discard, never auto-resumes, and
+  revalidates correction access immediately before the existing P3 confirmation dispatch.
+- Accessibility: stable polite/atomic access status and focus recovery are present; rapid queue updates are not live
+  regions, while paused queues are announced concisely. The five-viewport capability-state matrix, forced colors,
+  reduced motion, visible keyboard focus, no-overflow, P2 FIFO/no-replay, and P3 correction safety checks passed.
+- Verification: focused P4/P2/P3 tests 24/24, `npm run lint`, `npm run test:db` 25/25, `npm test` 671/671,
+  `npm run build`, `npm run build:single`, score browser matrix, and `git diff --check` passed. The existing Vite
+  chunk-size warning is unchanged.
+- Scope guards: API contract, socket contract, event model, database/schema, capability, and event type changes are
+  zero. Public projections remain unchanged and socket payloads remain notification-only/non-authoritative.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P4 is `IMPLEMENTATION COMPLETE`; RM-05-P5 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-P5 - Responsive and Full Regression Closure`. Do not begin it automatically.
+
+RM-05-P5 responsive and full-regression closure evidence:
+
+- Branch: `feature/rm05-score-dashboard`; closure commit: this commit
+  (`test(score): close rm05 responsive regression`).
+- Aggregate scope: RM-05 remains limited to the Score workspace, FIFO rapid-intent queue, existing append-only
+  SCORE_UNDO correction flow, EffectiveMatchAccess integration, focused API/DB/frontend tests, browser harness, and
+  Roadmap evidence. No API, socket, event-model, migration/schema, capability, event type, secret, or production
+  configuration change was introduced.
+- Browser/GridGeist: read-only, score-only, correction-only, both-capability, loading, error, mismatch, rapid FIFO,
+  SYNC_REQUIRED pause/resume/discard, forced-colors, reduced-motion, and capability-loss states passed at 1920x1080,
+  1600x900, 1366x768, 1280x720, and 1024x576. Equivalent 125%, 150%, and 200% zoom passed without horizontal
+  overflow or inaccessible scores/actions. Shared degraded/reconnecting presentation also passed its full matrix.
+- P5 correction: authoritative correction-capability loss exposed a detached-focus race between route status focus
+  and native dialog focus return. The minimum route callback correction now returns focus to the stable correction
+  status when capability is unavailable; normal cancel/confirm still returns focus to the initiating control.
+- Queue/correction safety: maximum active score requests remains one; deliberate intents remain FIFO with distinct
+  identities; transport retry retains identity; SYNC_REQUIRED and access loss do not auto-replay or auto-drain;
+  queued intents remain reviewable. SCORE_UNDO retains exact-target confirmation, reason validation, authoritative
+  target revalidation, double-submit/duplicate-target protection, and append-only SCORE_CORRECTED compensation.
+- Verification: focused P1-P4 tests 25/25, `npm run lint`, `npm run test:db` 25/25 with zero failures/skips,
+  `npm test` 671/671 across 70 files, `npm run db:check`, `npm run migrate:status`, `npm run build`,
+  `npm run build:single`, all browser matrices, event-store/public-boundary guards, and `git diff --check` passed.
+  All 13 migrations are applied with zero pending/checksum mismatches; the existing Vite chunk-size warning remains
+  non-blocking. DB integration timeout remains 15000ms; default non-DB timeout 5000ms, retries, and parallelism are
+  unchanged.
+- Dirty-tree isolation: pre-existing `AGENTS.md` and `docs/AI_HANDOFF.md` remained untouched and excluded from the
+  closure commit.
+- Roadmap transition: RM-05 remains `CURRENT`; RM-05-P5 is `REGRESSION CLOSURE COMPLETE`; RM-05-I is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-05-I - Integration Gate`. Do not begin it automatically.
+
+RM-05-I score dashboard integration gate closure evidence:
+
+- Decision: `RM_05_INTEGRATED`; local `main` and `origin/main` were synchronized by normal fast-forward push after
+  remote-state, ancestry, commit-range, aggregate diff, event-store, EffectiveAccess/RBAC, and public/private
+  security guards passed.
+- Synchronization baseline: pre-sync local `main` was `a04f8ba7f53725db5610ef17d411e9ed99e76e90`; pre-fetch and
+  post-fetch `origin/main` were `0e05ccd6a74271277f0743d0777cb68a669467e7`. `origin/main` was an ancestor of local
+  `main`, and the exact range was six commits ahead with zero behind.
+- Scope audit: the synchronized range contains RM-05 authorization plus RM-05-P1 through RM-05-P5 implementation and
+  regression closure only. Unauthorized commits, migrations, schema changes, socket protocol changes, new score event
+  types, new capabilities, secret exposure, and unexpected production configuration changes are zero.
+- Integrity guard: `match_events` remains append-only; no `UPDATE match_events`, `DELETE FROM match_events`,
+  `TRUNCATE match_events`, `DROP TABLE match_events`, mutable `scoreboard_state` source-of-truth change, ordinary
+  subtract command, or direct score-total setter was introduced. EffectiveMatchAccess remains the protected/private
+  Score frontend authority and server RBAC remains final.
+- Verification: immutable RM-05-P5 evidence was reused for the synchronized SHA
+  `a04f8ba7f53725db5610ef17d411e9ed99e76e90`. The integration push pre-flight additionally passed `npm test`
+  671/671, `npm run build`, the required event-store guard search, and `git diff --check`.
+- Dirty-tree isolation: pre-existing `AGENTS.md` and `docs/AI_HANDOFF.md` remained untouched and excluded from the
+  integration sync and completion commit.
+- Push result: first normal fast-forward push synchronized `origin/main` to
+  `a04f8ba7f53725db5610ef17d411e9ed99e76e90`. No force push, rebase, squash, merge commit, production deployment,
+  Plesk/Hostatom operation, or feature branch cleanup occurred.
+- Roadmap transition: RM-05-I is `INTEGRATED`; RM-05 is `INTEGRATED`; RM-06 through RM-18 remain `PENDING`.
+- Next safe step: `RM-06 - Foul Control Dashboard authorization gate`. Do not begin RM-06 implementation
+  automatically.
+
+RM-06-D1 foul dashboard authorization evidence:
+
+- Branch: `feature/rm06-foul-dashboard`; authorization-only task at baseline
+  `9a86239bcd586fdb021cebfe6ffff1df40f052c9`. Existing dirty `AGENTS.md` and untracked
+  `docs/AI_HANDOFF.md` are Hermes continuity changes and were not touched, staged, committed, overwritten, or
+  attributed. No RM-06 implementation occurred in this task.
+- Governing sources read: `AGENTS.md`, `docs/ROADMAP_MASTER.md`, `README.md`,
+  `docs/rules/RULES_PROFILE_FIBA.md` sections 3, 10, 11, 23, 25,
+  `docs/architecture/EVENT_MODEL.md` sections `PLAYER_FOUL_ADDED`, `TEAM_FOUL_ADDED`, `PLAYER_FOULED_OUT`,
+  `docs/api/API_CONTRACTS.md` Foul Command APIs, `docs/product/PROJECT_BRIEF.md` sections 7.8, 7.9, 7.15,
+  `docs/ui/UI_DASHBOARDS.md` section 13, current
+  `apps/api/src/matchEventStore/appendFoulCommand.ts`, and current `apps/web/src/App.tsx` `OperatorFoulPage`. The Codex
+  read-only discovery report was treated as advisory only and is not a durable authority over repository sources.
+- Source boundary: RM-06 may close authorization for one minimal fail-closed slice without
+  `FOUL_PENALTY_MATRIX.md`. The supported P1 command surface is only player-attributed `PERSONAL` foul entry:
+  active match roster player, matching team side, server validation before append, one `PLAYER_FOUL_ADDED`, and
+  player/team foul counts incremented exactly once through projection. Do not append an additional
+  `TEAM_FOUL_ADDED` for this command.
+- Rejected/deferred scope: direct `TEAM_FOUL_ADDED` command entry is not authorized in P1; its product meaning and
+  causation contract remain `NEEDS PRODUCT DECISION`, while existing historical correction support remains intact.
+  `TECHNICAL`, `UNSPORTSMANLIKE`, `DISQUALIFYING`, `OTHER`, `OFFENSIVE`, bench, coach, fighting, correctable-error,
+  and other special foul types are omitted from UI and server-rejected before append. No foul-out status/event
+  automation, team-penalty automation, overtime carry-forward automation, free throws, possession consequences, or
+  special penalty automation is authorized. Count displays are allowed; official derived statuses/warnings requiring
+  new semantics are deferred unless already authoritative server projection fields exist.
+- Command and correction contract: protected REST commands remain authenticated, CSRF checked, server-authorized,
+  assignment checked, RBAC checked, validated, expected-sequence enforced, idempotent, append-only, projected, and
+  audited. Existing correction contract is closed for legacy/current eligible events: `TEAM_FOUL_UNDO` only targets
+  uncorrected `TEAM_FOUL_ADDED`; `PLAYER_FOUL_UNDO` only targets uncorrected `PLAYER_FOUL_ADDED`; canonical reason,
+  explicit review/confirmation, exact target revalidation, duplicate/concurrent target protection, append-only
+  `TEAM_FOUL_CORRECTED`/`PLAYER_FOUL_CORRECTED`, original event retention, replay/projection nonnegative clamp, and
+  correction capability independent from `foulOperate` are required.
+- EffectiveAccess and reconnect ownership: `OperatorFoulPage` must migrate from legacy
+  `canOperateFoul(currentUser, matchId)` command authority to matching fail-closed `EffectiveMatchAccess` requiring
+  `matchRead` and `foulOperate`. Loading, error, malformed, denied, and match mismatch states expose no command
+  surface; server RBAC remains final. Reconnect and authoritative recovery must refresh projection and access
+  together. P1 authorizes one active command only, with no rapid FIFO queue.
+- Architecture impact: `API_CHANGE_REQUIRED=true`; `SOCKET_CHANGE_REQUIRED=false`;
+  `EVENT_MODEL_CHANGE_REQUIRED=false`; `DB_SCHEMA_CHANGE_REQUIRED=false`; `NEW_CAPABILITY_REQUIRED=false`.
+- P1 anticipated allowlist only: `packages/api-contracts/src/index.ts`,
+  `apps/api/src/matchEventStore/appendFoulCommand.ts`, `apps/api/src/routes/matchRoutes.ts` only if route-level
+  validation needs it, `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`, and focused existing/new
+  foul/effective-access/correction tests under `tests/api`, `tests/db`, and `tests/web`. No migration, socket, event
+  type, capability, dependency, public contract, production configuration, deployment, or production access is
+  authorized.
+- P1 required tests: server rejects unsupported foul types before append; player foul requires active roster and
+  matching team side; a player foul appends no extra `TEAM_FOUL_ADDED`; duplicate command IDs and stale expected
+  sequences remain safe; EffectiveMatchAccess fail-closed UI states deny commands; reconnect refreshes projection and
+  access together; correction eligibility and dispatch preserve exact-target append-only behavior; replay/projection
+  clamps counts nonnegative.
+- Roadmap transition: RM-06 is `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
+  `Personal Player Foul Contract and Effective Access Gate` is `PENDING (AUTHORIZED TO BEGIN)`. RM-06-P2 and later
+  are not authorized. RM-07 through RM-18 remain `PENDING`.
+- Forbidden actions: do not invent `FOUL_PENALTY_MATRIX.md`, do not implement special foul penalty semantics, do not
+  append `PLAYER_FOULED_OUT`, do not add direct team-foul UI or server acceptance in P1, do not change sockets,
+  migrations/schema, event types, capabilities, dependencies, public contracts, production config, deployment, or
+  production access.
+- Next safe step: `RM-06-P1 - Personal Player Foul Contract and Effective Access Gate`. Do not begin it
+  automatically.
+
+RM-06-P1 implementation closure evidence:
+
+- Branch: `feature/rm06-foul-dashboard`; baseline `3f19b3f9f73cffd3d23c4cf127cb707edbba6c8c`.
+  Pre-existing modified `AGENTS.md` and untracked `docs/AI_HANDOFF.md` remained untouched and excluded from staging.
+- Contract/store: the player command accepts only active-roster, matching-side `PERSONAL`; unsupported player foul
+  types and the direct-team command fail before append. One accepted command appends exactly one
+  `PLAYER_FOUL_ADDED`; projection increments player and team/period counts once without `TEAM_FOUL_ADDED` or
+  `PLAYER_FOULED_OUT`. Expected-sequence and command-id safety remain intact.
+- Operator route: `OperatorFoulPage` uses fail-closed EffectiveMatchAccess requiring `matchRead && foulOperate`,
+  exposes only player PERSONAL entry, keeps one pending command, and refreshes projection, roster, and access
+  together for initial load, polling/realtime recovery, and command recovery. Socket contracts are unchanged and
+  correction capability remains independent.
+- TDD evidence: contract RED failed 5 expected cases before GREEN 7/7; EffectiveMatchAccess RED failed 3 expected
+  cases plus route-ownership RED 1 before GREEN 4/4; direct-store team rejection RED failed 1 before GREEN 1/1.
+- Verification: focused foul/roster/correction tests 21/21; DB-backed P1 player test 1/1; `npm run lint` passed;
+  `npm test` passed 72 files/683 tests; `npm run test:db` passed 6 files/25 tests; `npm run db:check` and
+  `npm run migrate:status` passed with 13 applied, 0 pending, 0 checksum mismatches; `npm run build` and
+  `npm run build:single` passed; `git diff --check` and the event-store mutation/public-boundary guards passed.
+- Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 is `IMPLEMENTATION COMPLETE`; RM-06-P2 and later remain
+  `PENDING (NOT AUTHORIZED)`.
+- Next safe step: decision required; RM-06-P2 is not authorized. Do not begin it automatically.
+
+
+RM-06-P2 authorization/contract gate evidence:
+
+- Gate baseline: branch `feature/rm06-foul-dashboard`; live HEAD
+  `34bcf43daace06be0d65df9caeec49e1236bde30`. Existing modified `AGENTS.md` and untracked
+  `docs/AI_HANDOFF.md` are pre-existing Hermes continuity changes and remain untouched, unstaged, and uncommitted.
+- Gate verdict: `P2_AUTHORIZATION_READY` for one bounded player-only client-side slice:
+  `RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue`. This authorization does not extend
+  to direct team-foul semantics or any behavior requiring the absent complete foul-penalty source package.
+- Attribution contract: an operator deliberately selects and confirms one active-roster player under explicit
+  `HOME`/`AWAY` grouping. The immutable UI intent captures distinct local/command/correlation identities, selected
+  team side and player ID, player name/jersey preview, fixed `PERSONAL`, trimmed optional reason, and activation-time
+  period/game-clock preview. Preview fields are confirmation aids only; the server remains authoritative for active
+  roster membership, matching side, canonical player/name/jersey snapshots, period, sequence, actor, status, RBAC,
+  assignment, and append eligibility. Preview context must not be added to the canonical wire payload.
+- Team-attribution boundary: team grouping, team identity derived from the selected roster player's matching side,
+  existing projected team count display, and explanation of the existing one-time team-count effect are authorized.
+  Direct `TEAM_FOUL_ADDED`, team-only, bench, or coach attribution remain unauthorized.
+- Rapid-intent contract: one deliberate confirmation equals one logical intent; repeated confirmations use distinct
+  identities; FIFO ordering; maximum one active request; `expectedSeq` is read from the latest authoritative
+  projection immediately before first dispatch. Accepted or duplicate-accepted results reconcile projection, roster,
+  and EffectiveMatchAccess before the next dispatch and revalidation.
+- Fail-closed lifecycle: before dispatch, refresh and jointly validate authoritative projection, roster, access,
+  live-control status, player ID, side, active roster status, and unchanged preview attribution. `SYNC_REQUIRED`,
+  definite rejection, ambiguous transport outcome, access loss, reconnect, roster drift, preview drift, or match
+  status drift pauses without automatic retry, replay, resume, retargeting, or queue drain. An ambiguous retry may
+  occur only by explicit operator action using the exact same command/correlation identity and first-attempt envelope.
+- Correction boundary: any active, queued, revalidating, or paused foul intent blocks correction navigation until the
+  operator resolves or explicitly discards the intent state. Corrections remain separate, exact-target, append-only,
+  and governed independently by `correctionRequest`.
+- Rule-source boundary: safe without `FOUL_PENALTY_MATRIX.md` are active-player HOME/AWAY selection, fixed `PERSONAL`
+  confirmation, optional reason, existing projected count display, intent delivery safety, server-side revalidation,
+  reconnect/pause/discard controls, and existing append-only correction navigation. Still deferred or blocked are
+  direct team foul, bench/coach/team-only attribution, technical/unsportsmanlike/disqualifying/offensive/other/fighting
+  or special types, foul-out/substitution automation, team penalty and warnings, free throws, possession, shot-clock
+  consequences, overtime carry-forward, and any automatic official-rule consequence.
+- Architecture impact: `API_CHANGE_REQUIRED=false`; `SOCKET_CHANGE_REQUIRED=false`;
+  `EVENT_MODEL_CHANGE_REQUIRED=false`; `DB_SCHEMA_CHANGE_REQUIRED=false`;
+  `NEW_CAPABILITY_REQUIRED=false`.
+- Authorized implementation allowlist only: `apps/web/src/App.tsx`, `apps/web/src/lib/foulControl.ts`,
+  `apps/web/src/lib/apiClient.ts` only for caller-supplied immutable foul command identity/timestamp and an optional
+  caller-owned `AbortSignal` on that same player-foul request, new `apps/web/src/lib/foulIntentQueue.ts`, new
+  `tests/web/rm06-p2-foul-intent-queue.test.ts`, and `tests/web/rm06-p1-foul-effective-access.test.ts` only for
+  focused regression assertions. No component extraction; if another production file is genuinely required, stop for scope approval.
+- Scope amendment: strict-TDD discovery proved that `addPlayerFoul()` regenerated command/correlation identity and
+  timestamp on every call. The Product Owner explicitly authorized only `apps/web/src/lib/apiClient.ts` as the
+  minimum additional file. It may accept and preserve the queue's exact first-attempt envelope for ambiguous retry
+  while retaining the existing endpoint and wire schema; no package contract, server, socket, event, DB, or
+  capability change is authorized. A further fail-closed review proved that an unbounded hanging foul fetch could
+  permanently retain the sole client transport lease. The same file may therefore accept a caller-owned optional
+  `AbortSignal` only for the existing player-foul call so a bounded client timeout can abort transport and enter
+  `NETWORK_AMBIGUOUS`; endpoint, body/wire schema, retry identity, and all architecture flags remain unchanged.
+- Required tests: immutable snapshots and distinct identities; same-side/cross-side FIFO; one active request;
+  dispatch-time latest `expectedSeq`; roster/side/status/access revalidation; preview drift pause; accepted
+  reconciliation before next dispatch; no replay/drain after sync, rejection, ambiguity, reconnect, or access loss;
+  exact same-envelope ambiguous retry; finished/final dispatch denial; correction-navigation blocking; deterministic
+  discard; and existing P1 EffectiveMatchAccess/server foul regressions.
+- Forbidden actions: no API/route/socket/contract/event/schema/migration/RBAC/capability/dependency/public-client
+  change; no direct team foul or special foul type; no `PLAYER_FOULED_OUT`, penalty, free-throw, possession,
+  shot-clock, overtime, substitution, warning, or consequence automation; no silent retargeting; no production access,
+  deployment, merge, or push.
+- Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 remains `IMPLEMENTATION COMPLETE`; RM-06-P2 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-06-P3 and later remain `PENDING (NOT AUTHORIZED)`.
+- Next safe step: implement only `RM-06-P2 - Deliberate Personal-Foul Attribution and Fail-Closed Intent Queue` under
+  strict TDD and the stated allowlist. Do not auto-advance to P3.
+
+RM-06-P2 implementation closure evidence:
+
+- Branch: `feature/rm06-foul-dashboard`; implementation commit:
+  `da21262beba0732eef480a49fe8b7362c6123dcf` (`feat(web): add fail-closed foul intent queue`); implementation parent:
+  `c034157790d76f7d622d9b00d1dabd95ff82b82a`.
+- Changed files: `apps/web/src/App.tsx`, `apps/web/src/lib/apiClient.ts`,
+  `apps/web/src/lib/foulIntentQueue.ts`, and `tests/web/rm06-p2-foul-intent-queue.test.ts`. Pre-existing modified
+  `AGENTS.md` and untracked `docs/AI_HANDOFF.md` remained untouched and excluded from staging and the implementation
+  commit.
+- Attribution and queue: the operator deliberately selects and confirms an active HOME/AWAY roster player for fixed
+  `PERSONAL`; immutable distinct intent identities remain FIFO; rapid enqueue remains available; one global transport
+  lease permits at most one foul request; exact first-attempt identity/envelope is retained for explicit ambiguous retry.
+- Fail-closed authority: first dispatch and explicit retry refresh and jointly revalidate projection, roster,
+  EffectiveMatchAccess, live status, player, side, roster status, and preview attribution. Revalidation is an exact
+  owner/local-intent phase with its own AbortController and 15-second promise deadline. Stale, aborted, replaced, or
+  owner-lost phases cannot prepare, pause, or write authoritative UI state.
+- Transport and reconciliation: dispatch and accepted reconciliation use separate AbortControllers and fresh
+  independent 15-second deadlines. Signals propagate through the existing player-foul, sync, projection, roster, and
+  effective-access requests. The exact global lease is released in `finally`; late abort-insensitive completions cannot
+  transition the queue or write UI after owner/lease loss.
+- Persistence and recovery: every transition from or to unresolved state is persistence-gated and principal-, match-,
+  and canonical-path-bound. Restore accepts only strict exact-key PAUSED sessions with valid lifecycle relationships;
+  malformed or mismatched state is removed and never replayed. Failed enqueue, accepted-pending, pause, preparation,
+  discard, and terminal-removal persistence remain fail-closed. Revalidation persistence failure exposes explicit
+  operator retry without automatic replay or drain, while successful persisted transitions clear stale local recovery
+  state.
+- Scope/security: existing endpoint and player-foul wire schema remain unchanged; no server, socket, package contract,
+  event model/type, database/schema/migration, capability/RBAC, dependency, public contract, production configuration,
+  direct team-foul, special foul, foul-out, penalty, free-throw, possession, shot-clock, overtime, substitution, warning,
+  or official-consequence behavior changed.
+- TDD and review evidence: focused tests progressed through expected RED failures and close at 63/63; RM-06-P1
+  EffectiveMatchAccess regression passed 4/4. Exact-current independent fail-closed review `deleg_aceb61db` returned
+  `passed: true` with no logic or security blocker and exactly the four authorized implementation files.
+- Verification: `npm test` passed 717 tests with 31 database-dependent tests skipped; `npm run lint`, `npm run build`,
+  `npm run build:single`, and `git diff --check` passed. The existing Vite chunk-size warning remains unchanged.
+- Browser evidence: no new mounted browser/viewport run was performed in this P2 implementation closure; route-level
+  source/behavior contracts and full build/regression gates passed. Responsive browser closure and DB-backed production
+  verification remain future RM-06 gates and are not claimed here.
+- Known limitations: the 31 skipped database-dependent tests require their configured disposable database environment;
+  browser integration coverage for deferred-promise timeout/cleanup races remains a nonblocking future strengthening.
+  All special foul and official consequence semantics remain deferred pending product decisions and governing sources.
+- Production status: `NOT INTEGRATED / NOT DEPLOYED / NOT PROVEN`; no merge, push, deployment, Plesk/Hostatom operation,
+  production access, or production mutation occurred.
+- Roadmap transition: RM-06 remains `CURRENT`; RM-06-P1 and RM-06-P2 are `IMPLEMENTATION COMPLETE`; RM-06-P3 and later
+  remain `PENDING (NOT AUTHORIZED)`; RM-07 through RM-18 remain `PENDING`.
+- Next safe step: explicit decision/authorization gate for RM-06-P3. Do not begin P3 automatically.
+
+RM-04-P1 clock workspace hierarchy closure evidence:
+
+- Branch: `feature/rm04-clock-dashboard`; implementation commit: this commit
+  (`feat(clock): establish rm04 clock workspace hierarchy`).
+- Scope: route-owned clock presentation now composes a dedicated clock workspace with large game/shot clocks,
+  capability-isolated supported controls, honest operator-selected reset copy, and no shot-clock start/stop or
+  lifecycle surface. Existing fetch, polling, realtime, reconnect, dispatch, expected-sequence, and interpolation
+  ownership remains in `OperatorClockPage`.
+- Tooling: Playwright `1.61.1` is exact-pinned as a development dependency in `057c43f`; Chromium runtime and the
+  Clock fixture smoke passed. The prior five-viewport browser matrix, zoom 125/150/200, keyboard/focus,
+  forced-colors, and reduced-motion evidence remains valid because the corrective slice changed no frontend file.
+- DB regression correction: `b39fdf1` scopes a shared 15000ms timeout to nine real disposable-DB integration suites
+  and to the two asynchronous DB hook suites. The generic non-DB timeout remains 5000ms; retries and default
+  parallelism remain unchanged.
+- Regression evidence: four historically affected files passed 12/12 individual repetitions and 3/3 combined
+  repetitions; the canonical DB suite passed twice at 24/24; the full suite passed twice at 641/641 with no skip,
+  timeout, retry, pool follow-on error, or rotating failure.
+- Closure validation: focused RM-04-P1 tests passed 4/4; lint, build, build:single, and diff checks passed. The
+  disposable DB target, TCP connection, handshake, migration status, append-only event guard, ownership regression,
+  and API/socket/event/schema boundaries passed without production access or deployment.
+- Roadmap transition: RM-04 remains `CURRENT`; RM-04-P1 is `IMPLEMENTATION COMPLETE`; RM-04-P2 is
+  `PENDING (AUTHORIZED TO BEGIN)`; RM-05 through RM-18 remain `PENDING`.
+- Next safe step: `RM-04-P2 - Game Clock Control and Manual Correction Safety`.
