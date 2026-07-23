@@ -68,7 +68,7 @@ describe("operator Score LiveMatchShell adoption", () => {
     expect(buildOperatorScoreCommandStatus(null, null)).toBeUndefined();
   });
 
-  test("adopts only Score while preserving route-owned realtime, polling, and commands", () => {
+  test("adopts Score and Foul while preserving route-owned realtime, polling, and commands", () => {
     const scoreStart = appSource.indexOf("function OperatorScorePage");
     const foulStart = appSource.indexOf("function OperatorFoulPage");
     const scoreSource = appSource.slice(scoreStart, foulStart);
@@ -85,7 +85,7 @@ describe("operator Score LiveMatchShell adoption", () => {
     expect(scoreSource).toContain("scoreIntentQueueReducer");
     expect(scoreSource).not.toContain("<dt>Seq</dt>");
     expect(scoreSource).not.toContain("<dt>Expected Seq</dt>");
-    expect(appSource.slice(foulStart)).not.toContain("<LiveMatchShell");
+    expect(appSource.slice(foulStart, appSource.indexOf("function OperatorClockPage"))).toContain("<LiveMatchShell");
     expect(appSource).toContain('route.name === "operator-score"');
   });
 });

@@ -18,8 +18,8 @@ describe("RM-03-P4 remaining live route adoption", () => {
   ])("adopts %s without moving route ownership", (startName, endName, currentView) => {
     const source = routeSource(startName, endName);
 
-    expect(source).toContain("<OperatorLiveMatchFrame");
-    expect(source).toContain(`currentView=\"${currentView}\"`);
+    expect(source).toContain(currentView === "fouls" ? "<LiveMatchShell" : "<OperatorLiveMatchFrame");
+    expect(source).toContain(currentView === "fouls" ? 'currentView: "fouls"' : `currentView=\"${currentView}\"`);
     expect(source).toContain("api.getEffectiveMatchAccess(matchId)");
     expect(source).toContain("usePublicProjectionRealtime(");
     expect(source).toContain("window.setInterval(");

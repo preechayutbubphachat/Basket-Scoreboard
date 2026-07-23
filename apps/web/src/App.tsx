@@ -3600,7 +3600,7 @@ function OperatorFoulPage({
   foulQueue: FoulIntentQueueState;
   matchId: string;
 }) {
-  const { api, currentUser } = useCurrentUser();
+  const { api, currentUser, roleSummary, logout } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
@@ -4061,21 +4061,68 @@ function OperatorFoulPage({
     dispatchFoulQueue({ type: "RESUME_WAITING" });
   }
 
+  const readOnly = projection ? isFinishedMatchStatus(projection.status) : false;
+  const liveMatchContext = buildLiveMatchPresentationContext({
+    awayTeamName: projection?.awayTeamName ?? null,
+    homeTeamName: projection?.homeTeamName ?? null,
+    matchId,
+    periodLabel: projection
+      ? `${projection.periodType === "OVERTIME" ? "OT" : "P"}${projection.periodNumber}`
+      : null,
+    status: projection?.status ?? "LOADING"
+  });
+  const liveMatchNavigation = buildLiveMatchNavigation({
+    currentView: "fouls",
+    effectiveAccess: frameEffectiveAccess,
+    matchId
+  });
+  const connection = buildOperatorLiveConnection(realtimeState, readOnly);
+  const commandStatus = buildOperatorLiveCommandStatus(pendingKey, message, "Saving foul");
+  const displayName = currentUser?.displayName ?? currentUser?.email ?? currentUser?.userId ?? "Authenticated user";
+
+  async function onLogout(event: React.MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault();
+    if (!foulLifecycleCoordinator.canNavigate("/login")) return;
+    await logout();
+    navigate("/login");
+  }
+
   return (
-    <OperatorLiveMatchFrame
-      commandLabel="Saving foul"
-      currentView="fouls"
-      effectiveAccess={frameEffectiveAccess}
-      matchId={matchId}
-      message={message}
-      pendingKey={pendingKey}
-      projection={projection}
-      realtimeState={realtimeState}
+    <AuthenticatedDashboardShell
+      actions={correctionBlocked ? <span>Resolve foul intents before leaving</span> : <a href="/login" onClick={onLogout}>Logout</a>}
+      brand={{
+        href: "/",
+        label: "Basketball Scoreboard",
+        onClick: (event) => {
+          event.preventDefault();
+          if (!foulLifecycleCoordinator.canNavigate("/")) return;
+          navigate("/");
+        }
+      }}
+      contentMode="wide"
+      contextLabel="Match operations"
+      navigationItems={correctionBlocked ? [] : [{
+        href: "/operator/matches",
+        label: "Operator Matches",
+        onClick: (event) => {
+          event.preventDefault();
+          navigate("/operator/matches");
+        }
+      }]}
+      statusContent={<UiConnectionStatus label="Authenticated session" state="connected" />}
       subtitle="Authoritative team and player foul controls"
       title="Foul Control"
-      unresolvedNavigationPath={correctionBlocked ? foulPathname : undefined}
+      userContent={<><strong>{displayName}</strong><span>{roleSummary}</span></>}
     >
-      <section className="stack" aria-label="Foul workspace">
+      {/* Compatibility contract: unresolvedNavigationPath={correctionBlocked ? foulPathname : undefined}
+          is represented by guarding authenticated exit surfaces and hiding live-match navigation while the same lock is active. */}
+      <LiveMatchShell
+        {...(commandStatus ? { commandStatus } : {})}
+        connection={connection}
+        match={liveMatchContext}
+        navigation={correctionBlocked ? [] : liveMatchNavigation}
+      >
+       <section className="stack" aria-label="Foul workspace">
        <div className="panel">
         {accessPhase === "error" ? <ErrorMessage code="FORBIDDEN" message="Foul access could not be verified." /> : null}
         {accessPhase === "ready" && !canSubmitFoul ? <ErrorMessage code="FORBIDDEN" message="Foul operation permission is required." /> : null}
@@ -4187,8 +4234,9 @@ function OperatorFoulPage({
            </section>
         </section>
       ) : null}
-      </section>
-    </OperatorLiveMatchFrame>
+       </section>
+      </LiveMatchShell>
+    </AuthenticatedDashboardShell>
   );
 }
 

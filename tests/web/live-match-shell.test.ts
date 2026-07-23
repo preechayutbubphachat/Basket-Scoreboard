@@ -171,12 +171,13 @@ describe("LiveMatchShell presentation foundation", () => {
     expect(shellSource).not.toMatch(/score\s*[+\-*/]=|foul\s*[+\-*/]=|timeout\s*[+\-*/]=|interpolat|retry\s*\(/i);
   });
 
-  test("remains isolated from public shells and all production routes except the authorized Score adoption", () => {
+  test("remains isolated from public shells while Score and Foul use the authorized presentation shell", () => {
     const scoreStart = appSource.indexOf("function OperatorScorePage");
     const foulStart = appSource.indexOf("function OperatorFoulPage");
+    const clockStart = appSource.indexOf("function OperatorClockPage");
     expect(appSource).toMatch(/import\s+\{?\s*LiveMatchShell/);
     expect(appSource.slice(scoreStart, foulStart)).toContain("<LiveMatchShell");
-    expect(appSource.slice(foulStart)).not.toContain("<LiveMatchShell");
+    expect(appSource.slice(foulStart, clockStart)).toContain("<LiveMatchShell");
     expect(publicShellSource).not.toMatch(/LiveMatchShell/);
     expect(shellSource).not.toMatch(/PublicDisplayShell|PublicLiveScoreboard|\/public\//);
   });
