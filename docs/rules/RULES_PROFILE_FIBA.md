@@ -67,7 +67,7 @@ If a requested rule is not supported by one of the first four sources, stop and 
 | `FIBA_OBRI_2024` | FIBA Official Basketball Rules Interpretations 2024 | Interpretations and examples | Approved for later detailed engine work |
 | `PROJECT_RULES_PROFILE_FIBA` | This file | Project-specific machine-readable profile | Approved draft |
 | `RULES_ENGINE_SPEC` | `RULES_ENGINE_SPEC.md` | Validator and state-machine implementation | Pending creation |
-| `FOUL_PENALTY_MATRIX` | `FOUL_PENALTY_MATRIX.md` | Full foul penalty matrix | Pending creation |
+| `FOUL_PENALTY_MATRIX` | `FOUL_PENALTY_MATRIX.md` | Full foul penalty matrix | **Created 2026-07-27 — SOURCE_COMPLETE** |
 | `SHOT_CLOCK_STATE_MACHINE` | `SHOT_CLOCK_STATE_MACHINE.md` | Full 24/14/no-reset transition matrix | Pending creation |
 
 ---
@@ -91,10 +91,10 @@ This profile covers the minimum FIBA rules needed for the first production-safe 
 
 This profile does not yet fully implement:
 
-- Full technical foul penalty matrix
-- Full unsportsmanlike foul penalty matrix
-- Full disqualifying foul penalty matrix
-- Fighting penalties
+- Full technical foul penalty matrix — **SOURCE_COMPLETE in FOUL_PENALTY_MATRIX.md**
+- Full unsportsmanlike foul penalty matrix — **SOURCE_COMPLETE in FOUL_PENALTY_MATRIX.md**
+- Full disqualifying foul penalty matrix — **SOURCE_COMPLETE in FOUL_PENALTY_MATRIX.md**
+- Fighting penalties — **SOURCE_COMPLETE in FOUL_PENALTY_MATRIX.md**
 - Correctable errors
 - Instant replay system
 - Head coach challenge
