@@ -89,11 +89,25 @@ export type PersonalFoulRosterPresentation = {
   >;
 };
 
+export type PlayerFoulPresentation = {
+  player: MatchRosterPlayer;
+  personalFouls: number;
+  hasReachedPersonalFoulLimit: boolean;
+};
+
+export type PersonalFoulRosterPresentationExtended = {
+  available: boolean;
+  playersBySide: Record<
+    "HOME" | "AWAY",
+    Array<PlayerFoulPresentation>
+  >;
+};
+
 export function buildPersonalFoulRosterPresentation(
   projection: ScoreboardProjection,
   rosters: MatchRostersResponse | null
-): PersonalFoulRosterPresentation {
-  const unavailable = (): PersonalFoulRosterPresentation => ({
+): PersonalFoulRosterPresentationExtended {
+  const unavailable = (): PersonalFoulRosterPresentationExtended => ({
     available: false,
     playersBySide: { HOME: [], AWAY: [] }
   });
@@ -129,17 +143,29 @@ export function buildPersonalFoulRosterPresentation(
     foulCounts.set(value.playerId, value.fouls);
   }
 
+  // Derive the personal foul limit from the authoritative FIBA 2024 rule profile
+  // Art. 40: A player who has committed 5 fouls must leave the game
+  const PERSONAL_FOUL_LIMIT = 5;
+
   return {
     available: true,
     playersBySide: {
-      HOME: playersBySide.HOME.map((player) => ({
-        player,
-        personalFouls: foulCounts.get(player.playerId) ?? 0
-      })),
-      AWAY: playersBySide.AWAY.map((player) => ({
-        player,
-        personalFouls: foulCounts.get(player.playerId) ?? 0
-      }))
+      HOME: playersBySide.HOME.map((player) => {
+        const personalFouls = foulCounts.get(player.playerId) ?? 0;
+        return {
+          player,
+          personalFouls,
+          hasReachedPersonalFoulLimit: personalFouls >= PERSONAL_FOUL_LIMIT
+        };
+      }),
+      AWAY: playersBySide.AWAY.map((player) => {
+        const personalFouls = foulCounts.get(player.playerId) ?? 0;
+        return {
+          player,
+          personalFouls,
+          hasReachedPersonalFoulLimit: personalFouls >= PERSONAL_FOUL_LIMIT
+        };
+      })
     }
   };
 }

@@ -60,6 +60,14 @@ function rosters(
   };
 }
 
+function expectedPlayer(player: MatchRosterPlayer, personalFouls: number) {
+  return {
+    player,
+    personalFouls,
+    hasReachedPersonalFoulLimit: personalFouls >= 5
+  };
+}
+
 describe("RM-06-P1 foul effective access", () => {
   it("exposes only the supported player PERSONAL action", () => {
     expect(foulTypeOptions).toEqual(["PERSONAL"]);
@@ -106,11 +114,11 @@ describe("RM-06 personal foul count presentation", () => {
       available: true,
       playersBySide: {
         HOME: [
-          { player: rosterPlayer("home-1", "HOME"), personalFouls: 3 },
-          { player: rosterPlayer("home-2", "HOME"), personalFouls: 0 }
+          { player: rosterPlayer("home-1", "HOME"), personalFouls: 3, hasReachedPersonalFoulLimit: false },
+          { player: rosterPlayer("home-2", "HOME"), personalFouls: 0, hasReachedPersonalFoulLimit: false }
         ],
         AWAY: [
-          { player: rosterPlayer("away-1", "AWAY"), personalFouls: 4 }
+          { player: rosterPlayer("away-1", "AWAY"), personalFouls: 4, hasReachedPersonalFoulLimit: false }
         ]
       }
     });
@@ -174,8 +182,8 @@ describe("RM-06 personal foul count presentation", () => {
     expect(refreshed).toEqual({
       available: true,
       playersBySide: {
-        HOME: [{ player: rosterPlayer("home-2", "HOME"), personalFouls: 0 }],
-        AWAY: [{ player: rosterPlayer("away-1", "AWAY"), personalFouls: 0 }]
+        HOME: [{ player: rosterPlayer("home-2", "HOME"), personalFouls: 0, hasReachedPersonalFoulLimit: false }],
+        AWAY: [{ player: rosterPlayer("away-1", "AWAY"), personalFouls: 0, hasReachedPersonalFoulLimit: false }]
       }
     });
   });

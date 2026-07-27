@@ -4209,15 +4209,16 @@ function OperatorFoulPage({
                     {personalFoulRoster.playersBySide[teamSide].length === 0 ? (
                       <p className="muted">No players assigned.</p>
                     ) : null}
-                    {personalFoulRoster.playersBySide[teamSide].map(({ personalFouls, player }, index) => {
+                    {personalFoulRoster.playersBySide[teamSide].map(({ personalFouls, hasReachedPersonalFoulLimit, player }, index) => {
                       const relationshipId = `personal-foul-${teamSide.toLowerCase()}-${index}`;
                       const playerLabel = `${teamSide} ${buildRosterPlayerDisplayLabel(player)}`;
+                      const isAtLimit = hasReachedPersonalFoulLimit;
                       return (
                         <div
                           key={player.playerId}
                           data-personal-foul-player
                           role="group"
-                          aria-labelledby={`${relationshipId}-player ${relationshipId}-count`}
+                          aria-labelledby={`${relationshipId}-player ${relationshipId}-count ${isAtLimit ? `${relationshipId}-limit` : ""}`}
                         >
                           {readOnly ? (
                             <span id={`${relationshipId}-player`}>{playerLabel}</span>
@@ -4226,7 +4227,7 @@ function OperatorFoulPage({
                               id={`${relationshipId}-player`}
                               type="button"
                               className="score-button"
-                              aria-describedby={`${relationshipId}-count`}
+                              aria-describedby={`${relationshipId}-count ${isAtLimit ? `${relationshipId}-limit` : ""}`}
                               disabled={!canEnqueueFoul || player.status !== "ACTIVE"}
                               onClick={() => setSelectedFoulPlayer({
                                 gameClockRemainingMs: projection.gameClockRemainingMs,
@@ -4242,6 +4243,15 @@ function OperatorFoulPage({
                           <span id={`${relationshipId}-count`}>
                             Personal fouls: <strong>{personalFouls}</strong>
                           </span>
+                          {isAtLimit && (
+                            <span
+                              id={`${relationshipId}-limit`}
+                              className="foul-limit-reached"
+                              aria-live="polite"
+                            >
+                              — Personal foul limit reached
+                            </span>
+                          )}
                         </div>
                       );
                     })}
