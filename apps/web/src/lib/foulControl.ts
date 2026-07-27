@@ -2,6 +2,8 @@ import type {
   CommandResult,
   EffectiveMatchAccess,
   FoulType,
+  MatchRosterPlayer,
+  MatchRostersResponse,
   ScoreboardProjection,
   TeamFoulAddedPayload
 } from "@basket-scoreboard/api-contracts";
@@ -77,6 +79,69 @@ export function buildFoulControlPanels(projection: ScoreboardProjection) {
       pendingKey: buildFoulPendingKey(teamSide)
     };
   });
+}
+
+export type PersonalFoulRosterPresentation = {
+  available: boolean;
+  playersBySide: Record<
+    "HOME" | "AWAY",
+    Array<{ player: MatchRosterPlayer; personalFouls: number }>
+  >;
+};
+
+export function buildPersonalFoulRosterPresentation(
+  projection: ScoreboardProjection,
+  rosters: MatchRostersResponse | null
+): PersonalFoulRosterPresentation {
+  const unavailable = (): PersonalFoulRosterPresentation => ({
+    available: false,
+    playersBySide: { HOME: [], AWAY: [] }
+  });
+  if (!rosters || !Array.isArray(projection.playerFouls)) return unavailable();
+
+  const playersBySide = {
+    HOME: rosters.rosters.HOME.filter((player) => player.status === "ACTIVE"),
+    AWAY: rosters.rosters.AWAY.filter((player) => player.status === "ACTIVE")
+  };
+  const activePlayersById = new Map<string, MatchRosterPlayer>();
+  for (const teamSide of ["HOME", "AWAY"] as const) {
+    for (const player of playersBySide[teamSide]) {
+      if (player.teamSide !== teamSide || activePlayersById.has(player.playerId)) {
+        return unavailable();
+      }
+      activePlayersById.set(player.playerId, player);
+    }
+  }
+
+  const foulCounts = new Map<string, number>();
+  for (const value of projection.playerFouls) {
+    if (!value || typeof value !== "object" || typeof value.playerId !== "string") continue;
+    const player = activePlayersById.get(value.playerId);
+    if (!player) continue;
+    if (
+      foulCounts.has(value.playerId) ||
+      value.teamSide !== player.teamSide ||
+      !Number.isInteger(value.fouls) ||
+      value.fouls < 0
+    ) {
+      return unavailable();
+    }
+    foulCounts.set(value.playerId, value.fouls);
+  }
+
+  return {
+    available: true,
+    playersBySide: {
+      HOME: playersBySide.HOME.map((player) => ({
+        player,
+        personalFouls: foulCounts.get(player.playerId) ?? 0
+      })),
+      AWAY: playersBySide.AWAY.map((player) => ({
+        player,
+        personalFouls: foulCounts.get(player.playerId) ?? 0
+      }))
+    }
+  };
 }
 
 export function buildTeamFoulCommandPayload(

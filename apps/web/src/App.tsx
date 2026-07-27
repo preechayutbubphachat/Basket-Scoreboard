@@ -111,6 +111,7 @@ import {
 } from "./lib/scoreIntentQueue";
 import {
   buildFoulControlPanels,
+  buildPersonalFoulRosterPresentation,
   foulTypeOptions,
   getFoulControlFeedback,
   resolveFoulEffectiveAccess
@@ -3661,6 +3662,10 @@ function OperatorFoulPage({
     matchStatus: projection.status,
     pauseReason: foulQueue.pauseReason
   }) : false;
+  const personalFoulRoster = useMemo(
+    () => projection ? buildPersonalFoulRosterPresentation(projection, rosters) : null,
+    [projection, rosters]
+  );
   const correctionBlocked = blocksFoulCorrectionNavigation(foulQueue);
   const frameEffectiveAccess = correctionBlocked && resolvedAccess.access
     ? { ...resolvedAccess.access, capabilities: { ...resolvedAccess.access.capabilities, correctionRequest: false } }
@@ -3803,6 +3808,15 @@ function OperatorFoulPage({
     }
     previousFoulRealtimeRef.current = realtimeState;
   }, [foulQueue.activeIntent, foulQueue.queuedIntents.length, realtimeState]);
+
+  useEffect(() => {
+    if (!selectedFoulPlayer || !personalFoulRoster) return;
+    const playerStillAvailable = personalFoulRoster.available &&
+      personalFoulRoster.playersBySide[selectedFoulPlayer.teamSide].some(
+        ({ player }) => player.playerId === selectedFoulPlayer.player.playerId
+      );
+    if (!playerStillAvailable) setSelectedFoulPlayer(null);
+  }, [personalFoulRoster, selectedFoulPlayer]);
 
   async function refreshAfterCommand(lastSeq: number, signal: AbortSignal, lease: FoulTransportLease) {
     const requestOwner = foulOwnerRef.current!;
@@ -4180,41 +4194,62 @@ function OperatorFoulPage({
           </div>
           <section className="inline-panel">
             <h2>Player Fouls</h2>
-            {!rosters || (rosters.rosters.HOME.length === 0 && rosters.rosters.AWAY.length === 0) ? (
+            {!personalFoulRoster?.available ? (
+              <p className="muted">Player foul data is unavailable.</p>
+            ) : (
+              personalFoulRoster.playersBySide.HOME.length === 0 &&
+              personalFoulRoster.playersBySide.AWAY.length === 0
+            ) ? (
               <p className="muted">No active roster players are available for personal foul entry.</p>
             ) : (
               <div className="score-actions">
                 {(["HOME", "AWAY"] as const).map((teamSide) => (
                   <div key={teamSide}>
                     <h3>{getRosterTeamLabel(projection, teamSide)}</h3>
-                    {getRosterPlayersForSide(rosters, teamSide).length === 0 ? (
+                    {personalFoulRoster.playersBySide[teamSide].length === 0 ? (
                       <p className="muted">No players assigned.</p>
                     ) : null}
-                    {getRosterPlayersForSide(rosters, teamSide).map((player) => (
-                      <button
-                        key={player.playerId}
-                        type="button"
-                        className="score-button"
-                        disabled={
-                          !canEnqueueFoul ||
-                          player.status !== "ACTIVE"
-                        }
-                         onClick={() => setSelectedFoulPlayer({
-                           gameClockRemainingMs: projection.gameClockRemainingMs,
-                           periodNumber: projection.periodNumber,
-                           player: { ...player },
-                           teamLabel: getRosterTeamLabel(projection, teamSide),
-                           teamSide
-                         })}
-                      >
-                        {`Select ${teamSide} ${buildRosterPlayerDisplayLabel(player)}`}
-                      </button>
-                    ))}
+                    {personalFoulRoster.playersBySide[teamSide].map(({ personalFouls, player }, index) => {
+                      const relationshipId = `personal-foul-${teamSide.toLowerCase()}-${index}`;
+                      const playerLabel = `${teamSide} ${buildRosterPlayerDisplayLabel(player)}`;
+                      return (
+                        <div
+                          key={player.playerId}
+                          data-personal-foul-player
+                          role="group"
+                          aria-labelledby={`${relationshipId}-player ${relationshipId}-count`}
+                        >
+                          {readOnly ? (
+                            <span id={`${relationshipId}-player`}>{playerLabel}</span>
+                          ) : (
+                            <button
+                              id={`${relationshipId}-player`}
+                              type="button"
+                              className="score-button"
+                              aria-describedby={`${relationshipId}-count`}
+                              disabled={!canEnqueueFoul || player.status !== "ACTIVE"}
+                              onClick={() => setSelectedFoulPlayer({
+                                gameClockRemainingMs: projection.gameClockRemainingMs,
+                                periodNumber: projection.periodNumber,
+                                player: { ...player },
+                                teamLabel: getRosterTeamLabel(projection, teamSide),
+                                teamSide
+                              })}
+                            >
+                              {`Select ${playerLabel}`}
+                            </button>
+                          )}
+                          <span id={`${relationshipId}-count`}>
+                            Personal fouls: <strong>{personalFouls}</strong>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
                </div>
              )}
-             {selectedFoulPlayer ? (
+             {selectedFoulPlayer && personalFoulRoster?.available ? (
                <section className="inline-panel" aria-labelledby="foul-review-title">
                  <h3 id="foul-review-title">Review personal foul</h3>
                  <dl className="state-strip">

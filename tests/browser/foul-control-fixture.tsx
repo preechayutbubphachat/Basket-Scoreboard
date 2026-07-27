@@ -11,6 +11,7 @@ import "../../apps/web/src/styles.css";
 type AccessMode = "allowed" | "denied" | "error" | "loading" | "malformed" | "mismatch" | "readonly";
 type CommandMode = "accepted" | "accepted-refresh-fail" | "network-ambiguous" | "rejected" | "sync-required";
 type RosterVariant = "away-empty" | "both-empty" | "home-empty" | "large-roster" | "long-names" | "normal";
+type ProjectionVariant = "duplicate" | "fractional" | "mismatch" | "negative" | "normal";
 
 type FixtureRequest = {
   body: unknown;
@@ -27,11 +28,14 @@ type FoulFixtureController = {
     projection: ReturnType<typeof createProjection>;
     requests: FixtureRequest[];
   };
+  setAcceptedRefreshDelay(milliseconds: number): void;
   setAccessMode(mode: AccessMode): void;
   setAuthorityDelay(milliseconds: number): void;
   setCommandMode(mode: CommandMode): void;
   setPersistenceBlocked(blocked: boolean): void;
+  setPersonalFoulCount(playerId: string, fouls: number): void;
   setProjectionStatus(status: string): void;
+  removeRosterPlayer(playerId: string): void;
   setRosterVariant(variant: RosterVariant): void;
 };
 
@@ -85,7 +89,43 @@ function createRosters(variant: RosterVariant) {
   return { matchId, rosters: { HOME: home, AWAY: away } };
 }
 
-function createProjection(status = "LIVE", longNames = false) {
+function createPlayerFouls(variant: ProjectionVariant) {
+  const playerFouls = [
+    {
+      playerId: "home-player-1",
+      teamSide: "HOME",
+      playerName: "Bangkok Player 1",
+      jerseyNumber: "01",
+      fouls: 2
+    },
+    {
+      playerId: "away-player-1",
+      teamSide: "AWAY",
+      playerName: "Chiang Mai Player 1",
+      jerseyNumber: "01",
+      fouls: 4
+    },
+    {
+      playerId: "removed-or-orphan-player",
+      teamSide: "HOME",
+      playerName: "Private orphan",
+      jerseyNumber: null,
+      fouls: -9
+    }
+  ];
+  if (variant === "duplicate") {
+    playerFouls.push({ ...playerFouls[0], fouls: 3 });
+  } else if (variant === "negative") {
+    playerFouls[0] = { ...playerFouls[0], fouls: -1 };
+  } else if (variant === "fractional") {
+    playerFouls[0] = { ...playerFouls[0], fouls: 1.5 };
+  } else if (variant === "mismatch") {
+    playerFouls[0] = { ...playerFouls[0], teamSide: "AWAY" };
+  }
+  return playerFouls;
+}
+
+function createProjection(status = "LIVE", longNames = false, variant: ProjectionVariant = "normal") {
   return {
     matchId,
     homeTeamId: "home-team",
@@ -99,7 +139,7 @@ function createProjection(status = "LIVE", longNames = false) {
     homeScore: 72,
     awayScore: 68,
     teamFouls: { home: 3, away: 2 },
-    playerFouls: [],
+    playerFouls: createPlayerFouls(variant),
     periodType: "REGULATION",
     periodNumber: 4,
     gameClockRemainingMs: 123_000,
@@ -120,8 +160,21 @@ const initialRosterVariant: RosterVariant = (
     ? initialState
     : "normal"
 ) as RosterVariant;
+const initialProjectionVariant: ProjectionVariant = (
+  initialState === "malformed-foul-duplicate"
+    ? "duplicate"
+    : initialState === "malformed-foul-negative"
+      ? "negative"
+      : initialState === "malformed-foul-fractional"
+        ? "fractional"
+        : initialState === "malformed-foul-mismatch"
+          ? "mismatch"
+          : "normal"
+) as ProjectionVariant;
 
 const state = {
+  acceptedProjectionAvailableAt: 0,
+  acceptedRefreshDelayMs: 0,
   accessMode: initialAccessMode,
   authorityDelayMs: 0,
   commandAttempts: 0,
@@ -133,7 +186,8 @@ const state = {
   persistenceBlocked: false,
   projection: createProjection(
     initialState === "finished" ? "FINISHED" : initialState === "final" ? "FINAL" : "LIVE",
-    initialState === "long-names"
+    initialState === "long-names",
+    initialProjectionVariant
   ),
   requests: [] as FixtureRequest[],
   rosterVariant: initialRosterVariant,
@@ -260,6 +314,8 @@ window.fetch = async (input, init = {}) => {
   if (requestUrl.pathname.endsWith("/projection")) {
     if (state.accessMode === "loading") return new Promise<Response>(() => {});
     if (state.authorityDelayMs) await delay(state.authorityDelayMs, init.signal);
+    const acceptedProjectionWaitMs = state.acceptedProjectionAvailableAt - Date.now();
+    if (acceptedProjectionWaitMs > 0) await delay(acceptedProjectionWaitMs, init.signal);
     if (state.accessMode === "error") return apiError(503, "SERVICE_UNAVAILABLE", "Projection fixture unavailable");
     return jsonResponse(state.projection);
   }
@@ -270,6 +326,9 @@ window.fetch = async (input, init = {}) => {
     return success(state.rosters);
   }
   if (requestUrl.pathname.endsWith("/sync")) {
+    if (state.acceptedRefreshDelayMs > 0) {
+      await delay(state.acceptedRefreshDelayMs, init.signal);
+    }
     if (state.commandMode === "accepted-refresh-fail") {
       state.failNextRefresh = true;
       return apiError(503, "SERVICE_UNAVAILABLE", "Accepted command reconciliation failed");
@@ -311,6 +370,7 @@ window.fetch = async (input, init = {}) => {
         });
       }
       applyAcceptedFoul(body);
+      state.acceptedProjectionAvailableAt = Date.now() + state.acceptedRefreshDelayMs;
       return jsonResponse({
         status: "ACCEPTED",
         currentSeq: state.projection.currentSeq,
@@ -341,6 +401,9 @@ window.__foulFixture = {
       requests: structuredClone(state.requests)
     };
   },
+  setAcceptedRefreshDelay(milliseconds) {
+    state.acceptedRefreshDelayMs = Math.max(0, milliseconds);
+  },
   setAccessMode(mode) {
     state.accessMode = mode;
   },
@@ -359,8 +422,16 @@ window.__foulFixture = {
       return originalStorageSetItem.call(this, key, value);
     };
   },
+  setPersonalFoulCount(playerId, fouls) {
+    const entry = state.projection.playerFouls.find((candidate) => candidate.playerId === playerId);
+    if (entry) entry.fouls = fouls;
+  },
   setProjectionStatus(status) {
     state.projection.status = status;
+  },
+  removeRosterPlayer(playerId) {
+    state.rosters.rosters.HOME = state.rosters.rosters.HOME.filter((player) => player.playerId !== playerId);
+    state.rosters.rosters.AWAY = state.rosters.rosters.AWAY.filter((player) => player.playerId !== playerId);
   },
   setRosterVariant(variant) {
     state.rosterVariant = variant;

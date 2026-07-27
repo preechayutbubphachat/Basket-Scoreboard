@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import type {
+  MatchRosterPlayer,
+  MatchRostersResponse,
+  ScoreboardProjection
+} from "@basket-scoreboard/api-contracts";
 import {
+  buildPersonalFoulRosterPresentation,
   foulTypeOptions,
   resolveFoulEffectiveAccess
 } from "../../apps/web/src/lib/foulControl";
@@ -9,6 +15,48 @@ function access(matchId: string, matchRead: boolean, foulOperate: boolean, corre
   return {
     matchId,
     capabilities: { matchRead, foulOperate, correctionRequest }
+  };
+}
+
+function rosterPlayer(playerId: string, teamSide: "HOME" | "AWAY"): MatchRosterPlayer {
+  return {
+    rosterPlayerId: `${playerId}-roster`,
+    matchId: "match-1",
+    teamSide,
+    teamId: `${teamSide.toLowerCase()}-team`,
+    playerId,
+    displayNameSnapshot: `${teamSide} ${playerId}`,
+    jerseyNumberSnapshot: playerId.at(-1) ?? null,
+    position: "GUARD",
+    status: "ACTIVE",
+    isStarter: false,
+    isCaptain: false
+  };
+}
+
+function projection(playerFouls: ScoreboardProjection["playerFouls"]): ScoreboardProjection {
+  return {
+    matchId: "match-1",
+    homeScore: 0,
+    awayScore: 0,
+    teamFouls: { home: 0, away: 0 },
+    playerFouls,
+    periodNumber: 1,
+    gameClockRemainingMs: 600_000,
+    shotClockRemainingMs: 24_000,
+    status: "LIVE",
+    currentSeq: 7,
+    projectionVersion: "scoreboard-v1"
+  };
+}
+
+function rosters(
+  home: MatchRosterPlayer[] = [rosterPlayer("home-1", "HOME"), rosterPlayer("home-2", "HOME")],
+  away: MatchRosterPlayer[] = [rosterPlayer("away-1", "AWAY")]
+): MatchRostersResponse {
+  return {
+    matchId: "match-1",
+    rosters: { HOME: home, AWAY: away }
   };
 }
 
@@ -40,5 +88,95 @@ describe("RM-06-P1 foul effective access", () => {
     expect(route).not.toContain("canOperateFoul(currentUser, matchId)");
     expect(route).not.toContain("addTeamFoul");
     expect(route).not.toContain("Add Team Foul");
+  });
+});
+
+describe("RM-06 personal foul count presentation", () => {
+  it("joins authoritative counts only by exact active roster playerId with zero for a missing entry", () => {
+    const result = buildPersonalFoulRosterPresentation(
+      projection([
+        { playerId: "home-1", teamSide: "HOME", playerName: "stale name", jerseyNumber: "99", fouls: 3 },
+        { playerId: "away-1", teamSide: "AWAY", playerName: null, jerseyNumber: null, fouls: 4 },
+        { playerId: "orphan", teamSide: "HOME", playerName: "Private orphan", jerseyNumber: null, fouls: -9 }
+      ]),
+      rosters()
+    );
+
+    expect(result).toEqual({
+      available: true,
+      playersBySide: {
+        HOME: [
+          { player: rosterPlayer("home-1", "HOME"), personalFouls: 3 },
+          { player: rosterPlayer("home-2", "HOME"), personalFouls: 0 }
+        ],
+        AWAY: [
+          { player: rosterPlayer("away-1", "AWAY"), personalFouls: 4 }
+        ]
+      }
+    });
+  });
+
+  it.each([
+    {
+      name: "duplicate exact playerId projection entries",
+      playerFouls: [
+        { playerId: "home-1", teamSide: "HOME" as const, playerName: null, jerseyNumber: null, fouls: 1 },
+        { playerId: "home-1", teamSide: "HOME" as const, playerName: null, jerseyNumber: null, fouls: 2 }
+      ]
+    },
+    {
+      name: "negative fouls",
+      playerFouls: [
+        { playerId: "home-1", teamSide: "HOME" as const, playerName: null, jerseyNumber: null, fouls: -1 }
+      ]
+    },
+    {
+      name: "non-integer fouls",
+      playerFouls: [
+        { playerId: "home-1", teamSide: "HOME" as const, playerName: null, jerseyNumber: null, fouls: 1.5 }
+      ]
+    },
+    {
+      name: "exact-player teamSide mismatch",
+      playerFouls: [
+        { playerId: "home-1", teamSide: "AWAY" as const, playerName: null, jerseyNumber: null, fouls: 1 }
+      ]
+    }
+  ])("fails closed without player values for $name", ({ playerFouls }) => {
+    expect(buildPersonalFoulRosterPresentation(projection(playerFouls), rosters())).toEqual({
+      available: false,
+      playersBySide: { HOME: [], AWAY: [] }
+    });
+  });
+
+  it("fails closed when an exact active roster playerId is duplicated across roster entries", () => {
+    const duplicate = rosterPlayer("home-1", "HOME");
+    expect(buildPersonalFoulRosterPresentation(
+      projection([]),
+      rosters([rosterPlayer("home-1", "HOME")], [{ ...duplicate, teamSide: "AWAY", teamId: "away-team" }])
+    )).toEqual({
+      available: false,
+      playersBySide: { HOME: [], AWAY: [] }
+    });
+  });
+
+  it("drops a removed player on the next authoritative roster input", () => {
+    const initial = buildPersonalFoulRosterPresentation(
+      projection([{ playerId: "home-1", teamSide: "HOME", playerName: null, jerseyNumber: null, fouls: 2 }]),
+      rosters()
+    );
+    const refreshed = buildPersonalFoulRosterPresentation(
+      projection([{ playerId: "home-1", teamSide: "HOME", playerName: null, jerseyNumber: null, fouls: 2 }]),
+      rosters([rosterPlayer("home-2", "HOME")])
+    );
+
+    expect(initial.available && initial.playersBySide.HOME.map(({ player }) => player.playerId)).toEqual(["home-1", "home-2"]);
+    expect(refreshed).toEqual({
+      available: true,
+      playersBySide: {
+        HOME: [{ player: rosterPlayer("home-2", "HOME"), personalFouls: 0 }],
+        AWAY: [{ player: rosterPlayer("away-1", "AWAY"), personalFouls: 0 }]
+      }
+    });
   });
 });

@@ -17,7 +17,19 @@ const viewports = [
   { width: 1024, height: 576 }
 ];
 const zoomPercents = [125, 150, 200];
-const failClosedStates = ["loading", "error", "denied", "malformed", "mismatch", "finished", "final"];
+const failClosedStates = [
+  "loading",
+  "error",
+  "denied",
+  "malformed",
+  "mismatch",
+  "malformed-foul-duplicate",
+  "malformed-foul-negative",
+  "malformed-foul-fractional",
+  "malformed-foul-mismatch",
+  "finished",
+  "final"
+];
 const rosterStates = ["home-empty", "away-empty", "both-empty", "large-roster", "long-names"];
 
 const unexpectedConsoleMessages = [];
@@ -199,6 +211,18 @@ async function selectAndConfirm(page, teamSide, index) {
   await page.getByRole("button", { name: "Confirm personal foul" }).click();
 }
 
+async function getPersonalFoulEvidence(page, teamSide, index) {
+  const number = String(index).padStart(2, "0");
+  const button = page.getByRole("button", { name: new RegExp(`^Select ${teamSide} #${number}\\b`) });
+  const descriptionId = await button.getAttribute("aria-describedby");
+  assert(descriptionId, `${teamSide} #${number} is missing its exact personal-foul description relationship`);
+  const description = page.locator(`#${descriptionId}`);
+  const text = (await description.innerText()).trim();
+  const match = text.match(/^Personal fouls:\s*(\d+)$/);
+  assert(match, `${teamSide} #${number} has a non-numeric Personal fouls value: ${text}`);
+  return { descriptionId, personalFouls: Number(match[1]), text };
+}
+
 async function verifyMountedFailClosedStates(page, viewport) {
   const evidence = [];
   for (const state of failClosedStates) {
@@ -213,6 +237,7 @@ async function verifyMountedFailClosedStates(page, viewport) {
           button.textContent?.includes("Confirm personal foul") && !button.disabled
         ).length,
         noHorizontalOverflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+        playerRows: document.querySelectorAll("[data-personal-foul-player]").length,
         text: document.body.innerText
       };
     });
@@ -220,12 +245,45 @@ async function verifyMountedFailClosedStates(page, viewport) {
     assert.equal(result.actionableButtons, 0, `${state} exposed actionable foul buttons`);
     assert.equal(result.confirmButtons, 0, `${state} exposed an actionable confirmation`);
     if (state === "finished" || state === "final") {
-      assert(result.commandButtons > 0, `${state} did not preserve read-only roster context`);
+      assert.equal(result.commandButtons, 0, `${state} exposed a player foul command`);
+      assert(result.playerRows > 0, `${state} did not preserve read-only roster/count context`);
+      assert(result.text.includes("Personal fouls:"));
       assert(result.text.includes("Match is finished. Use correction workflow for post-game edits."));
+    }
+    if (state.startsWith("malformed-foul-")) {
+      assert.equal(result.commandButtons, 0, `${state} exposed player selection buttons`);
+      assert.equal(result.playerRows, 0, `${state} exposed private player/count values`);
+      assert(!result.text.includes("Bangkok Player"), `${state} exposed a private roster player`);
+      assert(result.text.includes("Player foul data is unavailable."));
     }
     evidence.push({ state, ...result });
   }
   return evidence;
+}
+
+async function verifyMountedPersonalFoulPresentation(page, viewport) {
+  await page.setViewportSize(viewport);
+  await openFixture(page);
+
+  const homeOne = await getPersonalFoulEvidence(page, "HOME", 1);
+  const homeTwo = await getPersonalFoulEvidence(page, "HOME", 2);
+  const awayOne = await getPersonalFoulEvidence(page, "AWAY", 1);
+  assert.equal(homeOne.personalFouls, 2);
+  assert.equal(homeTwo.personalFouls, 0, "missing exact projection entry did not render zero");
+  assert.equal(awayOne.personalFouls, 4);
+  assert.notEqual(homeOne.descriptionId, awayOne.descriptionId, "player/count relationships were not exact");
+  assert.equal(await page.getByText("Private orphan", { exact: true }).count(), 0, "orphan projection data leaked");
+
+  await page.evaluate(() => window.__foulFixture.setPersonalFoulCount("home-player-1", 6));
+  await page.waitForFunction(() => document.body.innerText.includes("Personal fouls: 6"));
+  const refreshed = await getPersonalFoulEvidence(page, "HOME", 1);
+  assert.equal(refreshed.personalFouls, 6, "authoritative polling refresh did not update the count");
+
+  await page.evaluate(() => window.__foulFixture.removeRosterPlayer("home-player-2"));
+  await page.getByRole("button", { name: /^Select HOME #02\b/ }).waitFor({ state: "detached" });
+  assert.equal(await page.getByText("Bangkok Player 2", { exact: true }).count(), 0, "removed player survived authoritative roster refresh");
+
+  return { awayOne, homeOne, homeTwo, refreshed, removedPlayerDisappeared: true };
 }
 
 async function verifyMountedRosterVariants(page, viewport) {
@@ -448,6 +506,8 @@ async function verifyMountedProjectionAuthority(page, viewport) {
   await page.setViewportSize(viewport);
   await openFixture(page);
   const before = await page.evaluate(() => window.__foulFixture.getSnapshot().projection);
+  const personalBefore = await getPersonalFoulEvidence(page, "HOME", 1);
+  await page.evaluate(() => window.__foulFixture.setAcceptedRefreshDelay(700));
   await selectAndConfirm(page, "HOME", 1);
   await page.getByText("Saving...", { exact: true }).first().waitFor();
   const pending = await page.getByText("Saving...", { exact: true }).count();
@@ -456,16 +516,37 @@ async function verifyMountedProjectionAuthority(page, viewport) {
     return label?.querySelector("strong")?.textContent;
   });
   assert.equal(whilePending, String(before.teamFouls.home), "client mutated the foul count before acceptance");
+  const personalWhilePending = await getPersonalFoulEvidence(page, "HOME", 1);
+  assert.equal(
+    personalWhilePending.personalFouls,
+    personalBefore.personalFouls,
+    "client mutated the personal foul count before authoritative reconciliation"
+  );
+  await page.getByText(`Foul added. Current seq ${before.currentSeq + 1}.`, { exact: true }).first().waitFor();
+  const personalAfterAcceptedResponse = await getPersonalFoulEvidence(page, "HOME", 1);
+  assert.equal(
+    personalAfterAcceptedResponse.personalFouls,
+    personalBefore.personalFouls,
+    "accepted response optimistically mutated the personal foul count before authoritative refresh"
+  );
   await page.waitForFunction((expected) => {
     const label = [...document.querySelectorAll(".foul-count")].find((node) => node.textContent?.includes("HOME team fouls"));
     return label?.querySelector("strong")?.textContent === String(expected);
   }, before.teamFouls.home + 1);
-  await page.getByText(`Foul added. Current seq ${before.currentSeq + 1}.`, { exact: true }).first().waitFor();
   const after = await page.evaluate(() => window.__foulFixture.getSnapshot());
+  const personalAfter = await getPersonalFoulEvidence(page, "HOME", 1);
   assert.equal(after.projection.teamFouls.home, before.teamFouls.home + 1);
+  assert.equal(personalAfter.personalFouls, personalBefore.personalFouls + 1);
   assert.equal(after.projection.currentSeq, before.currentSeq + 1);
   assert.equal(after.commandBodies[0].payload.foulType, "PERSONAL");
-  return { before: before.teamFouls.home, after: after.projection.teamFouls.home, pendingVisible: pending > 0 };
+  return {
+    before: before.teamFouls.home,
+    after: after.projection.teamFouls.home,
+    personalBefore: personalBefore.personalFouls,
+    personalAfterAcceptedResponse: personalAfterAcceptedResponse.personalFouls,
+    personalAfter: personalAfter.personalFouls,
+    pendingVisible: pending > 0
+  };
 }
 
 async function verifyKeyboardAndMedia(page, viewport) {
@@ -621,6 +702,7 @@ async function main() {
       zoomWorkflows.push(await verifyZoomWorkflowReachability(page, percent, viewport));
     }
     const failClosed = await verifyMountedFailClosedStates(page, viewports.at(-1));
+    const personalFoulPresentation = await verifyMountedPersonalFoulPresentation(page, viewports.at(-1));
     const rosters = await verifyMountedRosterVariants(page, viewports.at(-1));
     const queue = await verifyMountedQueueLifecycle(page, viewports[3]);
     const ambiguousRetry = await verifyMountedAmbiguousRetry(page, viewports[3]);
@@ -639,6 +721,7 @@ async function main() {
       zoom,
       zoomWorkflows,
       failClosed,
+      personalFoulPresentation,
       rosters,
       queue,
       ambiguousRetry,
