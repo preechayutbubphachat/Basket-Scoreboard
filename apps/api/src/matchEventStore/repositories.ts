@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   CommandResult,
@@ -51,6 +52,10 @@ type EventRow = RowDataPacket & {
 
 type DedupRow = RowDataPacket & {
   result: unknown;
+};
+
+type DedupIdentityRow = DedupRow & {
+  request_hash: string;
 };
 
 type PlayerMatchRow = RowDataPacket & {
@@ -139,9 +144,21 @@ export async function recoverMatchStreamReadConflict(options: {
 
   const connection = await options.pool.getConnection();
   try {
-    const duplicate = await findDuplicateCommand(connection, options.command.matchId, options.command.commandId);
+    const duplicate = await findDuplicateCommandIdentity(connection, options.command.matchId, options.command.commandId);
     if (duplicate) {
-      return { ...duplicate, status: "DUPLICATE_ACCEPTED", appendedEvents: [] };
+      const requestHash = createHash("sha256").update(JSON.stringify(options.command)).digest("hex");
+      if (duplicate.requestHash !== requestHash) {
+        return {
+          status: "REJECTED",
+          commandId: options.command.commandId,
+          matchId: options.command.matchId,
+          currentSeq: duplicate.result.currentSeq,
+          appendedEvents: [],
+          reasonCode: reasonCodes.VALIDATION_ERROR,
+          message: "Command identity was already used with a different request"
+        };
+      }
+      return { ...duplicate.result, status: "DUPLICATE_ACCEPTED" };
     }
     const currentSeq = await getCurrentSeq(connection, options.command.matchId);
     if (currentSeq === null) {
@@ -172,6 +189,24 @@ export async function findDuplicateCommand(
   );
 
   return rows[0] ? parseJsonField<CommandResult>(rows[0].result) : null;
+}
+
+export async function findDuplicateCommandIdentity(
+  connection: PoolConnection,
+  matchId: string,
+  commandId: string
+) {
+  const [rows] = await connection.query<DedupIdentityRow[]>(
+    "SELECT request_hash, result FROM command_deduplication WHERE match_id = ? AND command_id = ?",
+    [matchId, commandId]
+  );
+  if (!rows[0]) {
+    return null;
+  }
+  return {
+    requestHash: rows[0].request_hash,
+    result: parseJsonField<CommandResult>(rows[0].result)
+  };
 }
 
 export async function insertCommandResult(

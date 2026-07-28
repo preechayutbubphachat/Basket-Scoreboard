@@ -19,6 +19,7 @@ import {
   reasonCodes,
   replayQuerySchema,
   rejectCorrectionCommandSchema,
+  recordPlayerTechnicalFoulCommandSchema,
   shotClockResetCommandSchema,
   shotClockSetCommandSchema,
   syncQuerySchema,
@@ -35,6 +36,7 @@ import {
 } from "../matchEventStore/appendClockCommand.js";
 import {
   appendPlayerFoulAddedCommand,
+  appendPlayerTechnicalFoulCommand,
   appendTeamFoulAddedCommand
 } from "../matchEventStore/appendFoulCommand.js";
 import {
@@ -473,6 +475,41 @@ export function registerMatchRoutes(
         authRbacMs: performance.now() - ((request as FastifyRequest & { scoreCommandStartedAt?: number }).scoreCommandStartedAt ?? performance.now())
       });
 
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/foul/player/technical",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireCsrf,
+        auth.requireMatchPermission(
+          matchCommandPermissions.foul,
+          (request) => (request.params as { matchId: string }).matchId
+        )
+      ]
+    },
+    async (request, reply) => {
+      const command = recordPlayerTechnicalFoulCommandSchema.parse(request.body);
+      if (command.matchId !== request.params.matchId) {
+        return reply.send({
+          status: "REJECTED",
+          commandId: command.commandId,
+          matchId: command.matchId,
+          currentSeq: 0,
+          appendedEvents: [],
+          reasonCode: reasonCodes.MATCH_NOT_FOUND,
+          message: "Path matchId does not match command envelope matchId"
+        });
+      }
+      const result = await appendPlayerTechnicalFoulCommand({
+        pool,
+        command,
+        user: request.user!
+      });
       await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return reply.send(result);
     }

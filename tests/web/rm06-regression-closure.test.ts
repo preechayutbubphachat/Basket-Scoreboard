@@ -75,8 +75,8 @@ describe("RM-06 foul browser regression closure", () => {
     expect(browserSource).toContain('reducedMotion: "reduce"');
   });
 
-  it("keeps EffectiveMatchAccess fail closed and exposes only fixed PERSONAL operation", () => {
-    expect(foulTypeOptions).toEqual(["PERSONAL"]);
+  it("keeps EffectiveMatchAccess fail closed and exposes only fixed PERSONAL and TECHNICAL operations", () => {
+    expect(foulTypeOptions).toEqual(["PERSONAL", "TECHNICAL"]);
     for (const [phase, value, lifecycle] of [
       ["loading", null, "ACCESS_LOADING"],
       ["error", null, "ACCESS_ERROR"],

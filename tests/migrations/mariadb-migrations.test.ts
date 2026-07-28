@@ -27,7 +27,8 @@ describe("MariaDB migration foundation", () => {
       "010_create_match_roster_confirmations_table.sql",
       "011_create_venues_courts_tables.sql",
       "012_create_display_theme_tables.sql",
-      "013_create_display_screen_tables.sql"
+      "013_create_display_screen_tables.sql",
+      "014_allow_multi_event_commands.sql"
     ]);
   });
 
@@ -261,6 +262,16 @@ describe("MariaDB migration foundation", () => {
     expect(eventStoreSql).toContain("unique key uq_command_deduplication_match_command");
     expect(eventStoreSql).toContain("last_seq_no");
     expect(eventStoreSql).toContain("idx_match_events_match_seq");
+  });
+
+  it("allows one command to emit multiple events while retaining command deduplication", () => {
+    const migrationSql = compact(readMigration("014_allow_multi_event_commands.sql"));
+
+    expect(migrationSql).toContain("drop index if exists uq_match_events_match_command on match_events");
+    expect(migrationSql).toContain("create index if not exists idx_match_events_match_command on match_events (match_id, command_id)");
+    expect(compact(readMigration("004_create_event_store_tables.sql"))).toContain(
+      "unique key uq_command_deduplication_match_command"
+    );
   });
 
   it("stores projections and audit traces outside match_events", () => {

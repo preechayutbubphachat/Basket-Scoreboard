@@ -7,16 +7,11 @@ import type {
   ScoreboardProjection,
   TeamFoulAddedPayload
 } from "@basket-scoreboard/api-contracts";
-import {
-  buildOperatorMatchCorrectionsLink,
-  buildOperatorMatchScoreLink,
-  buildOperatorMatchReplayLink,
-  buildOperatorMatchSummaryLink,
-  buildPublicScoreboardLink
-} from "./operatorMatches";
+import { buildOperatorMatchCorrectionsLink, buildOperatorMatchScoreLink, buildOperatorMatchReplayLink, buildOperatorMatchSummaryLink, buildPublicScoreboardLink } from "./operatorMatches";
 
 export const foulTypeOptions: FoulType[] = [
-  "PERSONAL"
+  "PERSONAL",
+  "TECHNICAL"
 ];
 
 export type FoulAccessLifecycle = "ACCESS_LOADING" | "ACCESS_READY" | "ACCESS_DENIED" | "ACCESS_ERROR" | "ACCESS_MATCH_MISMATCH";
@@ -81,17 +76,11 @@ export function buildFoulControlPanels(projection: ScoreboardProjection) {
   });
 }
 
-export type PersonalFoulRosterPresentation = {
-  available: boolean;
-  playersBySide: Record<
-    "HOME" | "AWAY",
-    Array<{ player: MatchRosterPlayer; personalFouls: number }>
-  >;
-};
-
 export type PlayerFoulPresentation = {
   player: MatchRosterPlayer;
   personalFouls: number;
+  technicalFouls: number;
+  totalTowardLimit: number;
   hasReachedPersonalFoulLimit: boolean;
 };
 
@@ -127,43 +116,63 @@ export function buildPersonalFoulRosterPresentation(
     }
   }
 
-  const foulCounts = new Map<string, number>();
+  const personalFoulCounts = new Map<string, number>();
+  const technicalFoulCounts = new Map<string, number>();
+  const totalsTowardLimit = new Map<string, number>();
   for (const value of projection.playerFouls) {
     if (!value || typeof value !== "object" || typeof value.playerId !== "string") continue;
     const player = activePlayersById.get(value.playerId);
     if (!player) continue;
+    const personalFouls = Number.isInteger(value.personalFouls) ? value.personalFouls : value.fouls;
+    const technicalFouls = Number.isInteger(value.technicalFouls) ? value.technicalFouls : 0;
+    const totalTowardLimit = Number.isInteger(value.totalTowardLimit) ? value.totalTowardLimit : value.fouls;
     if (
-      foulCounts.has(value.playerId) ||
+      personalFoulCounts.has(value.playerId) ||
+      technicalFoulCounts.has(value.playerId) ||
+      totalsTowardLimit.has(value.playerId) ||
       value.teamSide !== player.teamSide ||
-      !Number.isInteger(value.fouls) ||
-      value.fouls < 0
+      !Number.isInteger(personalFouls) ||
+      personalFouls < 0 ||
+      !Number.isInteger(technicalFouls) ||
+      technicalFouls < 0 ||
+      !Number.isInteger(totalTowardLimit) ||
+      totalTowardLimit < 0 ||
+      value.fouls !== totalTowardLimit
     ) {
       return unavailable();
     }
-    foulCounts.set(value.playerId, value.fouls);
+    personalFoulCounts.set(value.playerId, personalFouls);
+    technicalFoulCounts.set(value.playerId, technicalFouls);
+    totalsTowardLimit.set(value.playerId, totalTowardLimit);
   }
 
-  // Derive the personal foul limit from the authoritative FIBA 2024 rule profile
-  // Art. 40: A player who has committed 5 fouls must leave the game
   const PERSONAL_FOUL_LIMIT = 5;
 
   return {
     available: true,
     playersBySide: {
       HOME: playersBySide.HOME.map((player) => {
-        const personalFouls = foulCounts.get(player.playerId) ?? 0;
+        const personalFouls = personalFoulCounts.get(player.playerId) ?? 0;
+        const technicalFouls = technicalFoulCounts.get(player.playerId) ?? 0;
+        const totalTowardLimit = totalsTowardLimit.get(player.playerId) ?? 0;
         return {
           player,
           personalFouls,
-          hasReachedPersonalFoulLimit: personalFouls >= PERSONAL_FOUL_LIMIT
+          technicalFouls,
+          totalTowardLimit,
+          hasReachedPersonalFoulLimit: totalTowardLimit >= PERSONAL_FOUL_LIMIT
         };
       }),
       AWAY: playersBySide.AWAY.map((player) => {
-        const personalFouls = foulCounts.get(player.playerId) ?? 0;
+        const personalFouls = personalFoulCounts.get(player.playerId) ?? 0;
+        const technicalFouls = technicalFoulCounts.get(player.playerId) ?? 0;
+        const totalTowardLimit = totalsTowardLimit.get(player.playerId) ?? 0;
         return {
           player,
           personalFouls,
-          hasReachedPersonalFoulLimit: personalFouls >= PERSONAL_FOUL_LIMIT
+          technicalFouls,
+          totalTowardLimit,
+          hasReachedPersonalFoulLimit: totalTowardLimit >= PERSONAL_FOUL_LIMIT
         };
       })
     }

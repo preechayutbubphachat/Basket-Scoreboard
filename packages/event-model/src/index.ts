@@ -15,7 +15,12 @@ export const correctionEventTypes = [
 
 export type CorrectionEventType = (typeof correctionEventTypes)[number];
 
-export const foulEventTypes = ["TEAM_FOUL_ADDED", "PLAYER_FOUL_ADDED"] as const;
+export const foulEventTypes = [
+  "TEAM_FOUL_ADDED",
+  "PLAYER_FOUL_ADDED",
+  "FREE_THROW_ENTITLEMENT_CREATED",
+  "PLAY_RESUMPTION_DECLARED"
+] as const;
 
 export type FoulEventType = (typeof foulEventTypes)[number];
 
@@ -104,7 +109,20 @@ export type TeamFoulAddedPayload = {
 };
 
 export type PlayerFoulAddedPayload = TeamFoulAddedPayload & {
-  playerId: string;
+ playerId: string;
+};
+
+export type FreeThrowEntitlementCreatedPayload = {
+  sourceFoulEventId: string;
+  attempts: 1;
+  awardedTo: TeamSide;
+  ruleProfileId: "FIBA_2024";
+};
+
+export type PlayResumptionDeclaredPayload = {
+  sourceEntitlementEventId: string;
+  mode: "RESUME_INTERRUPTED_PLAY";
+  ruleProfileId: "FIBA_2024";
 };
 
 export type GameClockStartedPayload = {
@@ -133,36 +151,39 @@ export type ShotClockSetPayload = {
 };
 
 export type ScoreboardProjection = {
-  matchId: string;
-  homeScore: number;
-  awayScore: number;
-  teamFouls: {
-    home: number;
-    away: number;
-  };
-  teamFoulsByPeriod: Record<string, { home: number; away: number }>;
-  playerFouls: Array<{
-    playerId: string;
-    teamSide: TeamSide;
-    playerName: string | null;
-    jerseyNumber: string | null;
-    fouls: number;
-  }>;
-  periodNumber: number;
-  gameClockRemainingMs: number;
-  shotClockRemainingMs: number;
-  gameClock: {
-    remainingMs: number;
-    running: boolean;
-    lastStartedAt: string | null;
-  };
-  shotClock: {
-    remainingMs: number;
-    running: boolean;
-    lastStartedAt: string | null;
-  };
-  clockUpdatedAt: string | null;
-  status: "READY" | "LIVE" | "FINAL";
-  currentSeq: number;
-  projectionVersion: "scoreboard-v1";
+ matchId: string;
+ homeScore: number;
+ awayScore: number;
+ teamFouls: {
+   home: number;
+   away: number;
+ };
+ teamFoulsByPeriod: Record<string, { home: number; away: number }>;
+ playerFouls: Array<{
+   playerId: string;
+   teamSide: TeamSide;
+   playerName: string | null;
+   jerseyNumber: string | null;
+   fouls: number;
+   personalFouls: number;
+   technicalFouls: number;
+   totalTowardLimit: number;
+ }>;
+ periodNumber: number;
+ gameClockRemainingMs: number;
+ shotClockRemainingMs: number;
+ gameClock: {
+   remainingMs: number;
+   running: boolean;
+   lastStartedAt: string | null;
+ };
+ shotClock: {
+   remainingMs: number;
+   running: boolean;
+   lastStartedAt: string | null;
+ };
+ clockUpdatedAt: string | null;
+ status: "READY" | "LIVE" | "FINAL";
+ currentSeq: number;
+ projectionVersion: "scoreboard-v1";
 };

@@ -3632,6 +3632,7 @@ function OperatorFoulPage({
     player: MatchRosterPlayer;
     teamLabel: string;
     teamSide: "HOME" | "AWAY";
+    foulType: "PERSONAL" | "TECHNICAL";
   } | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const [leaseAvailabilityVersion, setLeaseAvailabilityVersion] = useState(0);
@@ -3835,6 +3836,7 @@ function OperatorFoulPage({
     const intent = createFoulIntent({
       commandId: createClientCommandId(),
       correlationId: createClientCommandId(),
+      foulType: selectedFoulPlayer.foulType,
       gameClockRemainingMs: selectedFoulPlayer.gameClockRemainingMs,
       localIntentId: createClientCommandId(),
       periodNumber: selectedFoulPlayer.periodNumber,
@@ -3982,7 +3984,13 @@ function OperatorFoulPage({
       let acceptedByServer = false;
       try {
         const result = await raceFoulTransportDeadline(
-          api.addPlayerFoul(matchId, { ...activeEnvelope, signal: dispatchAbortController.signal }),
+          foulQueue.activeIntent?.foulType === "TECHNICAL"
+            ? api.recordPlayerTechnicalFoul(matchId, {
+                ...activeEnvelope,
+                payload: { playerId: activeEnvelope.payload.playerId },
+                signal: dispatchAbortController.signal
+              })
+            : api.addPlayerFoul(matchId, { ...activeEnvelope, signal: dispatchAbortController.signal }),
           dispatchAbortController.signal
         );
         window.clearTimeout(dispatchTimeout);
@@ -4175,7 +4183,7 @@ function OperatorFoulPage({
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
           </dl>
           <div className="form-grid compact">
-            <p>Foul type: {foulTypeOptions[0]}</p>
+            <p>Foul types: {foulTypeOptions.join(" / ")}</p>
             <label>
                Reason (optional)
               <input value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -4209,7 +4217,7 @@ function OperatorFoulPage({
                     {personalFoulRoster.playersBySide[teamSide].length === 0 ? (
                       <p className="muted">No players assigned.</p>
                     ) : null}
-                    {personalFoulRoster.playersBySide[teamSide].map(({ personalFouls, hasReachedPersonalFoulLimit, player }, index) => {
+                    {personalFoulRoster.playersBySide[teamSide].map(({ personalFouls, technicalFouls, hasReachedPersonalFoulLimit, player }, index) => {
                       const relationshipId = `personal-foul-${teamSide.toLowerCase()}-${index}`;
                       const playerLabel = `${teamSide} ${buildRosterPlayerDisplayLabel(player)}`;
                       const isAtLimit = hasReachedPersonalFoulLimit;
@@ -4218,7 +4226,7 @@ function OperatorFoulPage({
                           key={player.playerId}
                           data-personal-foul-player
                           role="group"
-                          aria-labelledby={`${relationshipId}-player ${relationshipId}-count ${isAtLimit ? `${relationshipId}-limit` : ""}`}
+                          aria-labelledby={`${relationshipId}-player ${relationshipId}-count ${relationshipId}-technical ${isAtLimit ? `${relationshipId}-limit` : ""}`}
                         >
                           {readOnly ? (
                             <span id={`${relationshipId}-player`}>{playerLabel}</span>
@@ -4227,14 +4235,15 @@ function OperatorFoulPage({
                               id={`${relationshipId}-player`}
                               type="button"
                               className="score-button"
-                              aria-describedby={`${relationshipId}-count ${isAtLimit ? `${relationshipId}-limit` : ""}`}
+                              aria-describedby={`${relationshipId}-count`}
                               disabled={!canEnqueueFoul || player.status !== "ACTIVE"}
                               onClick={() => setSelectedFoulPlayer({
                                 gameClockRemainingMs: projection.gameClockRemainingMs,
                                 periodNumber: projection.periodNumber,
                                 player: { ...player },
                                 teamLabel: getRosterTeamLabel(projection, teamSide),
-                                teamSide
+                                teamSide,
+                                foulType: "PERSONAL"
                               })}
                             >
                               {`Select ${playerLabel}`}
@@ -4243,6 +4252,31 @@ function OperatorFoulPage({
                           <span id={`${relationshipId}-count`}>
                             Personal fouls: <strong>{personalFouls}</strong>
                           </span>
+                          <span id={`${relationshipId}-technical`}>
+                            Technical fouls: <strong>{personalFoulRoster.playersBySide[teamSide][index]!.technicalFouls}</strong>
+                          </span>
+                          {!readOnly ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={!canEnqueueFoul || player.status !== "ACTIVE" || !player.isStarter || technicalFouls >= 1}
+                              onClick={() => setSelectedFoulPlayer({
+                                gameClockRemainingMs: projection.gameClockRemainingMs,
+                                periodNumber: projection.periodNumber,
+                                player: { ...player },
+                                teamLabel: getRosterTeamLabel(projection, teamSide),
+                                teamSide,
+                                foulType: "TECHNICAL"
+                              })}
+                            >
+                              {`Technical foul ${playerLabel}`}
+                            </button>
+                          ) : null}
+                          {technicalFouls >= 1 ? (
+                            <span className="foul-limit-reached" aria-live="polite">
+                              — Further technical fouls require unsupported disqualification handling
+                            </span>
+                          ) : null}
                           {isAtLimit && (
                             <span
                               id={`${relationshipId}-limit`}
@@ -4261,17 +4295,22 @@ function OperatorFoulPage({
              )}
              {selectedFoulPlayer && personalFoulRoster?.available ? (
                <section className="inline-panel" aria-labelledby="foul-review-title">
-                 <h3 id="foul-review-title">Review personal foul</h3>
+                 <h3
+                   id="foul-review-title"
+                   aria-label={`Review ${selectedFoulPlayer.foulType.toLowerCase()} foul`}
+                 >
+                   Review player foul
+                 </h3>
                  <dl className="state-strip">
                    <div><dt>Side / team</dt><dd>{selectedFoulPlayer.teamSide} / {selectedFoulPlayer.teamLabel}</dd></div>
                    <div><dt>Player</dt><dd>{selectedFoulPlayer.player.displayNameSnapshot} ({selectedFoulPlayer.player.playerId})</dd></div>
                    <div><dt>Jersey</dt><dd>{selectedFoulPlayer.player.jerseyNumberSnapshot ?? "-"}</dd></div>
-                   <div><dt>Foul type</dt><dd>PERSONAL</dd></div>
+                   <div><dt>Foul type</dt><dd>{selectedFoulPlayer.foulType}</dd></div>
                    <div><dt>Reason (optional)</dt><dd>{reason.trim() || "-"}</dd></div>
                    <div><dt>Activation period / clock</dt><dd>P{selectedFoulPlayer.periodNumber} / {Math.ceil(selectedFoulPlayer.gameClockRemainingMs / 1000)}s</dd></div>
                  </dl>
                  <div className="button-row">
-                   <button type="button" disabled={!canEnqueueFoul} onClick={() => void confirmPlayerFoul()}>Confirm personal foul</button>
+                   <button type="button" disabled={!canEnqueueFoul} onClick={() => void confirmPlayerFoul()}>Confirm {selectedFoulPlayer.foulType.toLowerCase()} foul</button>
                    <button type="button" className="secondary" onClick={() => setSelectedFoulPlayer(null)}>Cancel review</button>
                  </div>
                </section>

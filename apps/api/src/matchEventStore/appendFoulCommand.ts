@@ -6,6 +6,7 @@ import type {
   CommandResult,
   MatchEventType,
   PlayerFoulAddedPayload,
+  RecordPlayerTechnicalFoulCommand,
   TeamFoulAddedPayload
 } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
@@ -13,17 +14,17 @@ import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,
-  findDuplicateCommand,
+  findDuplicateCommandIdentity,
   getScoreboardProjection,
   insertCommandResult,
   lockMatchStream,
   recoverMatchStreamReadConflict,
   updateScoreboardProjection
 } from "./repositories.js";
-import { getActiveRosterPlayerForMatchSide } from "../rosters/rosterRepository.js";
+import { getOnCourtRosterPlayerForMatch, getActiveRosterPlayerForMatchSide } from "../rosters/rosterRepository.js";
 import { applyPlayerFoulAdded, applyTeamFoulAdded } from "./projection.js";
 
-type FoulCommand = AddTeamFoulCommand | AddPlayerFoulCommand;
+type FoulCommand = AddTeamFoulCommand | AddPlayerFoulCommand | RecordPlayerTechnicalFoulCommand;
 
 function requestHash(command: FoulCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
@@ -65,12 +66,24 @@ export async function appendPlayerFoulAddedCommand(options: {
   });
 }
 
+export async function appendPlayerTechnicalFoulCommand(options: {
+  pool: Pool;
+  command: RecordPlayerTechnicalFoulCommand;
+  user: AuthenticatedUser;
+}): Promise<CommandResult> {
+  return appendFoulCommand({
+    ...options,
+    eventType: "PLAYER_FOUL_ADDED",
+    commandType: "foul/player/technical"
+  });
+}
+
 async function appendFoulCommand(options: {
   pool: Pool;
   command: FoulCommand;
   user: AuthenticatedUser;
   eventType: Extract<MatchEventType, "TEAM_FOUL_ADDED" | "PLAYER_FOUL_ADDED">;
-  commandType: "foul/team/add" | "foul/player/add";
+  commandType: "foul/team/add" | "foul/player/add" | "foul/player/technical";
 }): Promise<CommandResult> {
   const connection = await options.pool.getConnection();
 
@@ -78,26 +91,56 @@ async function appendFoulCommand(options: {
     await connection.beginTransaction();
     await ensurePlaceholderUser(connection, options.user);
 
-    const duplicate = await findDuplicateCommand(
+    const duplicateIdentity = await findDuplicateCommandIdentity(
       connection,
       options.command.matchId,
       options.command.commandId
     );
-
-    if (duplicate) {
+    if (duplicateIdentity) {
       await connection.rollback();
+      if (duplicateIdentity.requestHash !== requestHash(options.command)) {
+        return rejected(
+          options.command,
+          reasonCodes.VALIDATION_ERROR,
+          "Command identity was already used with a different request",
+          duplicateIdentity.result.currentSeq
+        );
+      }
       return {
-        ...duplicate,
-        status: "DUPLICATE_ACCEPTED",
-        appendedEvents: []
+        ...duplicateIdentity.result,
+        status: "DUPLICATE_ACCEPTED"
       };
     }
 
     const currentSeq = await lockMatchStream(connection, options.command.matchId);
-
     if (currentSeq === null) {
       await connection.rollback();
       return rejected(options.command, reasonCodes.MATCH_NOT_FOUND, "Match stream was not found", 0);
+    }
+
+    // A concurrent request may have committed while this transaction waited for
+    // the stream lock. Re-check deduplication under that lock before comparing
+    // expectedSeq so an exact retry returns the original accepted range rather
+    // than an incorrect SYNC_REQUIRED response.
+    const lockedDuplicateIdentity = await findDuplicateCommandIdentity(
+      connection,
+      options.command.matchId,
+      options.command.commandId
+    );
+    if (lockedDuplicateIdentity) {
+      await connection.rollback();
+      if (lockedDuplicateIdentity.requestHash !== requestHash(options.command)) {
+        return rejected(
+          options.command,
+          reasonCodes.VALIDATION_ERROR,
+          "Command identity was already used with a different request",
+          lockedDuplicateIdentity.result.currentSeq
+        );
+      }
+      return {
+        ...lockedDuplicateIdentity.result,
+        status: "DUPLICATE_ACCEPTED"
+      };
     }
 
     if (currentSeq !== options.command.expectedSeq) {
@@ -119,13 +162,41 @@ async function appendFoulCommand(options: {
       throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
     }
 
+    const isTechnicalCommand = options.commandType === "foul/player/technical";
     if (isFinishedMatchStatus(projection.status)) {
       await connection.rollback();
       return rejected(options.command, reasonCodes.VALIDATION_ERROR, finishedMatchLiveControlMessage, currentSeq);
     }
 
+    if (isTechnicalCommand && projection.status !== "LIVE") {
+      await connection.rollback();
+      return rejected(
+        options.command,
+        reasonCodes.VALIDATION_ERROR,
+        "Player technical fouls are supported only during live playing time",
+        currentSeq
+      );
+    }
+
+    if (isTechnicalCommand) {
+      const playerId = (options.command as RecordPlayerTechnicalFoulCommand).payload.playerId;
+      const existing = projection.playerFouls.find((player) => player.playerId === playerId);
+      if ((existing?.technicalFouls ?? 0) >= 1) {
+        await connection.rollback();
+        return rejected(
+          options.command,
+          reasonCodes.VALIDATION_ERROR,
+          "A repeated player technical foul requires unsupported disqualification handling",
+          currentSeq
+        );
+      }
+    }
+
     const nextSeq = currentSeq + 1;
     const eventId = randomUUID();
+    const entitlementEventId = isTechnicalCommand ? randomUUID() : null;
+    const resumptionEventId = isTechnicalCommand ? randomUUID() : null;
+    const finalSeq = isTechnicalCommand ? currentSeq + 3 : nextSeq;
     const occurredAt = new Date(options.command.clientTimestamp);
     const periodNumber = projection.periodNumber || 1;
     const payload = await buildEventPayload({
@@ -155,16 +226,29 @@ async function appendFoulCommand(options: {
         options.command.commandId,
         options.command.expectedSeq,
         options.command.correlationId,
-        options.command.payload.reason
+        commandReason(options.command)
       ]
     );
 
+    if (isTechnicalCommand && entitlementEventId && resumptionEventId) {
+      const playerPayload = payload.value as PlayerFoulAddedPayload;
+      const awardedTo = playerPayload.teamSide === "HOME" ? "AWAY" : "HOME";
+      await connection.query(
+        "INSERT INTO match_events (event_id, match_id, seq_no, event_type, payload, actor_user_id, actor_role, device_id, occurred_at, command_id, expected_seq, correlation_id, causation_id, reason, rule_profile_id) VALUES (?, ?, ?, 'FREE_THROW_ENTITLEMENT_CREATED', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'FIBA_2024')",
+        [entitlementEventId, options.command.matchId, currentSeq + 2, JSON.stringify({ sourceFoulEventId: eventId, attempts: 1, awardedTo, ruleProfileId: "FIBA_2024" }), options.user.userId, options.user.role, options.user.deviceId, occurredAt, options.command.commandId, options.command.expectedSeq, options.command.correlationId, eventId]
+      );
+      await connection.query(
+        "INSERT INTO match_events (event_id, match_id, seq_no, event_type, payload, actor_user_id, actor_role, device_id, occurred_at, command_id, expected_seq, correlation_id, causation_id, reason, rule_profile_id) VALUES (?, ?, ?, 'PLAY_RESUMPTION_DECLARED', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'FIBA_2024')",
+        [resumptionEventId, options.command.matchId, finalSeq, JSON.stringify({ sourceEntitlementEventId: entitlementEventId, mode: "RESUME_INTERRUPTED_PLAY", ruleProfileId: "FIBA_2024" }), options.user.userId, options.user.role, options.user.deviceId, occurredAt, options.command.commandId, options.command.expectedSeq, options.command.correlationId, entitlementEventId]
+      );
+    }
+
     await connection.query("UPDATE match_streams SET last_seq_no = ? WHERE match_id = ?", [
-      nextSeq,
+      finalSeq,
       options.command.matchId
     ]);
 
-    const updatedProjection =
+    const foulProjection =
       options.eventType === "PLAYER_FOUL_ADDED"
         ? applyPlayerFoulAdded(projection, payload.value as PlayerFoulAddedPayload & {
             periodNumber: number;
@@ -172,6 +256,9 @@ async function appendFoulCommand(options: {
             jerseyNumber: string | null;
           }, nextSeq)
         : applyTeamFoulAdded(projection, payload.value as TeamFoulAddedPayload & { periodNumber: number }, nextSeq);
+    const updatedProjection = finalSeq === nextSeq
+      ? foulProjection
+      : { ...foulProjection, currentSeq: finalSeq };
 
     await updateScoreboardProjection(connection, updatedProjection);
     await insertAuditLog(connection, {
@@ -183,18 +270,26 @@ async function appendFoulCommand(options: {
       deviceId: options.user.deviceId,
       oldValue: projection,
       newValue: updatedProjection,
-      reason: options.command.payload.reason,
+      reason: commandReason(options.command),
       correlationId: options.command.correlationId,
       causationId: eventId,
-      eventSeq: nextSeq
+      eventSeq: finalSeq
     });
 
     const result: CommandResult = {
       status: "ACCEPTED",
       commandId: options.command.commandId,
       matchId: options.command.matchId,
-      currentSeq: nextSeq,
-      appendedEvents: [{ eventId, seqNo: nextSeq, eventType: options.eventType }],
+      currentSeq: finalSeq,
+      appendedEvents: [
+        { eventId, seqNo: nextSeq, eventType: options.eventType },
+        ...(isTechnicalCommand && entitlementEventId && resumptionEventId
+          ? [
+              { eventId: entitlementEventId, seqNo: currentSeq + 2, eventType: "FREE_THROW_ENTITLEMENT_CREATED" as const },
+              { eventId: resumptionEventId, seqNo: finalSeq, eventType: "PLAY_RESUMPTION_DECLARED" as const }
+            ]
+          : [])
+      ],
       reasonCode: null,
       message: null
     };
@@ -236,24 +331,27 @@ async function buildEventPayload(options: {
     }
   | { ok: false; message: string }
 > {
-  const base = {
-    teamSide: options.command.payload.teamSide,
-    foulType: options.command.payload.foulType,
-    reason: options.command.payload.reason,
-    periodNumber: options.periodNumber
-  };
-
   if (options.eventType === "TEAM_FOUL_ADDED") {
+    const teamCommand = options.command as AddTeamFoulCommand;
+    const base = {
+      teamSide: teamCommand.payload.teamSide,
+      foulType: teamCommand.payload.foulType,
+      reason: teamCommand.payload.reason,
+      periodNumber: options.periodNumber
+    };
     return { ok: true, value: base };
   }
 
-  const playerCommand = options.command as AddPlayerFoulCommand;
-  const player = await getActiveRosterPlayerForMatchSide(
-    options.connection,
-    playerCommand.matchId,
-    playerCommand.payload.playerId,
-    playerCommand.payload.teamSide
-  );
+  const isTechnical = !("teamSide" in options.command.payload);
+  const playerCommand = options.command as AddPlayerFoulCommand | RecordPlayerTechnicalFoulCommand;
+  const player = isTechnical
+    ? await getOnCourtRosterPlayerForMatch(options.connection, playerCommand.matchId, playerCommand.payload.playerId)
+    : await getActiveRosterPlayerForMatchSide(
+        options.connection,
+        playerCommand.matchId,
+        playerCommand.payload.playerId,
+        (playerCommand as AddPlayerFoulCommand).payload.teamSide
+      );
 
   if (!player) {
     return {
@@ -265,7 +363,10 @@ async function buildEventPayload(options: {
   return {
     ok: true,
     value: {
-      ...base,
+      teamSide: player.teamSide,
+      foulType: isTechnical ? "TECHNICAL" : "PERSONAL",
+      reason: isTechnical ? null : (playerCommand as AddPlayerFoulCommand).payload.reason,
+      periodNumber: options.periodNumber,
       playerId: player.playerId,
       playerName: player.playerName,
       jerseyNumber: player.jerseyNumber
@@ -293,4 +394,8 @@ function rejected(
 function isFinishedMatchStatus(status: string) {
   const normalized = status.toUpperCase();
   return normalized === "FINISHED" || normalized === "FINAL";
+}
+
+function commandReason(command: FoulCommand) {
+  return "reason" in command.payload ? command.payload.reason : null;
 }

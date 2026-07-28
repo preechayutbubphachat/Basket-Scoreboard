@@ -165,11 +165,11 @@ Every row separates four columns:
 | **Team Foul Count** | +1 (counts toward team penalty) |
 | **Player Status Consequence** | Accumulates toward 5-foul limit; 2 technicals = ejection |
 | **Free Throws** | 1 free throw for opponent |
-| **Throw-in / Possession** | Throw-in at throw-in line opposite scorer's table |
-| **Point of Interruption** | Throw-in line opposite scorer's table |
+| **Throw-in / Possession** | Resume from the point of interruption after the free throw; preserve the prior control/entitlement |
+| **Point of Interruption** | The location and game state at which play was interrupted |
 | **Period / Overtime** | Counts in all periods |
-| **Game Clock** | Stops on whistle; restarts on throw-in touch |
-| **Shot Clock** | No reset (continues if 14+; resets to 14 if <14 in frontcourt) |
+| **Game Clock** | Stops on whistle; restarts when the resumed play legally starts |
+| **Shot Clock** | Preserve the point-of-interruption state; this bounded command does not reset it |
 | **Substitution** | Permitted during FT intervals |
 | **Penalty Cancellation** | Does NOT cancel with double foul |
 | **Correction Implication** | `PLAYER_FOUL_UNDO` reverses counts; FT reversal if scored |
@@ -179,7 +179,7 @@ Every row separates four columns:
 | **Implementation Status** | SOURCE_COMPLETE / DEFERRED (special foul categories) |
 | **Source Article** | Art. 36 |
 | **Interpretation** | OBRI cases on player technical fouls |
-| **Exceptions** | 2nd technical = disqualification (Art. 36.3.2) |
+| **Exceptions** | 2nd player technical = disqualification (Art. 36.2.3) |
 
 ---
 
@@ -191,24 +191,24 @@ Every row separates four columns:
 | **Actor** | Coach |
 | **Attribution Target** | Coach (charged to head coach) |
 | **Player Foul Count** | 0 (not a player) |
-| **Team Foul Count** | +1 (counts toward team penalty) |
-| **Player Status Consequence** | Coach ejection on 2nd technical (or 1st if bench technical also) |
+| **Team Foul Count** | 0 (charged to the head coach and does not count as a team foul) |
+| **Player Status Consequence** | Head coach disqualification on 2 coach technicals, or on 3 bench technicals, or on 1 coach plus 2 bench technicals |
 | **Free Throws** | 1 free throw for opponent |
-| **Throw-in / Possession** | Throw-in at throw-in line opposite scorer's table |
-| **Point of Interruption** | Throw-in line opposite scorer's table |
+| **Throw-in / Possession** | Resume from the point of interruption after the free throw; preserve the prior control/entitlement |
+| **Point of Interruption** | The location and game state at which play was interrupted |
 | **Period / Overtime** | Counts in all periods |
-| **Game Clock** | Stops on whistle; restarts on throw-in touch |
-| **Shot Clock** | No reset (continues if 14+; resets to 14 if <14 in frontcourt) |
+| **Game Clock** | Stops on whistle; restarts when the resumed play legally starts |
+| **Shot Clock** | Preserve the point-of-interruption state |
 | **Substitution** | Permitted during FT intervals |
 | **Penalty Cancellation** | Does NOT cancel with double foul |
-| **Correction Implication** | `TEAM_FOUL_UNDO` for team count; coach ejection reversal |
-| **Event Model** | `TEAM_FOUL_ADDED` (type: TECHNICAL, coach) + FT events + `COACH_EJECTED` |
-| **Product Decision** | PD-01: Team foul derived from coach event (special case) |
-| **Architecture Decision** | AD-02: Team foul derived (special case: no player foul count) |
+| **Correction Implication** | Reverse the coach technical and any resulting disqualification consequence; no team-foul reversal |
+| **Event Model** | Deferred coach-technical fact + FT entitlement/resumption events; no team-foul event |
+| **Product Decision** | Deferred; no team-foul attribution |
+| **Architecture Decision** | Deferred special-person technical workflow |
 | **Implementation Status** | SOURCE_COMPLETE / DEFERRED |
-| **Source Article** | Art. 36, 7 |
+| **Source Article** | Arts. 36.2.4, 36.3.1, 36.3.2 |
 | **Interpretation** | OBRI cases on coach technical fouls |
-| **Exceptions** | 2nd technical (or 1 technical + 1 bench technical) = ejection |
+| **Exceptions** | 2 coach technicals, 3 bench technicals, or 1 coach plus 2 bench technicals = head coach disqualification (Art. 36.2.4) |
 
 ---
 
@@ -220,24 +220,24 @@ Every row separates four columns:
 | **Actor** | Bench personnel (assistant coach, substitute, team follower) |
 | **Attribution Target** | Charged to head coach |
 | **Player Foul Count** | 0 |
-| **Team Foul Count** | +1 (counts toward team penalty) |
-| **Player Status Consequence** | Counts toward coach's technical foul limit (ejection threshold) |
+| **Team Foul Count** | 0 (charged to the head coach and does not count as a team foul) |
+| **Player Status Consequence** | Counts as a bench technical toward the head coach disqualification combinations in Art. 36.2.4 |
 | **Free Throws** | 1 free throw for opponent |
-| **Throw-in / Possession** | Throw-in at throw-in line opposite scorer's table |
-| **Point of Interruption** | Throw-in line opposite scorer's table |
+| **Throw-in / Possession** | Resume from the point of interruption after the free throw; preserve the prior control/entitlement |
+| **Point of Interruption** | The location and game state at which play was interrupted |
 | **Period / Overtime** | Counts in all periods |
-| **Game Clock** | Stops on whistle; restarts on throw-in touch |
-| **Shot Clock** | No reset (continues if 14+; resets to 14 if <14 in frontcourt) |
+| **Game Clock** | Stops on whistle; restarts when the resumed play legally starts |
+| **Shot Clock** | Preserve the point-of-interruption state |
 | **Substitution** | Permitted during FT intervals |
 | **Penalty Cancellation** | Does NOT cancel with double foul |
-| **Correction Implication** | `TEAM_FOUL_UNDO` for team count; coach ejection reversal |
-| **Event Model** | `TEAM_FOUL_ADDED` (type: TECHNICAL, bench) + FT events + `COACH_EJECTED` |
-| **Product Decision** | PD-01: Team foul derived from bench event (special case) |
-| **Architecture Decision** | AD-02: Team foul derived (special case) |
+| **Correction Implication** | Reverse the bench technical charged to the head coach and any resulting disqualification consequence; no team-foul reversal |
+| **Event Model** | Deferred bench-technical fact charged to head coach + FT entitlement/resumption events; no team-foul event |
+| **Product Decision** | Deferred; no team-foul attribution |
+| **Architecture Decision** | Deferred special-person technical workflow |
 | **Implementation Status** | SOURCE_COMPLETE / DEFERRED |
-| **Source Article** | Art. 36 |
+| **Source Article** | Arts. 36.2.4, 36.3.1, 36.3.2 |
 | **Interpretation** | OBRI cases on bench technical fouls |
-| **Exceptions** | Counts toward coach ejection threshold |
+| **Exceptions** | 3 bench technicals, or 1 coach plus 2 bench technicals, = head coach disqualification (Art. 36.2.4) |
 
 ---
 
@@ -411,7 +411,7 @@ Every row separates four columns:
 | **Implementation Status** | READY (P1 complete) |
 | **Source Article** | Art. 41 |
 | **Interpretation** | OBRI cases on team foul penalty administration |
-| **Exceptions** | Offensive fouls, technical fouls by non-control team don't count toward penalty |
+| **Exceptions** | Player technical fouls count toward the team-foul total, but their penalty is administered under Art. 36. Art. 41.2's 2-free-throw team-foul penalty applies only to subsequent player personal fouls committed by the team not in control of the live ball. |
 
 ---
 

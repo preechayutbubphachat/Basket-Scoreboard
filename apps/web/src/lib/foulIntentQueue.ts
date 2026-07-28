@@ -12,7 +12,7 @@ export type FoulIntentPlayerSnapshot = {
 export type FoulIntent = {
   commandId: string;
   correlationId: string;
-  foulType: "PERSONAL";
+  foulType: "PERSONAL" | "TECHNICAL";
   gameClockRemainingMs: number;
   localIntentId: string;
   observedRosterStatus: FoulIntentRosterStatus;
@@ -33,7 +33,7 @@ export type FoulDispatchEnvelope = {
   payload: {
     teamSide: FoulIntentTeamSide;
     playerId: string;
-    foulType: "PERSONAL";
+    foulType: "PERSONAL" | "TECHNICAL";
     reason: string | null;
   };
 };
@@ -197,6 +197,7 @@ export function canEnqueueFoulIntent(options: {
 export function createFoulIntent(options: {
   commandId: string;
   correlationId: string;
+  foulType?: "PERSONAL" | "TECHNICAL";
   gameClockRemainingMs: number;
   localIntentId: string;
   periodNumber: number;
@@ -207,7 +208,7 @@ export function createFoulIntent(options: {
   return {
     commandId: options.commandId,
     correlationId: options.correlationId,
-    foulType: "PERSONAL",
+    foulType: options.foulType ?? "PERSONAL",
     gameClockRemainingMs: options.gameClockRemainingMs,
     localIntentId: options.localIntentId,
     observedRosterStatus: options.player.status,
@@ -310,7 +311,7 @@ function isStoredIntent(value: unknown): value is FoulIntent {
   ])) return false;
   return ["commandId", "correlationId", "localIntentId", "playerId", "playerName", "teamLabel"]
     .every((key) => typeof value[key] === "string" && value[key].length > 0) &&
-    value.foulType === "PERSONAL" &&
+    (value.foulType === "PERSONAL" || value.foulType === "TECHNICAL") &&
     (value.teamSide === "HOME" || value.teamSide === "AWAY") &&
     ["ACTIVE", "INACTIVE", "BENCH"].includes(value.observedRosterStatus as string) &&
     Number.isSafeInteger(value.gameClockRemainingMs) && Number(value.gameClockRemainingMs) >= 0 &&
@@ -328,7 +329,7 @@ function isStoredEnvelope(value: unknown): value is FoulDispatchEnvelope {
     Number.isSafeInteger(value.expectedSeq) && Number(value.expectedSeq) >= 0 &&
     typeof value.payload.playerId === "string" && value.payload.playerId.length > 0 &&
     (value.payload.teamSide === "HOME" || value.payload.teamSide === "AWAY") &&
-    value.payload.foulType === "PERSONAL" &&
+    (value.payload.foulType === "PERSONAL" || value.payload.foulType === "TECHNICAL") &&
     (value.payload.reason === null || typeof value.payload.reason === "string");
 }
 
@@ -464,7 +465,7 @@ export function prepareFoulIntentDispatch(
       payload: {
         teamSide: intent.teamSide,
         playerId: intent.playerId,
-        foulType: "PERSONAL",
+        foulType: intent.foulType,
         reason: intent.reason
       }
     },

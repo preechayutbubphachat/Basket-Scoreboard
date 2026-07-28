@@ -26,8 +26,8 @@ describe("OperatorFoulPage LiveMatchShell presentation contract", () => {
     expect(foulSource).toContain("persistFoulQueueSession(");
     expect(foulSource).toContain("foulLifecycleCoordinator");
     expect(foulSource).toContain("api.addPlayerFoul(matchId");
-    expect(foulSource).toContain("Foul type: {foulTypeOptions[0]}");
-    expect(foulSource).toContain("<dd>PERSONAL</dd>");
+    expect(foulSource).toContain('Foul types: {foulTypeOptions.join(" / ")}');
+    expect(foulSource).toContain("<dd>{selectedFoulPlayer.foulType}</dd>");
     expect(foulSource).toContain("blocksFoulCorrectionNavigation(foulQueue)");
   });
 

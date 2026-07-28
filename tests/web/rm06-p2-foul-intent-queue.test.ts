@@ -468,8 +468,8 @@ describe("RM-06-P2 foul route review and confirmation", () => {
   it("requires explicit HOME or AWAY player selection and exposes the immutable preview before confirmation", () => {
     for (const signal of [
       "selectedFoulPlayer",
-      "Review personal foul",
-      "Confirm personal foul",
+      "Review player foul",
+      "Confirm {selectedFoulPlayer.foulType.toLowerCase()} foul",
       "Activation period / clock",
       "Jersey",
       "Reason (optional)",
@@ -633,7 +633,8 @@ describe("RM-06-P2 foul route review and confirmation", () => {
     expect(effectSource).toContain("reconciliationTimeout = window.setTimeout");
     expect(effectSource).toContain("FOUL_TRANSPORT_TIMEOUT_MS");
     expect(effectSource).toContain("signal: dispatchAbortController.signal");
-    expect(effectSource).toContain("raceFoulTransportDeadline(\n          api.addPlayerFoul");
+    expect(effectSource).toContain('? api.recordPlayerTechnicalFoul(matchId');
+    expect(effectSource).toContain(": api.addPlayerFoul(matchId");
     expect(effectSource).toContain("raceFoulTransportDeadline(");
     expect(effectSource).toContain("refreshAfterCommand(activeEnvelope.expectedSeq, reconciliationAbortController.signal, lease)");
     expect(foulRouteSource).toContain("foulLifecycleCoordinator.ownsTransportLease(lease)");

@@ -30,6 +30,9 @@ export type PlayerFoulProjection = {
   playerName: string | null;
   jerseyNumber: string | null;
   fouls: number;
+  personalFouls: number;
+  technicalFouls: number;
+  totalTowardLimit: number;
 };
 
 export type ScoreboardProjection = {
@@ -145,7 +148,10 @@ export function normalizeScoreboardProjection(
             teamSide: player.teamSide,
             playerName: typeof player.playerName === "string" ? player.playerName : null,
             jerseyNumber: typeof player.jerseyNumber === "string" ? player.jerseyNumber : null,
-            fouls: numberOrDefault(player.fouls, 0)
+            fouls: numberOrDefault(player.fouls, 0),
+            personalFouls: numberOrDefault(player.personalFouls, numberOrDefault(player.fouls, 0)),
+            technicalFouls: numberOrDefault(player.technicalFouls, 0),
+            totalTowardLimit: numberOrDefault(player.totalTowardLimit, numberOrDefault(player.fouls, 0))
           }))
       : [],
     timeouts: normalizeTimeouts(projection.timeouts),
@@ -354,10 +360,17 @@ export function applyPlayerFoulAdded(
 ): ScoreboardProjection {
   const nextProjection = applyTeamFoulAdded(projection, payload, seqNo);
   const existing = nextProjection.playerFouls.find((player) => player.playerId === payload.playerId);
+  const isTechnical = payload.foulType === "TECHNICAL";
   const playerFouls = existing
     ? nextProjection.playerFouls.map((player) =>
         player.playerId === payload.playerId
-          ? { ...player, fouls: player.fouls + 1 }
+          ? {
+              ...player,
+              fouls: player.fouls + 1,
+              personalFouls: isTechnical ? player.personalFouls : player.personalFouls + 1,
+              technicalFouls: isTechnical ? player.technicalFouls + 1 : player.technicalFouls,
+              totalTowardLimit: player.totalTowardLimit + 1
+            }
           : player
       )
     : [
@@ -367,14 +380,22 @@ export function applyPlayerFoulAdded(
           teamSide: payload.teamSide,
           playerName: payload.playerName,
           jerseyNumber: payload.jerseyNumber,
-          fouls: 1
+          fouls: 1,
+          personalFouls: isTechnical ? 0 : 1,
+          technicalFouls: isTechnical ? 1 : 0,
+          totalTowardLimit: 1
         }
       ];
 
-  return {
-    ...nextProjection,
-    playerFouls
-  };
+  return withRecentAction(
+    {
+      ...nextProjection,
+      playerFouls
+    },
+    "PLAYER_FOUL_ADDED",
+    payload,
+    seqNo
+  );
 }
 
 export function applyTimeoutGranted(
@@ -653,7 +674,7 @@ export function applyTeamFoulCorrected(
 
 export function applyPlayerFoulCorrected(
   projection: ScoreboardProjection,
-  payload: { teamSide: "HOME" | "AWAY"; playerId: string; periodNumber?: number | null; correctedEventSeq?: number },
+  payload: { teamSide: "HOME" | "AWAY"; playerId: string; foulType?: "PERSONAL" | "TECHNICAL"; periodNumber?: number | null; correctedEventSeq?: number },
   seqNo: number
 ): ScoreboardProjection {
   const nextProjection = applyTeamFoulCorrected(projection, payload, seqNo);
@@ -662,7 +683,17 @@ export function applyPlayerFoulCorrected(
     ...nextProjection,
     playerFouls: nextProjection.playerFouls.map((player) =>
       player.playerId === payload.playerId
-        ? { ...player, fouls: Math.max(0, player.fouls - 1) }
+        ? {
+            ...player,
+            fouls: Math.max(0, player.fouls - 1),
+            personalFouls: payload.foulType === "TECHNICAL"
+              ? player.personalFouls
+              : Math.max(0, player.personalFouls - 1),
+            technicalFouls: payload.foulType === "TECHNICAL"
+              ? Math.max(0, player.technicalFouls - 1)
+              : player.technicalFouls,
+            totalTowardLimit: Math.max(0, player.totalTowardLimit - 1)
+          }
         : player
     )
   };

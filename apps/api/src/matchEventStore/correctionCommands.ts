@@ -693,6 +693,7 @@ export async function appendAlphaCorrection(options: {
       const projection = await getProjectionOrThrow(connection, options.command.matchId);
       const correction = buildCorrectionEventPayload({
         command: options.command,
+        events,
         targetEvent,
         projection,
         user: options.user
@@ -870,6 +871,7 @@ function hasDuplicateCorrection(
 
 function buildCorrectionEventPayload(options: {
   command: AlphaCorrectionCommand;
+  events: MatchEventRecord[];
   targetEvent: MatchEventRecord;
   projection: ScoreboardProjection;
   user: AuthenticatedUser;
@@ -920,6 +922,11 @@ function buildCorrectionEventPayload(options: {
       const teamSide = parseTeamSide(targetPayload.teamSide);
       const playerId = stringOrNull(targetPayload.playerId);
       if (!teamSide || !playerId) return null;
+      const foulType = targetPayload.foulType === "TECHNICAL" ? "TECHNICAL" : "PERSONAL";
+      const consequenceEventIds = foulType === "TECHNICAL"
+        ? resolveTechnicalConsequenceEventIds(options.events, options.targetEvent.eventId)
+        : [];
+      if (foulType === "TECHNICAL" && consequenceEventIds.length !== 2) return null;
       return {
         eventType: "PLAYER_FOUL_CORRECTED",
         payload: {
@@ -929,10 +936,27 @@ function buildCorrectionEventPayload(options: {
             playerId,
             playerName: stringOrNull(targetPayload.playerName),
             jerseyNumber: stringOrNull(targetPayload.jerseyNumber),
+            foulType,
             periodNumber: numberOrNull(targetPayload.periodNumber),
-            fouls: 1
+            fouls: 1,
+            ...(foulType === "TECHNICAL"
+              ? {
+                  consequenceEventTypes: ["FREE_THROW_ENTITLEMENT_CREATED", "PLAY_RESUMPTION_DECLARED"],
+                  consequenceEventIds
+                }
+              : {})
           },
-          newValue: { teamSide, playerId, fouls: 0 },
+          newValue: {
+            teamSide,
+            playerId,
+            fouls: 0,
+            ...(foulType === "TECHNICAL"
+              ? {
+                  consequenceDisposition: "VOIDED_WITH_SOURCE_FOUL",
+                  voidedConsequenceEventIds: consequenceEventIds
+                }
+              : {})
+          },
           delta: { teamSide, playerId, fouls: -1 }
         }
       };
@@ -988,6 +1012,22 @@ function buildCorrectionEventPayload(options: {
   }
 }
 
+function resolveTechnicalConsequenceEventIds(events: MatchEventRecord[], sourceFoulEventId: string) {
+  const entitlementIds = events
+    .filter((event) => event.eventType === "FREE_THROW_ENTITLEMENT_CREATED")
+    .filter((event) => stringOrNull(payloadRecord(event.payload).sourceFoulEventId) === sourceFoulEventId)
+    .map((event) => event.eventId);
+  if (entitlementIds.length !== 1) return [];
+
+  const resumptionIds = events
+    .filter((event) => event.eventType === "PLAY_RESUMPTION_DECLARED")
+    .filter((event) => entitlementIds.includes(
+      stringOrNull(payloadRecord(event.payload).sourceEntitlementEventId) ?? ""
+    ))
+    .map((event) => event.eventId);
+  return resumptionIds.length === 1 ? [...entitlementIds, ...resumptionIds] : [];
+}
+
 function applyAlphaCorrectionProjection(
   projection: ScoreboardProjection,
   eventType: MatchEventType,
@@ -1014,6 +1054,7 @@ function applyAlphaCorrectionProjection(
       return applyPlayerFoulCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide) ?? "HOME",
         playerId: stringOrNull(oldValue.playerId) ?? "",
+        foulType: oldValue.foulType === "TECHNICAL" ? "TECHNICAL" : "PERSONAL",
         periodNumber: numberOrNull(oldValue.periodNumber),
         correctedEventSeq: numberOrDefault(payload.correctedEventSeq, -1)
       }, seqNo);

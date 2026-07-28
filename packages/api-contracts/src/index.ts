@@ -1340,6 +1340,12 @@ export const addPlayerFoulCommandSchema = commandEnvelopeBaseSchema.extend({
   })
 });
 
+export const recordPlayerTechnicalFoulCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({
+    playerId: z.string().uuid()
+  }).strict()
+});
+
 export const gameClockStartCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: z.object({}).default({})
 });
@@ -1442,6 +1448,7 @@ export type LifecycleCommandPayload = z.infer<typeof lifecycleCommandPayloadSche
 export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
 export type AddTeamFoulCommand = z.infer<typeof addTeamFoulCommandSchema>;
 export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
+export type RecordPlayerTechnicalFoulCommand = z.infer<typeof recordPlayerTechnicalFoulCommandSchema>;
 export type GameClockStartCommand = z.infer<typeof gameClockStartCommandSchema>;
 export type GameClockStopCommand = z.infer<typeof gameClockStopCommandSchema>;
 export type GameClockSetCommand = z.infer<typeof gameClockSetCommandSchema>;
@@ -1472,6 +1479,8 @@ export type MatchEventType =
   | "SCORE_ADDED"
   | "TEAM_FOUL_ADDED"
   | "PLAYER_FOUL_ADDED"
+  | "FREE_THROW_ENTITLEMENT_CREATED"
+  | "PLAY_RESUMPTION_DECLARED"
   | "GAME_CLOCK_STARTED"
   | "GAME_CLOCK_STOPPED"
   | "GAME_CLOCK_SET"
@@ -1533,73 +1542,76 @@ export type CommandResult = {
 };
 
 export type ScoreboardProjection = {
-  matchId: string;
-  homeTeamId?: string | null;
-  homeTeamName?: string | null;
-  awayTeamId?: string | null;
-  awayTeamName?: string | null;
-  homeScore: number;
-  awayScore: number;
-  teamFouls: {
-    home: number;
-    away: number;
-  };
-  teamFoulsByPeriod?: Record<string, { home: number; away: number }>;
-  playerFouls: Array<{
-    playerId: string;
-    teamSide: "HOME" | "AWAY";
-    playerName: string | null;
-    jerseyNumber: string | null;
-    fouls: number;
-  }>;
-  timeouts?: {
-    home: { used: number; remaining: number };
-    away: { used: number; remaining: number };
-  };
-  timeoutsByHalf?: {
-    firstHalf: { home: number; away: number };
-    secondHalf: { home: number; away: number };
-    overtime: { home: number; away: number };
-  };
-  activeTimeout?: {
-    teamSide: "HOME" | "AWAY";
-    startedAt: string;
-    durationMs: number;
-    remainingMs: number;
-    requestedBy: TimeoutRequestedBy;
-  } | null;
-  periodType?: "REGULATION" | "OVERTIME";
-  regulationPeriods?: number;
-  periodDurationMs?: number;
-  overtimeDurationMs?: number;
-  winnerSide?: "HOME" | "AWAY" | null;
-  finalScore?: { home: number; away: number } | null;
-  matchStartedAt?: string | null;
-  matchFinishedAt?: string | null;
-  currentPeriodStartedAt?: string | null;
-  currentPeriodEndedAt?: string | null;
-  period?: number;
-  periodNumber: number;
-  gameClockRemainingMs: number;
-  shotClockRemainingMs: number | null;
-  gameClock?: {
-    remainingMs: number;
-    running: boolean;
-    lastStartedAt: string | null;
-  };
-  shotClock?: {
-    remainingMs: number;
-    running: boolean;
-    lastStartedAt: string | null;
-  };
-  clockUpdatedAt?: string | null;
-  serverTime?: string;
-  status: "SCHEDULED" | "READY" | "LIVE" | "PERIOD_BREAK" | "OVERTIME" | "FINISHED" | "FINAL" | string;
-  currentSeq: number;
-  lastEventSeq?: number;
-  updatedAt?: string | null;
-  projectionVersion: "scoreboard-v1";
-  displayTheme?: PublicDisplayTheme | null;
+ matchId: string;
+ homeTeamId?: string | null;
+ homeTeamName?: string | null;
+ awayTeamId?: string | null;
+ awayTeamName?: string | null;
+ homeScore: number;
+ awayScore: number;
+ teamFouls: {
+   home: number;
+   away: number;
+ };
+ teamFoulsByPeriod?: Record<string, { home: number; away: number }>;
+ playerFouls: Array<{
+   playerId: string;
+   teamSide: "HOME" | "AWAY";
+   playerName: string | null;
+   jerseyNumber: string | null;
+   fouls: number;
+   personalFouls: number;
+   technicalFouls: number;
+   totalTowardLimit: number;
+ }>;
+ timeouts?: {
+   home: { used: number; remaining: number };
+   away: { used: number; remaining: number };
+ };
+ timeoutsByHalf?: {
+   firstHalf: { home: number; away: number };
+   secondHalf: { home: number; away: number };
+   overtime: { home: number; away: number };
+ };
+ activeTimeout?: {
+   teamSide: "HOME" | "AWAY";
+   startedAt: string;
+   durationMs: number;
+   remainingMs: number;
+   requestedBy: TimeoutRequestedBy;
+ } | null;
+ periodType?: "REGULATION" | "OVERTIME";
+ regulationPeriods?: number;
+ periodDurationMs?: number;
+ overtimeDurationMs?: number;
+ winnerSide?: "HOME" | "AWAY" | null;
+ finalScore?: { home: number; away: number } | null;
+ matchStartedAt?: string | null;
+ matchFinishedAt?: string | null;
+ currentPeriodStartedAt?: string | null;
+ currentPeriodEndedAt?: string | null;
+ period?: number;
+ periodNumber: number;
+ gameClockRemainingMs: number;
+ shotClockRemainingMs: number | null;
+ gameClock?: {
+   remainingMs: number;
+   running: boolean;
+   lastStartedAt: string | null;
+ };
+ shotClock?: {
+   remainingMs: number;
+   running: boolean;
+   lastStartedAt: string | null;
+ };
+ clockUpdatedAt?: string | null;
+ serverTime?: string;
+ status: "SCHEDULED" | "READY" | "LIVE" | "PERIOD_BREAK" | "OVERTIME" | "FINISHED" | "FINAL" | string;
+ currentSeq: number;
+ lastEventSeq?: number;
+ updatedAt?: string | null;
+ projectionVersion: "scoreboard-v1";
+ displayTheme?: PublicDisplayTheme | null;
 };
 
 export type PublicRecentAction =

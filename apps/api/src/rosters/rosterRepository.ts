@@ -447,6 +447,43 @@ export async function getActiveRosterPlayerForMatchSide(
   };
 }
 
+// The lineup workflow is authoritative for playing status: exactly five ACTIVE
+// starters form the current supported on-court set, while BENCH is a substitute.
+// This bounded technical-foul command fails closed if that exact set is absent;
+// post-substitution lineup tracking remains outside this slice.
+export async function getOnCourtRosterPlayerForMatch(
+  connection: PoolConnection,
+  matchId: string,
+  playerId: string
+) {
+  const [rows] = await connection.query<RosterRow[]>(
+    `SELECT roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, position, roster_status, is_starter, is_captain
+     FROM match_roster_players mrp
+     WHERE mrp.match_id = ?
+       AND mrp.player_id = ?
+       AND mrp.roster_status = 'ACTIVE'
+       AND mrp.is_starter = 1
+       AND (
+         SELECT COUNT(*)
+         FROM match_roster_players on_court
+         WHERE on_court.match_id = mrp.match_id
+           AND on_court.team_side = mrp.team_side
+           AND on_court.roster_status = 'ACTIVE'
+           AND on_court.is_starter = 1
+       ) = 5
+     LIMIT 2`,
+    [matchId, playerId]
+  );
+  if (rows.length !== 1) return null;
+  const entry = toRosterPlayer(rows[0]!);
+  return {
+    playerId: entry.playerId,
+    playerName: entry.displayNameSnapshot,
+    jerseyNumber: entry.jerseyNumberSnapshot,
+    teamSide: entry.teamSide
+  };
+}
+
 async function getPlayerById(connection: PoolConnection, playerId: string): Promise<PlayerRecord | null> {
   const [rows] = await connection.query<PlayerRow[]>(
     "SELECT player_id, team_id, display_name, jersey_number, status, metadata, created_at, updated_at FROM players WHERE player_id = ?",

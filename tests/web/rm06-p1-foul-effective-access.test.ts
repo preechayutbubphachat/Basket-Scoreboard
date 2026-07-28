@@ -64,13 +64,15 @@ function expectedPlayer(player: MatchRosterPlayer, personalFouls: number) {
   return {
     player,
     personalFouls,
+    technicalFouls: 0,
+    totalTowardLimit: personalFouls,
     hasReachedPersonalFoulLimit: personalFouls >= 5
   };
 }
 
 describe("RM-06-P1 foul effective access", () => {
-  it("exposes only the supported player PERSONAL action", () => {
-    expect(foulTypeOptions).toEqual(["PERSONAL"]);
+  it("exposes the supported player PERSONAL and TECHNICAL actions", () => {
+    expect(foulTypeOptions).toEqual(["PERSONAL", "TECHNICAL"]);
   });
 
   it("fails closed for loading, error, malformed, denied, and match mismatch", () => {
@@ -114,11 +116,11 @@ describe("RM-06 personal foul count presentation", () => {
       available: true,
       playersBySide: {
         HOME: [
-          { player: rosterPlayer("home-1", "HOME"), personalFouls: 3, hasReachedPersonalFoulLimit: false },
-          { player: rosterPlayer("home-2", "HOME"), personalFouls: 0, hasReachedPersonalFoulLimit: false }
+          expectedPlayer(rosterPlayer("home-1", "HOME"), 3),
+          expectedPlayer(rosterPlayer("home-2", "HOME"), 0)
         ],
         AWAY: [
-          { player: rosterPlayer("away-1", "AWAY"), personalFouls: 4, hasReachedPersonalFoulLimit: false }
+          expectedPlayer(rosterPlayer("away-1", "AWAY"), 4)
         ]
       }
     });
@@ -182,8 +184,8 @@ describe("RM-06 personal foul count presentation", () => {
     expect(refreshed).toEqual({
       available: true,
       playersBySide: {
-        HOME: [{ player: rosterPlayer("home-2", "HOME"), personalFouls: 0, hasReachedPersonalFoulLimit: false }],
-        AWAY: [{ player: rosterPlayer("away-1", "AWAY"), personalFouls: 0, hasReachedPersonalFoulLimit: false }]
+        HOME: [expectedPlayer(rosterPlayer("home-2", "HOME"), 0)],
+        AWAY: [expectedPlayer(rosterPlayer("away-1", "AWAY"), 0)]
       }
     });
   });

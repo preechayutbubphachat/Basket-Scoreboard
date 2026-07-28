@@ -19,6 +19,8 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   SCORE_ADDED: "SCORE",
   TEAM_FOUL_ADDED: "FOUL",
   PLAYER_FOUL_ADDED: "FOUL",
+  FREE_THROW_ENTITLEMENT_CREATED: "FOUL",
+  PLAY_RESUMPTION_DECLARED: "FOUL",
   TIMEOUT_GRANTED: "TIMEOUT",
   TIMEOUT_ENDED: "TIMEOUT",
   GAME_CLOCK_STARTED: "CLOCK",
@@ -81,7 +83,8 @@ export async function getMatchReplayWithConnection(
     .filter((event) => query.beforeSeq === undefined || event.seqNo < query.beforeSeq!)
     .sort((left, right) => left.seqNo - right.seqNo);
   const score = { home: 0, away: 0 };
-  const allItems = events.map((event) => toReplayItem(event, score));
+  const voidedConsequenceEventIds = collectVoidedConsequenceEventIds(events);
+  const allItems = events.map((event) => toReplayItem(event, score, voidedConsequenceEventIds));
   const groupFilter = query.group === "all" ? null : filterToGroup[query.group];
   const filteredItems = groupFilter
     ? allItems.filter((item) => item.eventGroup === groupFilter)
@@ -100,13 +103,35 @@ export async function getMatchReplayWithConnection(
   };
 }
 
-function toReplayItem(event: MatchEventRecord, score: { home: number; away: number }): ReplayItem {
+function collectVoidedConsequenceEventIds(events: MatchEventRecord[]) {
+  const ids = new Set<string>();
+  for (const event of events) {
+    if (event.eventType !== "PLAYER_FOUL_CORRECTED") continue;
+    const newValue = payloadRecord(payloadRecord(event.payload).newValue);
+    if (newValue.consequenceDisposition !== "VOIDED_WITH_SOURCE_FOUL") continue;
+    const rawIds = newValue.voidedConsequenceEventIds;
+    if (!Array.isArray(rawIds)) continue;
+    for (const id of rawIds) {
+      if (typeof id === "string" && id.length > 0) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function toReplayItem(
+  event: MatchEventRecord,
+  score: { home: number; away: number },
+  voidedConsequenceEventIds: Set<string>
+): ReplayItem {
   const payload = payloadRecord(event.payload);
   const teamSide = parseTeamSide(payload.teamSide);
   const eventType = String(event.eventType);
   const eventGroup = eventGroups[eventType] ?? "OTHER";
   const scoreAfter = eventType === "SCORE_ADDED" ? applyScore(payload, teamSide, score) : null;
   const player = buildPlayer(payload);
+  const voidedByCorrection = voidedConsequenceEventIds.has(event.eventId);
+  const title = buildTitle(eventType, payload, teamSide);
+  const description = buildDescription(eventType, payload, teamSide, player);
 
   return {
     matchId: event.matchId,
@@ -116,8 +141,8 @@ function toReplayItem(event: MatchEventRecord, score: { home: number; away: numb
     periodNumber: numberOrNull(payload.periodNumber),
     periodType: stringOrNull(payload.periodType),
     teamSide,
-    title: buildTitle(eventType, payload, teamSide),
-    description: buildDescription(eventType, payload, teamSide, player),
+    title: voidedByCorrection ? `${title} (voided)` : title,
+    description: voidedByCorrection ? `Voided by player-foul correction. ${description}` : description,
     scoreAfter,
     player,
     actor: {
@@ -153,6 +178,10 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
       return `${teamSide ?? "Team"} team foul`;
     case "PLAYER_FOUL_ADDED":
       return `${teamSide ?? "Team"} player foul`;
+    case "FREE_THROW_ENTITLEMENT_CREATED":
+      return "Technical-foul free throw entitlement";
+    case "PLAY_RESUMPTION_DECLARED":
+      return "Interrupted-play resumption";
     case "TIMEOUT_GRANTED":
       return `${teamSide ?? "Team"} timeout granted`;
     case "TIMEOUT_ENDED":
@@ -217,6 +246,12 @@ function buildDescription(
     }
     case "PLAYER_FOUL_ADDED":
       return `${player?.displayName ?? "Unknown player"} ${stringOrNull(payload.foulType)?.toLowerCase() ?? "player"} foul.`;
+    case "FREE_THROW_ENTITLEMENT_CREATED":
+      return `${numberOrDefault(payload.attempts, 0)} free throw awarded to ${stringOrNull(payload.awardedTo) ?? "the entitled team"}.`;
+    case "PLAY_RESUMPTION_DECLARED":
+      return stringOrNull(payload.mode) === "RESUME_INTERRUPTED_PLAY"
+        ? "Play resumes from the point of interruption after the technical-foul free throw."
+        : "Play-resumption consequence recorded.";
     case "TEAM_FOUL_ADDED":
       return `${teamSide ?? "Team"} team foul recorded.`;
     case "TIMEOUT_GRANTED":

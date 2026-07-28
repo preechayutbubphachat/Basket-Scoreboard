@@ -708,6 +708,32 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
+    async recordPlayerTechnicalFoul(matchId: string, input: {
+      commandId?: string;
+      correlationId?: string;
+      expectedSeq: number;
+      clientTimestamp?: string;
+      payload: { playerId: string };
+      signal?: AbortSignal;
+    }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/foul/player/technical`,
+        {
+          method: "POST",
+          ...(input.signal ? { signal: input.signal } : {}),
+          body: JSON.stringify({
+            commandId: input.commandId ?? createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: input.correlationId ?? createCommandId(),
+            clientTimestamp: input.clientTimestamp ?? new Date().toISOString(),
+            payload: { playerId: input.payload.playerId }
+          })
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
     async startGameClock(matchId: string, input: { expectedSeq: number }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/clock/game/start`,
