@@ -385,7 +385,9 @@ There is no parallel top-level path.
 - Dependencies `[ROADMAP_EXPLICIT + REPOSITORY_INFERENCE]`: `FIBA_2024` rule profile, authoritative period/game-clock
   context, existing event stream and command receipts, timeout/private/public projections, active assignment RBAC,
   correction workflow, and realtime notification plus REST refresh.
-- Acceptance `[ROADMAP_EXPLICIT + SYSTEM_RECOMMENDATION]`: the server derives the applicable half/Q4/overtime window,
+- Acceptance `[ROADMAP_EXPLICIT + SYSTEM_RECOMMENDATION]`: the server derives the applicable half/overtime pool;
+  when Q4 shows 2:00 or less, the FIBA maximum of two is a cap within the existing second-half pool and never a reset
+  or fresh allowance. The server
   accepts an eligible grant as exactly one event, rejects exhausted/overlapping/non-LIVE/stale/duplicate-collision/
   unauthorized commands without an event, preserves exact retry idempotency and same-sequence concurrency, rebuilds
   the same quota/active state by full replay and snapshot-plus-tail, exposes no private actor/reason/device fields
@@ -398,7 +400,8 @@ There is no parallel top-level path.
   timeout totals, client-authoritative eligibility, automatic live/dead-ball opportunity inference without official
   source/state evidence, media timeouts, deployment, and production access.
 - First bounded slice proposed `[PROPOSED_FOR_AUTHORIZATION]`: `RM-07-P1 FIBA Timeout Quota Decision Foundation and
-  Operator Eligibility Presentation`—server-derived first-half/second-half/late-Q4/per-overtime quota decision,
+  Operator Eligibility Presentation`—server-derived first-half/second-half/per-overtime quota decision plus the
+  nested late-Q4 cap within the second-half pool,
   projection-backed remaining-window display, and fail-closed command/UI states using the existing event/API route.
   It is not authorized to begin; no implementation Task has been created.
 - Database direction `[SYSTEM_RECOMMENDATION]`: `NO_MIGRATION`; retain `match_events`, command receipts, and derived
