@@ -367,19 +367,49 @@ There is no parallel top-level path.
 
 ### RM-07 - Timeout Dashboard
 
-- Objective: deliver production timeout operation with rule-aware availability and correction.
-- Visual target: `Timeout Dashboard.png`.
-- Intended roles: MATCH_OPERATOR and ADMIN for timeout/lifecycle commands; other roles only where server policy grants them.
-- Current implementation state: `/operator/matches/:matchId/timeouts` and `OperatorTimeoutPage` exist; full parity is pending.
-- Domain dependencies: timeout projection, lifecycle context, correction events.
-- API/socket dependencies: protected timeout commands with server validation, expected sequence, idempotency.
-- Database dependencies: append-only timeout events and projection.
-- Security: timeout and lifecycle remain limited to MATCH_OPERATOR/ADMIN unless policy changes.
-- Acceptance: quotas, active timeout state, warnings, grant/end/correction flows, no client rule decision.
-- Tests: authorization matrix, unavailable timeout, duplicates, stale state, correction, responsive UI.
-- Production gate: DB-backed command/no-event denial proof and owner verification.
-- Known blockers: detailed live/dead-ball timeout eligibility.
-- Source requirements: `[NEEDS SOURCE]` where official timeout interpretation is not loaded.
+- Planning state: `PLANNING COMPLETE / IMPLEMENTATION NOT AUTHORIZED`. Planning Task
+  `TASK-20260730-005-rm07-planning` reconstructs this contract from live Repository, Project Brain, UI, rules, and
+  executable-test evidence. No RM-07 implementation Task exists.
+- Objective `[ROADMAP_EXPLICIT]`: deliver production timeout operation with rule-aware availability and correction.
+- Problem statement `[REPOSITORY_INFERENCE]`: the current route already grants and ends timeouts through append-only
+  `TIMEOUT_GRANTED` / `TIMEOUT_ENDED` events, but server validation only rejects an overlapping active timeout and the
+  projection uses a fixed five-timeout total; it does not yet enforce the configured first-half, second-half, late-Q4,
+  or per-overtime quotas required by the FIBA profile.
+- Visual target `[ROADMAP_EXPLICIT]`: `Timeout Dashboard.png` at `/operator/matches/:matchId/timeouts`, retaining
+  `OperatorTimeoutPage` and the shared `LiveMatchShell`.
+- Intended roles `[ROADMAP_EXPLICIT]`: active assigned `MATCH_OPERATOR` and `ADMIN`; other roles only where server
+  policy grants `match.timeout.operate`. Referee/scorer authority in older UI narrative remains `[NEEDS_DECISION]`.
+- Required deliverables `[ROADMAP_EXPLICIT]`: server-side timeout eligibility; remaining counts by rule window; active
+  timeout state; append-only reason-bearing correction; authoritative protected refresh; sanitized public timeout
+  update; reconnect and deterministic replay.
+- Dependencies `[ROADMAP_EXPLICIT + REPOSITORY_INFERENCE]`: `FIBA_2024` rule profile, authoritative period/game-clock
+  context, existing event stream and command receipts, timeout/private/public projections, active assignment RBAC,
+  correction workflow, and realtime notification plus REST refresh.
+- Acceptance `[ROADMAP_EXPLICIT + SYSTEM_RECOMMENDATION]`: the server derives the applicable half/Q4/overtime window,
+  accepts an eligible grant as exactly one event, rejects exhausted/overlapping/non-LIVE/stale/duplicate-collision/
+  unauthorized commands without an event, preserves exact retry idempotency and same-sequence concurrency, rebuilds
+  the same quota/active state by full replay and snapshot-plus-tail, exposes no private actor/reason/device fields
+  publicly, and renders ready/pending/accepted/conflict/denied/reconnect/correction states in the mounted operator UI.
+- Completion criteria `[SYSTEM_RECOMMENDATION]`: all bounded RM-07 slices and source/decision gates are closed; focused
+  and full suites, lint, build, mounted browser matrix, DB-backed authorization/concurrency/rollback, replay,
+  reconnect, public serialization, and independent rules/architecture reviews pass on one unchanged state; Roadmap
+  and Project Brain are reconciled before integration.
+- Explicit exclusions `[SYSTEM_RECOMMENDATION]`: score-domain redesign (RM-05), foul-domain changes (RM-06), mutable
+  timeout totals, client-authoritative eligibility, automatic live/dead-ball opportunity inference without official
+  source/state evidence, media timeouts, deployment, and production access.
+- First bounded slice proposed `[PROPOSED_FOR_AUTHORIZATION]`: `RM-07-P1 FIBA Timeout Quota Decision Foundation and
+  Operator Eligibility Presentation`—server-derived first-half/second-half/late-Q4/per-overtime quota decision,
+  projection-backed remaining-window display, and fail-closed command/UI states using the existing event/API route.
+  It is not authorized to begin; no implementation Task has been created.
+- Database direction `[SYSTEM_RECOMMENDATION]`: `NO_MIGRATION`; retain `match_events`, command receipts, and derived
+  projection JSON. A projection payload extension for per-overtime/window counts is permitted only in a separately
+  authorized implementation Task.
+- Source requirements `[ROADMAP_EXPLICIT]`: repository-controlled official FIBA 2024 timeout rule mapping. Current
+  quota/duration rules are recorded in `docs/rules/RULES_PROFILE_FIBA.md`; timeout-opportunity automation remains
+  `[NEEDS_SOURCE]` in `docs/rules/RULES_ENGINE_SPEC.md` and must remain operator-confirmed/fail-closed.
+- Production gate `[ROADMAP_EXPLICIT]`: DB-backed role, quota, late-game, overtime, correction, replay, reconnect,
+  public-boundary, and owner verification. Deployment and production access remain separately authorized gates.
+- Mandatory stop: `RM07_FIRST_BOUNDED_SLICE_AUTHORIZATION_REQUIRED`.
 - Next milestone: RM-08.
 
 ### RM-08 - Lineup / Roster Dashboard
