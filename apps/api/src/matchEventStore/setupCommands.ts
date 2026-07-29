@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Pool } from "mysql2/promise";
-import type { CommandResult, SetMatchHeadCoachDesignationCommand } from "@basket-scoreboard/api-contracts";
+import type { CommandResult, SetMatchHeadCoachDesignationCommand, CreateMatchAssistantCoachDesignationCommand } from "@basket-scoreboard/api-contracts";
 import { reasonCodes } from "@basket-scoreboard/api-contracts";
 import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "./auditRepository.js";
@@ -11,7 +11,7 @@ import {
   lockMatchStream,
   recoverMatchStreamReadConflict
 } from "./repositories.js";
-import { setHeadCoachDesignationForMatch } from "../rosters/rosterRepository.js";
+import { createAssistantCoachDesignationForMatch, setHeadCoachDesignationForMatch } from "../rosters/rosterRepository.js";
 
 function requestHash(command: SetMatchHeadCoachDesignationCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
@@ -153,4 +153,29 @@ export async function setMatchHeadCoachDesignationCommand(options: {
   } finally {
     connection.release();
   }
+}
+
+export async function createMatchAssistantCoachDesignationCommand(options: {
+  pool: Pool;
+  command: CreateMatchAssistantCoachDesignationCommand;
+  user: AuthenticatedUser;
+}): Promise<CommandResult> {
+  const connection = await options.pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await ensurePlaceholderUser(connection, options.user);
+    const duplicate = await findDuplicateCommandIdentity(connection, options.command.matchId, options.command.commandId);
+    if (duplicate) { await connection.rollback(); return duplicate.requestHash === requestHash(options.command as never) ? { ...duplicate.result, status: "DUPLICATE_ACCEPTED" } : rejected(options.command as never, reasonCodes.VALIDATION_ERROR, "Command identity was already used with a different request", duplicate.result.currentSeq); }
+    const currentSeq = await lockMatchStream(connection, options.command.matchId);
+    if (currentSeq === null) { await connection.rollback(); return rejected(options.command as never, reasonCodes.MATCH_NOT_FOUND, "Match stream was not found", 0); }
+    if (currentSeq !== options.command.expectedSeq) { await connection.rollback(); return { status: "SYNC_REQUIRED", commandId: options.command.commandId, matchId: options.command.matchId, currentSeq, appendedEvents: [], reasonCode: reasonCodes.INVALID_EXPECTED_SEQ, message: `Expected seq ${options.command.expectedSeq}, current seq ${currentSeq}` }; }
+    const lockedDuplicate = await findDuplicateCommandIdentity(connection, options.command.matchId, options.command.commandId);
+    if (lockedDuplicate) { await connection.rollback(); return lockedDuplicate.requestHash === requestHash(options.command as never) ? { ...lockedDuplicate.result, status: "DUPLICATE_ACCEPTED" } : rejected(options.command as never, reasonCodes.VALIDATION_ERROR, "Command identity was already used with a different request", lockedDuplicate.result.currentSeq); }
+    const created = await createAssistantCoachDesignationForMatch(connection, options.command.matchId, options.command.payload.teamSide, options.command.payload.displayName, options.command.payload.externalReference ?? null, options.user.userId);
+    if (!created) { await connection.rollback(); return rejected(options.command as never, reasonCodes.VALIDATION_ERROR, "ASSISTANT_COACH_DESIGNATION_ALREADY_EXISTS", currentSeq); }
+    const result: CommandResult = { status: "ACCEPTED", commandId: options.command.commandId, matchId: options.command.matchId, currentSeq, appendedEvents: [], reasonCode: null, message: null };
+    await insertAuditLog(connection, { entityType: "match_assistant_coach_designation", entityId: created.designationId, action: "CREATE_MATCH_ASSISTANT_COACH_DESIGNATION", actorUserId: options.user.userId, actorRole: options.user.role, deviceId: options.user.deviceId, oldValue: null, newValue: created, reason: "Assistant coach designation created", correlationId: options.command.correlationId, causationId: null, eventSeq: currentSeq });
+    await insertCommandResult(connection, { commandId: options.command.commandId, matchId: options.command.matchId, commandType: "setup/assistant-coach-designation", requestHash: requestHash(options.command as never), result });
+    await connection.commit(); return result;
+  } catch (error) { await connection.rollback(); const conflict = await recoverMatchStreamReadConflict({ error, pool: options.pool, command: options.command }); if (conflict) return conflict; throw error; } finally { connection.release(); }
 }

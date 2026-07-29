@@ -20,6 +20,7 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   TEAM_FOUL_ADDED: "FOUL",
   PLAYER_FOUL_ADDED: "FOUL",
   HEAD_COACH_TECHNICAL_FOUL_RECORDED: "FOUL",
+  BENCH_TECHNICAL_FOUL_RECORDED: "FOUL",
   FREE_THROW_ENTITLEMENT_CREATED: "FOUL",
   PLAY_RESUMPTION_DECLARED: "FOUL",
   TIMEOUT_GRANTED: "TIMEOUT",
@@ -42,6 +43,7 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   TEAM_FOUL_CORRECTED: "CORRECTION",
   PLAYER_FOUL_CORRECTED: "CORRECTION",
   HEAD_COACH_TECHNICAL_FOUL_CORRECTED: "CORRECTION",
+  BENCH_TECHNICAL_FOUL_CORRECTED: "CORRECTION",
   TIMEOUT_CORRECTED: "CORRECTION",
   GAME_CLOCK_CORRECTED: "CORRECTION",
   SHOT_CLOCK_CORRECTED: "CORRECTION"
@@ -108,7 +110,7 @@ export async function getMatchReplayWithConnection(
 function collectVoidedConsequenceCorrections(events: MatchEventRecord[]) {
   const corrections = new Map<string, string>();
   for (const event of events) {
-    if (event.eventType !== "PLAYER_FOUL_CORRECTED" && event.eventType !== "HEAD_COACH_TECHNICAL_FOUL_CORRECTED") continue;
+    if (event.eventType !== "PLAYER_FOUL_CORRECTED" && event.eventType !== "HEAD_COACH_TECHNICAL_FOUL_CORRECTED" && event.eventType !== "BENCH_TECHNICAL_FOUL_CORRECTED") continue;
     const newValue = payloadRecord(payloadRecord(event.payload).newValue);
     if (newValue.consequenceDisposition !== "VOIDED_WITH_SOURCE_FOUL") continue;
     const rawIds = newValue.voidedConsequenceEventIds;
@@ -160,6 +162,8 @@ function toReplayItem(
 function voidedCorrectionLabel(eventType: string) {
   return eventType === "HEAD_COACH_TECHNICAL_FOUL_CORRECTED"
     ? "head-coach technical correction"
+    : eventType === "BENCH_TECHNICAL_FOUL_CORRECTED"
+      ? "assistant-coach bench technical correction"
     : "player-foul correction";
 }
 
@@ -188,6 +192,8 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
       return `${teamSide ?? "Team"} player foul`;
     case "HEAD_COACH_TECHNICAL_FOUL_RECORDED":
       return `${teamSide ?? "Team"} head coach technical foul`;
+    case "BENCH_TECHNICAL_FOUL_RECORDED":
+      return `${teamSide ?? "Team"} assistant coach bench technical foul`;
     case "FREE_THROW_ENTITLEMENT_CREATED":
       return "Technical-foul free throw entitlement";
     case "PLAY_RESUMPTION_DECLARED":
@@ -232,6 +238,8 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
       return "Player foul corrected";
     case "HEAD_COACH_TECHNICAL_FOUL_CORRECTED":
       return "Head coach technical foul corrected";
+    case "BENCH_TECHNICAL_FOUL_CORRECTED":
+      return "Assistant coach bench technical foul corrected";
     case "TIMEOUT_CORRECTED":
       return "Timeout corrected";
     case "GAME_CLOCK_CORRECTED":
@@ -260,6 +268,8 @@ function buildDescription(
       return `${player?.displayName ?? "Unknown player"} ${stringOrNull(payload.foulType)?.toLowerCase() ?? "player"} foul.`;
     case "HEAD_COACH_TECHNICAL_FOUL_RECORDED":
       return `${stringOrNull(payload.headCoachDisplayNameSnapshot) ?? "Head coach"} technical foul.`;
+    case "BENCH_TECHNICAL_FOUL_RECORDED":
+      return `${stringOrNull(payload.assistantCoachDisplayNameSnapshot) ?? "Assistant coach"} bench technical foul charged to ${stringOrNull(payload.chargedHeadCoachDisplayNameSnapshot) ?? "the designated head coach"}.`;
     case "FREE_THROW_ENTITLEMENT_CREATED":
       return `${numberOrDefault(payload.attempts, 0)} free throw awarded to ${stringOrNull(payload.awardedTo) ?? "the entitled team"}.`;
     case "PLAY_RESUMPTION_DECLARED":

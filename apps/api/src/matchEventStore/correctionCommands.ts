@@ -32,6 +32,7 @@ import {
 import {
   advanceProjectionSeq,
   applyGameClockCorrected,
+  applyAssistantCoachBenchTechnicalFoulCorrected,
   applyHeadCoachTechnicalFoulCorrected,
   applyPlayerFoulCorrected,
   applyScoreAdded,
@@ -848,6 +849,8 @@ function correctionKindForEvent(event: MatchEventRecord): AlphaCorrectionKind | 
       return "PLAYER_FOUL_UNDO";
     case "HEAD_COACH_TECHNICAL_FOUL_RECORDED":
       return "HEAD_COACH_TECHNICAL_UNDO";
+    case "BENCH_TECHNICAL_FOUL_RECORDED":
+      return "BENCH_TECHNICAL_UNDO";
     case "TIMEOUT_GRANTED":
     case "TIMEOUT_ENDED":
       return "TIMEOUT_UNDO";
@@ -991,6 +994,23 @@ function buildCorrectionEventPayload(options: {
         }
       };
     }
+    case "BENCH_TECHNICAL_UNDO": {
+      const assistantCoachDesignationId = stringOrNull(targetPayload.assistantCoachDesignationId);
+      const chargedHeadCoachDesignationId = stringOrNull(targetPayload.chargedHeadCoachDesignationId);
+      const teamSide = parseTeamSide(targetPayload.teamSide);
+      if (!assistantCoachDesignationId || !chargedHeadCoachDesignationId || !teamSide) return null;
+      const consequenceEventIds = resolveTechnicalConsequenceEventIds(options.events, options.targetEvent.eventId);
+      if (consequenceEventIds.length !== 2) return null;
+      return {
+        eventType: "BENCH_TECHNICAL_FOUL_CORRECTED",
+        payload: {
+          ...common,
+          oldValue: { assistantCoachDesignationId, chargedHeadCoachDesignationId, teamSide, benchTechnicalCount: 1, consequenceEventTypes: ["FREE_THROW_ENTITLEMENT_CREATED", "PLAY_RESUMPTION_DECLARED"], consequenceEventIds },
+          newValue: { assistantCoachDesignationId, consequenceDisposition: "VOIDED_WITH_SOURCE_FOUL", voidedConsequenceEventIds: consequenceEventIds },
+          delta: { assistantCoachDesignationId, benchTechnicalCount: -1 }
+        }
+      };
+    }
     case "TIMEOUT_UNDO": {
       const teamSide = parseTeamSide(targetPayload.teamSide);
       return {
@@ -1092,6 +1112,10 @@ function applyAlphaCorrectionProjection(
       return applyHeadCoachTechnicalFoulCorrected(projection, {
         designationId: stringOrNull(oldValue.designationId) ?? ""
       }, seqNo);
+    case "BENCH_TECHNICAL_FOUL_CORRECTED":
+      return applyAssistantCoachBenchTechnicalFoulCorrected(projection, {
+        chargedHeadCoachDesignationId: stringOrNull(oldValue.chargedHeadCoachDesignationId) ?? ""
+      }, seqNo);
     case "TIMEOUT_CORRECTED":
       return applyTimeoutCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide),
@@ -1126,6 +1150,10 @@ function summarizeCorrectionTarget(event: MatchEventRecord) {
       return `${teamSide} team foul`;
     case "PLAYER_FOUL_ADDED":
       return `${teamSide} player foul`;
+    case "HEAD_COACH_TECHNICAL_FOUL_RECORDED":
+      return `${teamSide} head coach technical foul`;
+    case "BENCH_TECHNICAL_FOUL_RECORDED":
+      return `${teamSide} assistant coach bench technical foul`;
     case "TIMEOUT_GRANTED":
       return `${teamSide} timeout granted`;
     case "TIMEOUT_ENDED":
@@ -1151,6 +1179,8 @@ function buildProposedCompensation(event: MatchEventRecord, correctionKind: Alph
       return { teamSide: payload.teamSide, fouls: -1 };
     case "HEAD_COACH_TECHNICAL_UNDO":
       return { designationId: payload.headCoachDesignationId, coachTechnicalCount: -1 };
+    case "BENCH_TECHNICAL_UNDO":
+      return { chargedHeadCoachDesignationId: payload.chargedHeadCoachDesignationId, benchTechnicalCount: -1 };
     case "TIMEOUT_UNDO":
       return { teamSide: payload.teamSide ?? null, timeoutsUsed: payload.teamSide ? -1 : 0 };
     case "GAME_CLOCK_SET_CORRECTION":

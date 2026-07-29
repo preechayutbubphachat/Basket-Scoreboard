@@ -20,8 +20,10 @@ import {
   replayQuerySchema,
   rejectCorrectionCommandSchema,
   recordHeadCoachTechnicalFoulCommandSchema,
+  recordAssistantCoachBenchTechnicalFoulCommandSchema,
   recordPlayerTechnicalFoulCommandSchema,
   setMatchHeadCoachDesignationCommandSchema,
+  createMatchAssistantCoachDesignationCommandSchema,
   shotClockResetCommandSchema,
   shotClockSetCommandSchema,
   syncQuerySchema,
@@ -39,6 +41,7 @@ import {
 import {
   appendHeadCoachTechnicalFoulCommand
 } from "../matchEventStore/appendHeadCoachTechnicalFoulCommand.js";
+import { appendAssistantCoachBenchTechnicalFoulCommand } from "../matchEventStore/appendAssistantCoachBenchTechnicalFoulCommand.js";
 import {
   appendPlayerFoulAddedCommand,
   appendPlayerTechnicalFoulCommand,
@@ -86,7 +89,7 @@ import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboa
 import { resolvePublicMatchMetadata } from "../publicScoreboard/publicMatchMetadata.js";
 import { matchCommandPermissions } from "../auth/operatorPermissionPolicy.js";
 import { buildEffectiveMatchAccess, matchExists } from "../auth/effectiveMatchAccess.js";
-import { setMatchHeadCoachDesignationCommand } from "../matchEventStore/setupCommands.js";
+import { createMatchAssistantCoachDesignationCommand, setMatchHeadCoachDesignationCommand } from "../matchEventStore/setupCommands.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -148,6 +151,16 @@ export function registerMatchRoutes(
         user: request.user!
       });
       return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/assistant-coach-designation",
+    { preHandler: [auth.requireAuth, auth.requireMatchPermission("match.foul.operate", (request) => (request.params as { matchId: string }).matchId), auth.requireCsrf] },
+    async (request, reply) => {
+      const command = createMatchAssistantCoachDesignationCommandSchema.parse(request.body);
+      if (command.matchId !== request.params.matchId) return reply.status(400).send(apiError(reasonCodes.VALIDATION_ERROR, "Command matchId must match the route"));
+      return reply.send(await createMatchAssistantCoachDesignationCommand({ pool, command, user: request.user! }));
     }
   );
 
@@ -571,6 +584,18 @@ export function registerMatchRoutes(
         command,
         user: request.user!
       });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/foul/assistant-coach/bench-technical",
+    { preHandler: [auth.requireAuth, auth.requireCsrf, auth.requireMatchPermission(matchCommandPermissions.foul, (request) => (request.params as { matchId: string }).matchId)] },
+    async (request, reply) => {
+      const command = recordAssistantCoachBenchTechnicalFoulCommandSchema.parse(request.body);
+      if (command.matchId !== request.params.matchId) return reply.send(commandMatchIdMismatch(command));
+      const result = await appendAssistantCoachBenchTechnicalFoulCommand({ pool, command, user: request.user! });
       await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
       return reply.send(result);
     }

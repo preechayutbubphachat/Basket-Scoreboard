@@ -1293,6 +1293,7 @@ export const alphaCorrectionKindSchema = z.enum([
   "PLAYER_FOUL_UNDO",
   "TIMEOUT_UNDO",
   "HEAD_COACH_TECHNICAL_UNDO",
+  "BENCH_TECHNICAL_UNDO",
   "GAME_CLOCK_SET_CORRECTION",
   "SHOT_CLOCK_SET_CORRECTION"
 ]);
@@ -1353,7 +1354,19 @@ export const recordHeadCoachTechnicalFoulCommandSchema = commandEnvelopeBaseSche
   }).strict()
 });
 
+export const recordAssistantCoachBenchTechnicalFoulCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({ teamSide: z.enum(["HOME", "AWAY"]) }).strict()
+});
+
 export const setMatchHeadCoachDesignationCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({
+    teamSide: z.enum(["HOME", "AWAY"]),
+    displayName: z.string().trim().min(1).max(200),
+    externalReference: z.string().max(200).nullable().optional()
+  }).strict()
+});
+
+export const createMatchAssistantCoachDesignationCommandSchema = commandEnvelopeBaseSchema.strict().extend({
   payload: z.object({
     teamSide: z.enum(["HOME", "AWAY"]),
     displayName: z.string().trim().min(1).max(200),
@@ -1466,6 +1479,8 @@ export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
 export type RecordPlayerTechnicalFoulCommand = z.infer<typeof recordPlayerTechnicalFoulCommandSchema>;
 export type RecordHeadCoachTechnicalFoulCommand = z.infer<typeof recordHeadCoachTechnicalFoulCommandSchema>;
 export type SetMatchHeadCoachDesignationCommand = z.infer<typeof setMatchHeadCoachDesignationCommandSchema>;
+export type RecordAssistantCoachBenchTechnicalFoulCommand = z.infer<typeof recordAssistantCoachBenchTechnicalFoulCommandSchema>;
+export type CreateMatchAssistantCoachDesignationCommand = z.infer<typeof createMatchAssistantCoachDesignationCommandSchema>;
 export type GameClockStartCommand = z.infer<typeof gameClockStartCommandSchema>;
 export type GameClockStopCommand = z.infer<typeof gameClockStopCommandSchema>;
 export type GameClockSetCommand = z.infer<typeof gameClockSetCommandSchema>;
@@ -1498,6 +1513,8 @@ export type MatchEventType =
   | "PLAYER_FOUL_ADDED"
   | "HEAD_COACH_TECHNICAL_FOUL_RECORDED"
   | "HEAD_COACH_TECHNICAL_FOUL_CORRECTED"
+  | "BENCH_TECHNICAL_FOUL_RECORDED"
+  | "BENCH_TECHNICAL_FOUL_CORRECTED"
   | "FREE_THROW_ENTITLEMENT_CREATED"
   | "PLAY_RESUMPTION_DECLARED"
   | "GAME_CLOCK_STARTED"
@@ -1589,7 +1606,9 @@ export type ScoreboardProjection = {
     teamSide: "HOME" | "AWAY";
     displayNameSnapshot: string;
     coachTechnicalCount: number;
+    benchTechnicalCount: number;
     disqualificationReviewRequired: boolean;
+    disqualificationReviewReason: "TWO_COACH_TECHNICALS" | "THREE_BENCH_TECHNICALS" | "ONE_COACH_TWO_BENCH_TECHNICALS" | null;
   }>;
  timeouts?: {
    home: { used: number; remaining: number };

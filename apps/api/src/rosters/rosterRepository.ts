@@ -717,6 +717,40 @@ export async function setHeadCoachDesignationForMatch(
   return created;
 }
 
+// Assistant-coach designation is intentionally create-only: reassignment is a
+// separate product decision and must never silently change an event's actor.
+export async function getAssistantCoachDesignationForMatch(
+  connection: PoolConnection,
+  matchId: string,
+  teamSide: "HOME" | "AWAY"
+): Promise<HeadCoachDesignationResult | null> {
+  const [rows] = await connection.query<HeadCoachDesignationRow[]>(
+    "SELECT designation_id, match_id, team_side, display_name, external_reference, designated_at, designated_by FROM match_assistant_coach_designations WHERE match_id = ? AND team_side = ?",
+    [matchId, teamSide]
+  );
+  if (rows.length !== 1) return null;
+  return toHeadCoachDesignation(rows[0]!);
+}
+
+export async function createAssistantCoachDesignationForMatch(
+  connection: PoolConnection,
+  matchId: string,
+  teamSide: "HOME" | "AWAY",
+  displayName: string,
+  externalReference: string | null,
+  designatedBy: string
+): Promise<HeadCoachDesignationResult | null> {
+  if (await getAssistantCoachDesignationForMatch(connection, matchId, teamSide)) return null;
+  const designationId = randomUUID();
+  await connection.query(
+    "INSERT INTO match_assistant_coach_designations (designation_id, match_id, team_side, display_name, external_reference, designated_at, designated_by) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3), ?)",
+    [designationId, matchId, teamSide, displayName, externalReference ?? null, designatedBy]
+  );
+  const created = await getAssistantCoachDesignationForMatch(connection, matchId, teamSide);
+  if (!created) throw new Error("Failed to retrieve created assistant-coach designation");
+  return created;
+}
+
 function isFinishedMatch(status: string) {
   const normalized = status.toUpperCase();
   return normalized === "FINISHED" || normalized === "FINAL";

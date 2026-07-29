@@ -83,7 +83,9 @@ export type ScoreboardProjection = {
   teamSide: "HOME" | "AWAY";
   displayNameSnapshot: string;
   coachTechnicalCount: number;
+  benchTechnicalCount: number;
   disqualificationReviewRequired: boolean;
+  disqualificationReviewReason: "TWO_COACH_TECHNICALS" | "THREE_BENCH_TECHNICALS" | "ONE_COACH_TWO_BENCH_TECHNICALS" | null;
 }>;
 };
 
@@ -190,7 +192,9 @@ export function normalizeScoreboardProjection(
         teamSide: hc.teamSide === "HOME" || hc.teamSide === "AWAY" ? hc.teamSide : "HOME",
         displayNameSnapshot: typeof hc.displayNameSnapshot === "string" ? hc.displayNameSnapshot : "",
         coachTechnicalCount: numberOrDefault(hc.coachTechnicalCount, 0),
-        disqualificationReviewRequired: Boolean(hc.disqualificationReviewRequired)
+        benchTechnicalCount: numberOrDefault(hc.benchTechnicalCount, 0),
+        disqualificationReviewRequired: Boolean(hc.disqualificationReviewRequired),
+        disqualificationReviewReason: hc.disqualificationReviewReason === "TWO_COACH_TECHNICALS" || hc.disqualificationReviewReason === "THREE_BENCH_TECHNICALS" || hc.disqualificationReviewReason === "ONE_COACH_TWO_BENCH_TECHNICALS" ? hc.disqualificationReviewReason : null
       }))
       : [],
     recentActionState: normalizeInternalRecentActionState(
@@ -434,12 +438,11 @@ export function applyHeadCoachTechnicalFoulAdded(
     (hc) => hc.designationId === payload.headCoachDesignationId
   );
   const nextCount = (existing?.coachTechnicalCount ?? 0) + 1;
-  const reviewRequired = nextCount >= 2;
 
   const headCoachTechnicals = existing
     ? projection.headCoachTechnicals!.map((hc) =>
         hc.designationId === payload.headCoachDesignationId
-          ? { ...hc, coachTechnicalCount: nextCount, disqualificationReviewRequired: nextCount >= 2 }
+          ? { ...hc, coachTechnicalCount: nextCount }
           : hc
       )
     : [
@@ -449,15 +452,17 @@ export function applyHeadCoachTechnicalFoulAdded(
           teamSide: payload.teamSide,
           displayNameSnapshot: payload.headCoachDisplayNameSnapshot,
           coachTechnicalCount: 1,
-          disqualificationReviewRequired: false
+          benchTechnicalCount: 0,
+          disqualificationReviewRequired: false,
+          disqualificationReviewReason: null
         }
       ];
 
-  return {
+  return withBenchTechnicalReviews({
     ...projection,
     headCoachTechnicals,
     currentSeq: seqNo
-  };
+  });
 }
 
 export function applyHeadCoachTechnicalFoulCorrected(
@@ -465,7 +470,7 @@ export function applyHeadCoachTechnicalFoulCorrected(
   payload: { designationId: string },
   seqNo: number
 ): ScoreboardProjection {
-  return {
+  return withBenchTechnicalReviews({
     ...projection,
     headCoachTechnicals: projection.headCoachTechnicals.map((coach) => {
       if (coach.designationId !== payload.designationId) return coach;
@@ -473,10 +478,51 @@ export function applyHeadCoachTechnicalFoulCorrected(
       return {
         ...coach,
         coachTechnicalCount,
-        disqualificationReviewRequired: coachTechnicalCount >= 2
+        disqualificationReviewRequired: false,
+        disqualificationReviewReason: null
       };
     }),
     currentSeq: seqNo
+  });
+}
+
+export function applyAssistantCoachBenchTechnicalFoulAdded(
+  projection: ScoreboardProjection,
+  payload: {
+    teamSide: "HOME" | "AWAY";
+    assistantCoachDesignationId: string;
+    assistantCoachDisplayNameSnapshot: string;
+    chargedHeadCoachDesignationId: string;
+    chargedHeadCoachDisplayNameSnapshot: string;
+  },
+  seqNo: number
+): ScoreboardProjection {
+  const existing = projection.headCoachTechnicals.find((coach) => coach.designationId === payload.chargedHeadCoachDesignationId);
+  const headCoachTechnicals = existing
+    ? projection.headCoachTechnicals.map((coach) => coach.designationId === payload.chargedHeadCoachDesignationId ? { ...coach, benchTechnicalCount: coach.benchTechnicalCount + 1 } : coach)
+    : [...projection.headCoachTechnicals, { designationId: payload.chargedHeadCoachDesignationId, teamSide: payload.teamSide, displayNameSnapshot: payload.chargedHeadCoachDisplayNameSnapshot, coachTechnicalCount: 0, benchTechnicalCount: 1, disqualificationReviewRequired: false, disqualificationReviewReason: null }];
+  return withBenchTechnicalReviews({ ...projection, headCoachTechnicals, currentSeq: seqNo });
+}
+
+export function applyAssistantCoachBenchTechnicalFoulCorrected(
+  projection: ScoreboardProjection,
+  payload: { chargedHeadCoachDesignationId: string },
+  seqNo: number
+): ScoreboardProjection {
+  return withBenchTechnicalReviews({
+    ...projection,
+    headCoachTechnicals: projection.headCoachTechnicals.map((coach) => coach.designationId === payload.chargedHeadCoachDesignationId ? { ...coach, benchTechnicalCount: Math.max(0, coach.benchTechnicalCount - 1) } : coach),
+    currentSeq: seqNo
+  });
+}
+
+function withBenchTechnicalReviews(projection: ScoreboardProjection): ScoreboardProjection {
+  return {
+    ...projection,
+    headCoachTechnicals: projection.headCoachTechnicals.map((coach) => {
+      const disqualificationReviewReason = coach.coachTechnicalCount >= 2 ? "TWO_COACH_TECHNICALS" as const : coach.benchTechnicalCount >= 3 ? "THREE_BENCH_TECHNICALS" as const : coach.coachTechnicalCount >= 1 && coach.benchTechnicalCount >= 2 ? "ONE_COACH_TWO_BENCH_TECHNICALS" as const : null;
+      return { ...coach, disqualificationReviewRequired: disqualificationReviewReason !== null, disqualificationReviewReason };
+    })
   };
 }
 

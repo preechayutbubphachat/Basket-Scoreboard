@@ -3628,6 +3628,8 @@ function OperatorFoulPage({
   const [reason, setReason] = useState("");
   const [headCoachSide, setHeadCoachSide] = useState<"HOME" | "AWAY">("HOME");
   const [headCoachName, setHeadCoachName] = useState("");
+  const [assistantCoachSide, setAssistantCoachSide] = useState<"HOME" | "AWAY">("HOME");
+  const [assistantCoachName, setAssistantCoachName] = useState("");
   const [selectedFoulPlayer, setSelectedFoulPlayer] = useState<{
     gameClockRemainingMs: number;
     periodNumber: number;
@@ -4094,6 +4096,26 @@ function OperatorFoulPage({
     }
   }
 
+  async function createAssistantCoachDesignation() {
+    if (!projection || !canSubmitFoul || pendingKey || readOnly || !assistantCoachName.trim()) return;
+    setPendingKey("ASSISTANT_COACH_DESIGNATION");
+    try {
+      const result = await api.createMatchAssistantCoachDesignation(matchId, { expectedSeq: projection.currentSeq, payload: { teamSide: assistantCoachSide, displayName: assistantCoachName.trim() } });
+      setMessage(getFoulControlFeedback(result));
+      if (result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED") await refreshAuthoritativeState();
+    } catch (error) { setMessage(toUiMessage(error)); } finally { setPendingKey(null); }
+  }
+
+  async function recordAssistantCoachBenchTechnical() {
+    if (!projection || !canSubmitFoul || pendingKey || readOnly) return;
+    setPendingKey(`ASSISTANT_COACH_BENCH_TECHNICAL-${assistantCoachSide}`);
+    try {
+      const result = await api.recordAssistantCoachBenchTechnicalFoul(matchId, { expectedSeq: projection.currentSeq, payload: { teamSide: assistantCoachSide } });
+      setMessage(getFoulControlFeedback(result));
+      if (result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED") await refreshAuthoritativeState();
+    } catch (error) { setMessage(toUiMessage(error)); } finally { setPendingKey(null); }
+  }
+
   function discardActiveFoul() {
     if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;
     dispatchedFoulEnvelopeRef.current = null;
@@ -4266,8 +4288,20 @@ function OperatorFoulPage({
             </div>
             {(["HOME", "AWAY"] as const).map((teamSide) => {
               const coach = projection.headCoachTechnicals?.find((candidate) => candidate.teamSide === teamSide);
-              return coach ? <p key={teamSide} aria-live="polite">{teamSide}: {coach.displayNameSnapshot} — C technicals {coach.coachTechnicalCount}{coach.disqualificationReviewRequired ? " — review required" : ""}</p> : null;
+              return coach ? <p key={teamSide} aria-live="polite">{teamSide}: {coach.displayNameSnapshot} — C technicals {coach.coachTechnicalCount}, B technicals {coach.benchTechnicalCount}{coach.disqualificationReviewReason ? ` — review required (${coach.disqualificationReviewReason})` : ""}</p> : null;
             })}
+          </section>
+          <section className="inline-panel">
+            <h2>Assistant coach bench technical</h2>
+            <p className="muted">Assistant Coach only. B technical is charged to the designated head coach; one free throw and point-of-interruption resumption are server-authoritative.</p>
+            <div className="form-grid compact">
+              <label>Team side<select value={assistantCoachSide} onChange={(event) => setAssistantCoachSide(event.target.value as "HOME" | "AWAY")} disabled={!canSubmitFoul || readOnly || Boolean(pendingKey)}><option value="HOME">HOME</option><option value="AWAY">AWAY</option></select></label>
+              <label>Assistant coach name<input value={assistantCoachName} onChange={(event) => setAssistantCoachName(event.target.value)} disabled={!canSubmitFoul || readOnly || Boolean(pendingKey)} /></label>
+            </div>
+            <div className="button-row">
+              <button type="button" disabled={!canSubmitFoul || readOnly || Boolean(pendingKey) || !assistantCoachName.trim()} onClick={() => void createAssistantCoachDesignation()}>Create assistant coach designation</button>
+              <button type="button" className="secondary" disabled={!canSubmitFoul || readOnly || Boolean(pendingKey)} onClick={() => void recordAssistantCoachBenchTechnical()}>Record assistant coach bench technical</button>
+            </div>
           </section>
           <section className="inline-panel">
             <h2>Player Fouls</h2>

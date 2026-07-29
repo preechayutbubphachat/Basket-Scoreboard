@@ -20,6 +20,8 @@ export const foulEventTypes = [
   "PLAYER_FOUL_ADDED",
   "HEAD_COACH_TECHNICAL_FOUL_RECORDED",
   "HEAD_COACH_TECHNICAL_FOUL_CORRECTED",
+  "BENCH_TECHNICAL_FOUL_RECORDED",
+  "BENCH_TECHNICAL_FOUL_CORRECTED",
   "FREE_THROW_ENTITLEMENT_CREATED",
   "PLAY_RESUMPTION_DECLARED"
 ] as const;
@@ -78,6 +80,8 @@ export type AlphaCorrectionPayload = {
     | "TEAM_FOUL_UNDO"
     | "PLAYER_FOUL_UNDO"
     | "TIMEOUT_UNDO"
+    | "HEAD_COACH_TECHNICAL_UNDO"
+    | "BENCH_TECHNICAL_UNDO"
     | "GAME_CLOCK_SET_CORRECTION"
     | "SHOT_CLOCK_SET_CORRECTION";
   reason: string;
@@ -121,6 +125,22 @@ export type HeadCoachTechnicalFoulRecordedPayload = {
   classification: "C";
   periodNumber: number;
   gameClockSnapshot: string;
+  ruleProfileId: "FIBA_2024";
+  ruleVersion: string;
+};
+
+export type BenchTechnicalFoulRecordedPayload = {
+  teamSide: TeamSide;
+  assistantCoachDesignationId: string;
+  assistantCoachDisplayNameSnapshot: string;
+  chargedHeadCoachDesignationId: string;
+  chargedHeadCoachDisplayNameSnapshot: string;
+  classification: "B";
+  periodNumber: number;
+  gameClockSnapshot: string;
+  shotClockSnapshot: string | null;
+  /** The bounded projection records an unknown control state as null. */
+  teamControlSnapshot: TeamSide | null;
   ruleProfileId: "FIBA_2024";
   ruleVersion: string;
 };
@@ -188,13 +208,15 @@ export type ScoreboardProjection = {
    technicalFouls: number;
    totalTowardLimit: number;
  }>;
- headCoachTechnicals: Array<{
+  headCoachTechnicals: Array<{
    designationId: string;
    teamSide: TeamSide;
    displayNameSnapshot: string;
    coachTechnicalCount: number;
+   benchTechnicalCount: number;
    disqualificationReviewRequired: boolean;
- }>;
+   disqualificationReviewReason: "TWO_COACH_TECHNICALS" | "THREE_BENCH_TECHNICALS" | "ONE_COACH_TWO_BENCH_TECHNICALS" | null;
+  }>;
  periodNumber: number;
  gameClockRemainingMs: number;
  shotClockRemainingMs: number;
