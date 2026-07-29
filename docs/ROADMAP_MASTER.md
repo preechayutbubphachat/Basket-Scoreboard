@@ -379,7 +379,8 @@ There is no parallel top-level path.
   `OperatorTimeoutPage` and the shared `LiveMatchShell`.
 - Intended roles `[ROADMAP_EXPLICIT]`: active assigned `MATCH_OPERATOR` and `ADMIN`; other roles only where server
   policy grants `match.timeout.operate`. Referee/scorer authority in older UI narrative remains `[NEEDS_DECISION]`.
-- Required deliverables `[ROADMAP_EXPLICIT]`: server-side timeout eligibility; remaining counts by rule window; active
+- Required deliverables `[ROADMAP_EXPLICIT + REPOSITORY_INFERENCE + SYSTEM_RECOMMENDATION]`: server-side timeout
+  eligibility; remaining counts by rule pool; active
   timeout state; append-only reason-bearing correction; authoritative protected refresh; sanitized public timeout
   update; reconnect and deterministic replay.
 - Dependencies `[ROADMAP_EXPLICIT + REPOSITORY_INFERENCE]`: `FIBA_2024` rule profile, authoritative period/game-clock
@@ -409,7 +410,12 @@ There is no parallel top-level path.
   authorized implementation Task.
 - Source requirements `[ROADMAP_EXPLICIT]`: repository-controlled official FIBA 2024 timeout rule mapping. Current
   quota/duration rules are recorded in `docs/rules/RULES_PROFILE_FIBA.md`; timeout-opportunity automation remains
-  `[NEEDS_SOURCE]` in `docs/rules/RULES_ENGINE_SPEC.md` and must remain operator-confirmed/fail-closed.
+  `[NEEDS_SOURCE]` in `docs/rules/RULES_ENGINE_SPEC.md`. P1 must fail closed when authoritative opportunity evidence
+  is absent; operator-confirmed grant is deferred until a separately authorized contract defines an explicit
+  confirmation fact and mandatory non-empty audited reason.
+- Implementation preconditions `[SYSTEM_RECOMMENDATION]`: stable `AC-RM07-P1-*` and `V-RM07-P1-*` mappings must be
+  copied into the immutable implementation contract; persistence fault injection must cover every write boundary;
+  command/event/audit causation follows proposed `AD-RM07-11` and must be authorized before dispatch.
 - Production gate `[ROADMAP_EXPLICIT]`: DB-backed role, quota, late-game, overtime, correction, replay, reconnect,
   public-boundary, and owner verification. Deployment and production access remain separately authorized gates.
 - Mandatory stop: `RM07_FIRST_BOUNDED_SLICE_AUTHORIZATION_REQUIRED`.
