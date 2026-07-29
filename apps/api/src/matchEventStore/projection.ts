@@ -78,6 +78,13 @@ export type ScoreboardProjection = {
   currentSeq: number;
   projectionVersion: "scoreboard-v1";
   recentActionState: InternalRecentActionState;
+  headCoachTechnicals: Array<{
+  designationId: string;
+  teamSide: "HOME" | "AWAY";
+  displayNameSnapshot: string;
+  coachTechnicalCount: number;
+  disqualificationReviewRequired: boolean;
+}>;
 };
 
 export type DerivedFinalOutcome = {
@@ -122,7 +129,8 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     status: "READY",
     currentSeq: 0,
     projectionVersion: "scoreboard-v1",
-    recentActionState: createInternalRecentActionState(0)
+    recentActionState: createInternalRecentActionState(0),
+    headCoachTechnicals: []
   };
 }
 
@@ -176,6 +184,15 @@ export function normalizeScoreboardProjection(
     status: normalizeLifecycleStatus(projection.status),
     currentSeq: numberOrDefault(projection.currentSeq, 0),
     projectionVersion: "scoreboard-v1",
+    headCoachTechnicals: Array.isArray(projection.headCoachTechnicals)
+      ? projection.headCoachTechnicals.map((hc) => ({
+        designationId: typeof hc.designationId === "string" ? hc.designationId : "",
+        teamSide: hc.teamSide === "HOME" || hc.teamSide === "AWAY" ? hc.teamSide : "HOME",
+        displayNameSnapshot: typeof hc.displayNameSnapshot === "string" ? hc.displayNameSnapshot : "",
+        coachTechnicalCount: numberOrDefault(hc.coachTechnicalCount, 0),
+        disqualificationReviewRequired: Boolean(hc.disqualificationReviewRequired)
+      }))
+      : [],
     recentActionState: normalizeInternalRecentActionState(
       projection.recentActionState,
       numberOrDefault(projection.currentSeq, 0)
@@ -396,6 +413,71 @@ export function applyPlayerFoulAdded(
     payload,
     seqNo
   );
+}
+
+export function applyHeadCoachTechnicalFoulAdded(
+  projection: ScoreboardProjection,
+  payload: {
+    teamSide: "HOME" | "AWAY";
+    headCoachDesignationId: string;
+    headCoachDisplayNameSnapshot: string;
+    periodNumber: number;
+    gameClockSnapshot: string;
+    ruleProfileId: string;
+    ruleVersion: string;
+  } & { periodNumber: number },
+  seqNo: number
+): ScoreboardProjection {
+  const teamSide = payload.teamSide;
+
+  const existing = projection.headCoachTechnicals?.find(
+    (hc) => hc.designationId === payload.headCoachDesignationId
+  );
+  const nextCount = (existing?.coachTechnicalCount ?? 0) + 1;
+  const reviewRequired = nextCount >= 2;
+
+  const headCoachTechnicals = existing
+    ? projection.headCoachTechnicals!.map((hc) =>
+        hc.designationId === payload.headCoachDesignationId
+          ? { ...hc, coachTechnicalCount: nextCount, disqualificationReviewRequired: nextCount >= 2 }
+          : hc
+      )
+    : [
+        ...(projection.headCoachTechnicals ?? []),
+        {
+          designationId: payload.headCoachDesignationId,
+          teamSide: payload.teamSide,
+          displayNameSnapshot: payload.headCoachDisplayNameSnapshot,
+          coachTechnicalCount: 1,
+          disqualificationReviewRequired: false
+        }
+      ];
+
+  return {
+    ...projection,
+    headCoachTechnicals,
+    currentSeq: seqNo
+  };
+}
+
+export function applyHeadCoachTechnicalFoulCorrected(
+  projection: ScoreboardProjection,
+  payload: { designationId: string },
+  seqNo: number
+): ScoreboardProjection {
+  return {
+    ...projection,
+    headCoachTechnicals: projection.headCoachTechnicals.map((coach) => {
+      if (coach.designationId !== payload.designationId) return coach;
+      const coachTechnicalCount = Math.max(0, coach.coachTechnicalCount - 1);
+      return {
+        ...coach,
+        coachTechnicalCount,
+        disqualificationReviewRequired: coachTechnicalCount >= 2
+      };
+    }),
+    currentSeq: seqNo
+  };
 }
 
 export function applyTimeoutGranted(

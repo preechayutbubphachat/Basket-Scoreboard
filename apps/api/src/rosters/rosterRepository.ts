@@ -631,15 +631,90 @@ function groupRoster(matchId: string, entries: MatchRosterPlayer[], confirmation
 }
 
 function buildReadiness(players: MatchRosterPlayer[], confirmed: boolean): RosterReadiness {
-  const starterCount = players.filter((player) => player.isStarter).length;
-  const captainSet = players.some((player) => player.isCaptain);
+ const starterCount = players.filter((player) => player.isStarter).length;
+ const captainSet = players.some((player) => player.isCaptain);
+ return {
+   playerCount: players.length,
+   starterCount,
+   captainSet,
+   confirmed,
+   ready: confirmed && starterCount === 5
+ };
+}
+
+// Head-coach designation (bounded slice for head-coach technical foul)
+// This is a minimal match-scoped designation, not full staff CRUD
+type HeadCoachDesignationRow = RowDataPacket & {
+  designation_id: string;
+  match_id: string;
+  team_side: "HOME" | "AWAY";
+  display_name: string;
+  external_reference: string | null;
+  designated_at: Date | string | null;
+  designated_by: string;
+};
+
+type HeadCoachDesignationResult = {
+  designationId: string;
+  matchId: string;
+  teamSide: "HOME" | "AWAY";
+  displayName: string;
+  externalReference: string | null;
+  designatedAt: string | null;
+  designatedBy: string;
+};
+
+function toHeadCoachDesignation(row: HeadCoachDesignationRow): HeadCoachDesignationResult {
   return {
-    playerCount: players.length,
-    starterCount,
-    captainSet,
-    confirmed,
-    ready: confirmed && starterCount === 5
+    designationId: row.designation_id,
+    matchId: row.match_id,
+    teamSide: row.team_side,
+    displayName: row.display_name,
+    externalReference: row.external_reference,
+    designatedAt: row.designated_at ? new Date(row.designated_at).toISOString() : null,
+    designatedBy: row.designated_by,
   };
+}
+
+export async function getHeadCoachDesignationForMatch(
+  connection: PoolConnection,
+  matchId: string,
+  teamSide: "HOME" | "AWAY"
+): Promise<HeadCoachDesignationResult | null> {
+  const [rows] = await connection.query<HeadCoachDesignationRow[]>(
+    "SELECT designation_id, match_id, team_side, display_name, external_reference, designated_at, designated_by FROM match_head_coach_designations WHERE match_id = ? AND team_side = ?",
+    [matchId, teamSide]
+  );
+  if (rows.length !== 1) return null;
+  return toHeadCoachDesignation(rows[0]!);
+}
+
+export async function setHeadCoachDesignationForMatch(
+  connection: PoolConnection,
+  matchId: string,
+  teamSide: "HOME" | "AWAY",
+  displayName: string,
+  externalReference: string | null,
+  designatedBy: string
+): Promise<HeadCoachDesignationResult> {
+  const existing = await getHeadCoachDesignationForMatch(connection, matchId, teamSide);
+  if (existing) {
+    await connection.query(
+      "UPDATE match_head_coach_designations SET display_name = ?, external_reference = ?, designated_at = CURRENT_TIMESTAMP(3), designated_by = ? WHERE designation_id = ?",
+      [displayName, externalReference ?? null, designatedBy, existing.designationId]
+    );
+    const updated = await getHeadCoachDesignationForMatch(connection, matchId, teamSide);
+    if (!updated) throw new Error("Failed to retrieve updated head-coach designation");
+    return updated;
+  }
+  const designationId = randomUUID();
+  await connection.query(
+    "INSERT INTO match_head_coach_designations (designation_id, match_id, team_side, display_name, external_reference, designated_at, designated_by) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3), ?)",
+    [designationId, matchId, teamSide, displayName, externalReference ?? null, designatedBy]
+  );
+  const created = await getHeadCoachDesignationForMatch(connection, matchId, teamSide);
+  if (!created) throw new Error("Failed to retrieve created head-coach designation");
+  return created;
 }
 
 function isFinishedMatch(status: string) {

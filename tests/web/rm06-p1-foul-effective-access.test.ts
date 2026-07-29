@@ -99,6 +99,29 @@ describe("RM-06-P1 foul effective access", () => {
     expect(route).not.toContain("addTeamFoul");
     expect(route).not.toContain("Add Team Foul");
   });
+
+  it("never applies public socket projection data to the protected operator state", () => {
+    const app = readFileSync("apps/web/src/App.tsx", "utf8");
+    const hook = app.slice(app.indexOf("function usePublicProjectionRealtime"), app.indexOf("type OperatorLiveMatchFrameProps"));
+    expect(hook).toContain('if (visibility === "PROTECTED")');
+    expect(hook).toContain("void onSequenceGapRef.current?.()");
+    expect(hook).toContain("return;");
+    expect(hook).toContain('visibility: "PROTECTED" | "PUBLIC" = "PROTECTED"');
+  });
+
+  it("refreshes the protected head-coach technical count from the server after reconnects without locally duplicating it", () => {
+    const app = readFileSync("apps/web/src/App.tsx", "utf8");
+    const route = app.slice(app.indexOf("function OperatorFoulPage"), app.indexOf("function OperatorClockPage"));
+    const hook = app.slice(app.indexOf("function usePublicProjectionRealtime"), app.indexOf("type OperatorLiveMatchFrameProps"));
+
+    expect(route).toContain("usePublicProjectionRealtime(matchId, projection, setProjection");
+    expect(route).toContain("refreshAuthoritativeState");
+    expect(route).toContain("setProjection(nextProjection)");
+    expect(route).toContain("projection.headCoachTechnicals?.find((candidate) => candidate.teamSide === teamSide)");
+    expect(route).not.toContain("setProjection((current) => ({ ...current, headCoachTechnicals");
+    expect(hook).toContain('if (visibility === "PROTECTED")');
+    expect(hook).toContain("void onSequenceGapRef.current?.()");
+  });
 });
 
 describe("RM-06 personal foul count presentation", () => {

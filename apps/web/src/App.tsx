@@ -3626,6 +3626,8 @@ function OperatorFoulPage({
   const previousFoulAccessRef = useRef(false);
   const previousFoulRealtimeRef = useRef<string | null>(null);
   const [reason, setReason] = useState("");
+  const [headCoachSide, setHeadCoachSide] = useState<"HOME" | "AWAY">("HOME");
+  const [headCoachName, setHeadCoachName] = useState("");
   const [selectedFoulPlayer, setSelectedFoulPlayer] = useState<{
     gameClockRemainingMs: number;
     periodNumber: number;
@@ -4054,6 +4056,44 @@ function OperatorFoulPage({
     dispatchFoulQueue({ type: "RETRY_AMBIGUOUS" });
   }
 
+  async function setHeadCoachDesignation() {
+    if (!projection || !canSubmitFoul || pendingKey || !headCoachName.trim()) return;
+    setPendingKey("HEAD_COACH_DESIGNATION");
+    try {
+      const result = await api.setMatchHeadCoachDesignation(matchId, {
+        expectedSeq: projection.currentSeq,
+        payload: { teamSide: headCoachSide, displayName: headCoachName.trim() }
+      });
+      setMessage(getFoulControlFeedback(result));
+      if (result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED") {
+        await refreshAuthoritativeState();
+      }
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function recordHeadCoachTechnical() {
+    if (!projection || !canSubmitFoul || pendingKey || readOnly) return;
+    setPendingKey(`HEAD_COACH_TECHNICAL-${headCoachSide}`);
+    try {
+      const result = await api.recordHeadCoachTechnicalFoul(matchId, {
+        expectedSeq: projection.currentSeq,
+        payload: { teamSide: headCoachSide }
+      });
+      setMessage(getFoulControlFeedback(result));
+      if (result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED") {
+        await refreshAuthoritativeState();
+      }
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
   function discardActiveFoul() {
     if (pendingKey || activeFoulRevalidationRef.current || ownerHasTransportLease) return;
     dispatchedFoulEnvelopeRef.current = null;
@@ -4200,6 +4240,35 @@ function OperatorFoulPage({
               </div>
             ))}
           </div>
+          <section className="inline-panel">
+            <h2>Head coach technical</h2>
+            <p className="muted">Direct C technical only. The server resolves the designated head coach and all consequences.</p>
+            <div className="form-grid compact">
+              <label>
+                Team side
+                <select value={headCoachSide} onChange={(event) => setHeadCoachSide(event.target.value as "HOME" | "AWAY")} disabled={!canSubmitFoul || readOnly || Boolean(pendingKey)}>
+                  <option value="HOME">HOME</option>
+                  <option value="AWAY">AWAY</option>
+                </select>
+              </label>
+              <label>
+                Head coach name
+                <input value={headCoachName} onChange={(event) => setHeadCoachName(event.target.value)} disabled={!canSubmitFoul || readOnly || Boolean(pendingKey)} />
+              </label>
+            </div>
+            <div className="button-row">
+              <button type="button" disabled={!canSubmitFoul || readOnly || Boolean(pendingKey) || !headCoachName.trim()} onClick={() => void setHeadCoachDesignation()}>
+                Save head coach designation
+              </button>
+              <button type="button" className="secondary" disabled={!canSubmitFoul || readOnly || Boolean(pendingKey)} onClick={() => void recordHeadCoachTechnical()}>
+                Record head coach technical
+              </button>
+            </div>
+            {(["HOME", "AWAY"] as const).map((teamSide) => {
+              const coach = projection.headCoachTechnicals?.find((candidate) => candidate.teamSide === teamSide);
+              return coach ? <p key={teamSide} aria-live="polite">{teamSide}: {coach.displayNameSnapshot} — C technicals {coach.coachTechnicalCount}{coach.disqualificationReviewRequired ? " — review required" : ""}</p> : null;
+            })}
+          </section>
           <section className="inline-panel">
             <h2>Player Fouls</h2>
             {!personalFoulRoster?.available ? (

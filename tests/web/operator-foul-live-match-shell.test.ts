@@ -45,4 +45,13 @@ describe("OperatorFoulPage LiveMatchShell presentation contract", () => {
     expect(foulSource).toContain('foulLifecycleCoordinator.canNavigate("/login")');
     expect(foulSource).toContain("navigation={correctionBlocked ? [] : liveMatchNavigation}");
   });
+
+  test("mounts a bounded head-coach technical surface through the API client", () => {
+    expect(foulSource).toContain("Head coach technical");
+    expect(foulSource).toContain("Save head coach designation");
+    expect(foulSource).toContain("Record head coach technical");
+    expect(foulSource).toContain("api.setMatchHeadCoachDesignation(matchId");
+    expect(foulSource).toContain("api.recordHeadCoachTechnicalFoul(matchId");
+    expect(foulSource).toContain("await refreshAuthoritativeState()");
+  });
 });

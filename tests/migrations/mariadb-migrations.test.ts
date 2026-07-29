@@ -28,7 +28,8 @@ describe("MariaDB migration foundation", () => {
       "011_create_venues_courts_tables.sql",
       "012_create_display_theme_tables.sql",
       "013_create_display_screen_tables.sql",
-      "014_allow_multi_event_commands.sql"
+      "014_allow_multi_event_commands.sql",
+      "015_create_match_head_coach_designations.sql"
     ]);
   });
 
@@ -272,6 +273,25 @@ describe("MariaDB migration foundation", () => {
     expect(compact(readMigration("004_create_event_store_tables.sql"))).toContain(
       "unique key uq_command_deduplication_match_command"
     );
+  });
+
+  it("adds match head coach designations table for bounded head-coach technical slice", () => {
+    const migrationSql = compact(readMigration("015_create_match_head_coach_designations.sql"));
+
+    expect(migrationSql).toContain("create table if not exists match_head_coach_designations");
+    expect(migrationSql).toContain("designation_id char(36) not null");
+    expect(migrationSql).toContain("match_id char(36) not null");
+    expect(migrationSql).toContain("team_side enum('home', 'away') not null");
+    expect(migrationSql).toContain("display_name varchar(200) not null");
+    expect(migrationSql).toContain("external_reference varchar(200) null");
+    expect(migrationSql).toContain("designated_at timestamp(3) not null default current_timestamp(3)");
+    expect(migrationSql).toContain("designated_by char(36) not null");
+    expect(migrationSql).toContain("unique key uq_match_head_coach_designation (match_id, team_side)");
+    expect(migrationSql).toContain("foreign key (match_id) references matches");
+    expect(migrationSql).toContain("foreign key (designated_by) references users");
+    expect(migrationSql).toContain("engine=innodb");
+    expect(migrationSql).not.toContain(["update", "match_events"].join(" "));
+    expect(migrationSql).not.toContain(["delete", "from", "match_events"].join(" "));
   });
 
   it("stores projections and audit traces outside match_events", () => {

@@ -734,6 +734,56 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
+    async setMatchHeadCoachDesignation(matchId: string, input: {
+      commandId?: string;
+      correlationId?: string;
+      expectedSeq: number;
+      payload: { teamSide: "HOME" | "AWAY"; displayName: string; externalReference?: string | null };
+      signal?: AbortSignal;
+    }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/head-coach-designation`,
+        {
+          method: "POST",
+          ...(input.signal ? { signal: input.signal } : {}),
+          body: JSON.stringify({
+            commandId: input.commandId ?? createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: input.correlationId ?? createCommandId(),
+            clientTimestamp: new Date().toISOString(),
+            payload: input.payload
+          })
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
+    async recordHeadCoachTechnicalFoul(matchId: string, input: {
+      commandId?: string;
+      correlationId?: string;
+      expectedSeq: number;
+      payload: { teamSide: "HOME" | "AWAY" };
+      signal?: AbortSignal;
+    }) {
+      return request<CommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/foul/head-coach/technical`,
+        {
+          method: "POST",
+          ...(input.signal ? { signal: input.signal } : {}),
+          body: JSON.stringify({
+            commandId: input.commandId ?? createCommandId(),
+            matchId,
+            expectedSeq: input.expectedSeq,
+            correlationId: input.correlationId ?? createCommandId(),
+            clientTimestamp: new Date().toISOString(),
+            payload: { teamSide: input.payload.teamSide }
+          })
+        },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
     async startGameClock(matchId: string, input: { expectedSeq: number }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/clock/game/start`,

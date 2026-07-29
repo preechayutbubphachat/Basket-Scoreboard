@@ -19,6 +19,7 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   SCORE_ADDED: "SCORE",
   TEAM_FOUL_ADDED: "FOUL",
   PLAYER_FOUL_ADDED: "FOUL",
+  HEAD_COACH_TECHNICAL_FOUL_RECORDED: "FOUL",
   FREE_THROW_ENTITLEMENT_CREATED: "FOUL",
   PLAY_RESUMPTION_DECLARED: "FOUL",
   TIMEOUT_GRANTED: "TIMEOUT",
@@ -40,6 +41,7 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   SCORE_CORRECTED: "CORRECTION",
   TEAM_FOUL_CORRECTED: "CORRECTION",
   PLAYER_FOUL_CORRECTED: "CORRECTION",
+  HEAD_COACH_TECHNICAL_FOUL_CORRECTED: "CORRECTION",
   TIMEOUT_CORRECTED: "CORRECTION",
   GAME_CLOCK_CORRECTED: "CORRECTION",
   SHOT_CLOCK_CORRECTED: "CORRECTION"
@@ -83,8 +85,8 @@ export async function getMatchReplayWithConnection(
     .filter((event) => query.beforeSeq === undefined || event.seqNo < query.beforeSeq!)
     .sort((left, right) => left.seqNo - right.seqNo);
   const score = { home: 0, away: 0 };
-  const voidedConsequenceEventIds = collectVoidedConsequenceEventIds(events);
-  const allItems = events.map((event) => toReplayItem(event, score, voidedConsequenceEventIds));
+  const voidedConsequenceCorrections = collectVoidedConsequenceCorrections(events);
+  const allItems = events.map((event) => toReplayItem(event, score, voidedConsequenceCorrections));
   const groupFilter = query.group === "all" ? null : filterToGroup[query.group];
   const filteredItems = groupFilter
     ? allItems.filter((item) => item.eventGroup === groupFilter)
@@ -103,25 +105,25 @@ export async function getMatchReplayWithConnection(
   };
 }
 
-function collectVoidedConsequenceEventIds(events: MatchEventRecord[]) {
-  const ids = new Set<string>();
+function collectVoidedConsequenceCorrections(events: MatchEventRecord[]) {
+  const corrections = new Map<string, string>();
   for (const event of events) {
-    if (event.eventType !== "PLAYER_FOUL_CORRECTED") continue;
+    if (event.eventType !== "PLAYER_FOUL_CORRECTED" && event.eventType !== "HEAD_COACH_TECHNICAL_FOUL_CORRECTED") continue;
     const newValue = payloadRecord(payloadRecord(event.payload).newValue);
     if (newValue.consequenceDisposition !== "VOIDED_WITH_SOURCE_FOUL") continue;
     const rawIds = newValue.voidedConsequenceEventIds;
     if (!Array.isArray(rawIds)) continue;
     for (const id of rawIds) {
-      if (typeof id === "string" && id.length > 0) ids.add(id);
+      if (typeof id === "string" && id.length > 0) corrections.set(id, event.eventType);
     }
   }
-  return ids;
+  return corrections;
 }
 
 function toReplayItem(
   event: MatchEventRecord,
   score: { home: number; away: number },
-  voidedConsequenceEventIds: Set<string>
+  voidedConsequenceCorrections: Map<string, string>
 ): ReplayItem {
   const payload = payloadRecord(event.payload);
   const teamSide = parseTeamSide(payload.teamSide);
@@ -129,7 +131,7 @@ function toReplayItem(
   const eventGroup = eventGroups[eventType] ?? "OTHER";
   const scoreAfter = eventType === "SCORE_ADDED" ? applyScore(payload, teamSide, score) : null;
   const player = buildPlayer(payload);
-  const voidedByCorrection = voidedConsequenceEventIds.has(event.eventId);
+  const voidedByCorrection = voidedConsequenceCorrections.get(event.eventId) ?? null;
   const title = buildTitle(eventType, payload, teamSide);
   const description = buildDescription(eventType, payload, teamSide, player);
 
@@ -142,7 +144,7 @@ function toReplayItem(
     periodType: stringOrNull(payload.periodType),
     teamSide,
     title: voidedByCorrection ? `${title} (voided)` : title,
-    description: voidedByCorrection ? `Voided by player-foul correction. ${description}` : description,
+    description: voidedByCorrection ? `Voided by ${voidedCorrectionLabel(voidedByCorrection)}. ${description}` : description,
     scoreAfter,
     player,
     actor: {
@@ -153,6 +155,12 @@ function toReplayItem(
     correctionDetails: eventGroup === "CORRECTION" ? buildCorrectionDetail(payload, event.reason) : null,
     createdAt: event.recordedAt
   };
+}
+
+function voidedCorrectionLabel(eventType: string) {
+  return eventType === "HEAD_COACH_TECHNICAL_FOUL_CORRECTED"
+    ? "head-coach technical correction"
+    : "player-foul correction";
 }
 
 function applyScore(
@@ -178,6 +186,8 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
       return `${teamSide ?? "Team"} team foul`;
     case "PLAYER_FOUL_ADDED":
       return `${teamSide ?? "Team"} player foul`;
+    case "HEAD_COACH_TECHNICAL_FOUL_RECORDED":
+      return `${teamSide ?? "Team"} head coach technical foul`;
     case "FREE_THROW_ENTITLEMENT_CREATED":
       return "Technical-foul free throw entitlement";
     case "PLAY_RESUMPTION_DECLARED":
@@ -220,6 +230,8 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
       return "Team foul corrected";
     case "PLAYER_FOUL_CORRECTED":
       return "Player foul corrected";
+    case "HEAD_COACH_TECHNICAL_FOUL_CORRECTED":
+      return "Head coach technical foul corrected";
     case "TIMEOUT_CORRECTED":
       return "Timeout corrected";
     case "GAME_CLOCK_CORRECTED":
@@ -246,6 +258,8 @@ function buildDescription(
     }
     case "PLAYER_FOUL_ADDED":
       return `${player?.displayName ?? "Unknown player"} ${stringOrNull(payload.foulType)?.toLowerCase() ?? "player"} foul.`;
+    case "HEAD_COACH_TECHNICAL_FOUL_RECORDED":
+      return `${stringOrNull(payload.headCoachDisplayNameSnapshot) ?? "Head coach"} technical foul.`;
     case "FREE_THROW_ENTITLEMENT_CREATED":
       return `${numberOrDefault(payload.attempts, 0)} free throw awarded to ${stringOrNull(payload.awardedTo) ?? "the entitled team"}.`;
     case "PLAY_RESUMPTION_DECLARED":

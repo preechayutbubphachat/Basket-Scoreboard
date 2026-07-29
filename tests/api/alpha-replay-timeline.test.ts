@@ -138,6 +138,22 @@ afterEach(() => {
 });
 
 describe("alpha replay timeline", () => {
+  it("labels voided coach-technical consequences with the coach-specific correction and preserves their replay tail", async () => {
+    const { pool } = createReplayPool({ events: [
+      eventRow(1, "HEAD_COACH_TECHNICAL_FOUL_RECORDED", { teamSide: "HOME", headCoachDesignationId: "coach-1", headCoachDisplayNameSnapshot: "Coach Narin", classification: "C" }),
+      eventRow(2, "FREE_THROW_ENTITLEMENT_CREATED", { sourceFoulEventId: "event-1", attempts: 1, awardedTo: "AWAY" }),
+      eventRow(3, "PLAY_RESUMPTION_DECLARED", { sourceEntitlementEventId: "event-2", mode: "RESUME_INTERRUPTED_PLAY", periodNumber: 2, gameClockSnapshot: "314000", shotClockSnapshot: "17000" }),
+      eventRow(4, "HEAD_COACH_TECHNICAL_FOUL_CORRECTED", { newValue: { consequenceDisposition: "VOIDED_WITH_SOURCE_FOUL", voidedConsequenceEventIds: ["event-2", "event-3"] } })
+    ] });
+    const app = buildApiApp({ pool: pool as never });
+    try {
+      const response = await app.inject({ method: "GET", url: `/api/v1/matches/${matchId}/replay`, headers: { "x-dev-user-role": "ADMIN" } });
+      expect(response.statusCode).toBe(200);
+      const tail = response.json().items.slice(1, 3);
+      expect(tail).toMatchObject([{ title: "Technical-foul free throw entitlement (voided)", description: expect.stringContaining("head-coach technical correction") }, { title: "Interrupted-play resumption (voided)", description: expect.stringContaining("head-coach technical correction") }]);
+    } finally { await app.close(); }
+  });
+
   it("lets ADMIN read an ordered replay timeline derived from match_events", async () => {
     const { pool, queries } = createReplayPool();
     const app = buildApiApp({ pool: pool as never });

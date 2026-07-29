@@ -30,6 +30,17 @@ function requestHash(command: FoulCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
 }
 
+function duplicateAccepted(result: CommandResult, commandType: "foul/team/add" | "foul/player/add" | "foul/player/technical") {
+  // The established personal-foul endpoint reports a deduplicated retry with
+  // no newly appended event.  The technical-foul endpoint deliberately
+  // returns its original atomic range so a caller can reconcile the bundle.
+  return {
+    ...result,
+    status: "DUPLICATE_ACCEPTED" as const,
+    appendedEvents: commandType === "foul/player/add" ? [] : result.appendedEvents
+  };
+}
+
 const finishedMatchLiveControlMessage = "Finished matches cannot be changed through live controls";
 
 export async function appendTeamFoulAddedCommand(options: {
@@ -106,10 +117,7 @@ async function appendFoulCommand(options: {
           duplicateIdentity.result.currentSeq
         );
       }
-      return {
-        ...duplicateIdentity.result,
-        status: "DUPLICATE_ACCEPTED"
-      };
+      return duplicateAccepted(duplicateIdentity.result, options.commandType);
     }
 
     const currentSeq = await lockMatchStream(connection, options.command.matchId);
@@ -137,10 +145,7 @@ async function appendFoulCommand(options: {
           lockedDuplicateIdentity.result.currentSeq
         );
       }
-      return {
-        ...lockedDuplicateIdentity.result,
-        status: "DUPLICATE_ACCEPTED"
-      };
+      return duplicateAccepted(lockedDuplicateIdentity.result, options.commandType);
     }
 
     if (currentSeq !== options.command.expectedSeq) {

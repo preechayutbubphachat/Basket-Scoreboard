@@ -19,7 +19,9 @@ import {
   reasonCodes,
   replayQuerySchema,
   rejectCorrectionCommandSchema,
+  recordHeadCoachTechnicalFoulCommandSchema,
   recordPlayerTechnicalFoulCommandSchema,
+  setMatchHeadCoachDesignationCommandSchema,
   shotClockResetCommandSchema,
   shotClockSetCommandSchema,
   syncQuerySchema,
@@ -34,6 +36,9 @@ import {
   appendShotClockResetCommand,
   appendShotClockSetCommand
 } from "../matchEventStore/appendClockCommand.js";
+import {
+  appendHeadCoachTechnicalFoulCommand
+} from "../matchEventStore/appendHeadCoachTechnicalFoulCommand.js";
 import {
   appendPlayerFoulAddedCommand,
   appendPlayerTechnicalFoulCommand,
@@ -81,6 +86,7 @@ import { toPublicScoreboardProjection } from "../publicScoreboard/publicScoreboa
 import { resolvePublicMatchMetadata } from "../publicScoreboard/publicMatchMetadata.js";
 import { matchCommandPermissions } from "../auth/operatorPermissionPolicy.js";
 import { buildEffectiveMatchAccess, matchExists } from "../auth/effectiveMatchAccess.js";
+import { setMatchHeadCoachDesignationCommand } from "../matchEventStore/setupCommands.js";
 
 export function registerMatchRoutes(
   app: FastifyInstance,
@@ -117,6 +123,33 @@ export function registerMatchRoutes(
     }
     return true;
   }
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/head-coach-designation",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireMatchPermission("match.foul.operate", (request) =>
+          (request.params as { matchId: string }).matchId
+        ),
+        auth.requireCsrf
+      ]
+    },
+    async (request, reply) => {
+      const command = setMatchHeadCoachDesignationCommandSchema.parse(request.body);
+      const matchId = request.params.matchId;
+      if (command.matchId !== matchId) {
+        return reply.status(400).send(apiError(reasonCodes.VALIDATION_ERROR, "Command matchId must match the route"));
+      }
+
+      const result = await setMatchHeadCoachDesignationCommand({
+        pool,
+        command,
+        user: request.user!
+      });
+      return reply.send(result);
+    }
+  );
 
   app.post(
     "/api/v1/matches",
@@ -506,6 +539,34 @@ export function registerMatchRoutes(
         });
       }
       const result = await appendPlayerTechnicalFoulCommand({
+        pool,
+        command,
+        user: request.user!
+      });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/foul/head-coach/technical",
+    {
+      preHandler: [
+        auth.requireAuth,
+        auth.requireCsrf,
+        auth.requireMatchPermission(
+          matchCommandPermissions.foul,
+          (request) => (request.params as { matchId: string }).matchId
+        )
+      ]
+    },
+    async (request, reply) => {
+      const command = recordHeadCoachTechnicalFoulCommandSchema.parse(request.body);
+      if (command.matchId !== request.params.matchId) {
+        return reply.send(commandMatchIdMismatch(command));
+      }
+
+      const result = await appendHeadCoachTechnicalFoulCommand({
         pool,
         command,
         user: request.user!

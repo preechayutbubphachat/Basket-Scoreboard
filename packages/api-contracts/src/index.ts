@@ -1292,6 +1292,7 @@ export const alphaCorrectionKindSchema = z.enum([
   "TEAM_FOUL_UNDO",
   "PLAYER_FOUL_UNDO",
   "TIMEOUT_UNDO",
+  "HEAD_COACH_TECHNICAL_UNDO",
   "GAME_CLOCK_SET_CORRECTION",
   "SHOT_CLOCK_SET_CORRECTION"
 ]);
@@ -1343,6 +1344,20 @@ export const addPlayerFoulCommandSchema = commandEnvelopeBaseSchema.extend({
 export const recordPlayerTechnicalFoulCommandSchema = commandEnvelopeBaseSchema.strict().extend({
   payload: z.object({
     playerId: z.string().uuid()
+  }).strict()
+});
+
+export const recordHeadCoachTechnicalFoulCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({
+    teamSide: z.enum(["HOME", "AWAY"])
+  }).strict()
+});
+
+export const setMatchHeadCoachDesignationCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({
+    teamSide: z.enum(["HOME", "AWAY"]),
+    displayName: z.string().trim().min(1).max(200),
+    externalReference: z.string().max(200).nullable().optional()
   }).strict()
 });
 
@@ -1449,6 +1464,8 @@ export type AddScoreCommand = z.infer<typeof addScoreCommandSchema>;
 export type AddTeamFoulCommand = z.infer<typeof addTeamFoulCommandSchema>;
 export type AddPlayerFoulCommand = z.infer<typeof addPlayerFoulCommandSchema>;
 export type RecordPlayerTechnicalFoulCommand = z.infer<typeof recordPlayerTechnicalFoulCommandSchema>;
+export type RecordHeadCoachTechnicalFoulCommand = z.infer<typeof recordHeadCoachTechnicalFoulCommandSchema>;
+export type SetMatchHeadCoachDesignationCommand = z.infer<typeof setMatchHeadCoachDesignationCommandSchema>;
 export type GameClockStartCommand = z.infer<typeof gameClockStartCommandSchema>;
 export type GameClockStopCommand = z.infer<typeof gameClockStopCommandSchema>;
 export type GameClockSetCommand = z.infer<typeof gameClockSetCommandSchema>;
@@ -1479,6 +1496,8 @@ export type MatchEventType =
   | "SCORE_ADDED"
   | "TEAM_FOUL_ADDED"
   | "PLAYER_FOUL_ADDED"
+  | "HEAD_COACH_TECHNICAL_FOUL_RECORDED"
+  | "HEAD_COACH_TECHNICAL_FOUL_CORRECTED"
   | "FREE_THROW_ENTITLEMENT_CREATED"
   | "PLAY_RESUMPTION_DECLARED"
   | "GAME_CLOCK_STARTED"
@@ -1554,7 +1573,7 @@ export type ScoreboardProjection = {
    away: number;
  };
  teamFoulsByPeriod?: Record<string, { home: number; away: number }>;
- playerFouls: Array<{
+  playerFouls: Array<{
    playerId: string;
    teamSide: "HOME" | "AWAY";
    playerName: string | null;
@@ -1563,7 +1582,15 @@ export type ScoreboardProjection = {
    personalFouls: number;
    technicalFouls: number;
    totalTowardLimit: number;
- }>;
+  }>;
+  /** Protected operator-only state. Public mappers must never serialize it. */
+  headCoachTechnicals?: Array<{
+    designationId: string;
+    teamSide: "HOME" | "AWAY";
+    displayNameSnapshot: string;
+    coachTechnicalCount: number;
+    disqualificationReviewRequired: boolean;
+  }>;
  timeouts?: {
    home: { used: number; remaining: number };
    away: { used: number; remaining: number };

@@ -28,6 +28,13 @@ function baseProjection(overrides: Partial<ScoreboardProjection> = {}): Scoreboa
       jerseyNumber: "7",
       fouls: 1
     }],
+    headCoachTechnicals: [{
+      designationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      teamSide: "HOME",
+      displayNameSnapshot: "Private Head Coach",
+      coachTechnicalCount: 2,
+      disqualificationReviewRequired: true
+    }],
     periodNumber: 1,
     gameClockRemainingMs: 600000,
     shotClockRemainingMs: 24000,
@@ -137,7 +144,8 @@ const forbiddenPublicKeys = new Set([
   "lastEventSeq", "currentSeq", "expectedSeq", "projectionVersion", "eventSeq", "streamVersion",
   "actor", "device", "session", "token", "csrf", "commandId", "correlationId", "causationId",
   "audit", "correction", "permissions", "assignments", "rawEvents", "sourceEventSeq",
-  "initializedAtSeq", "recentActionState", "playerName", "jerseyNumber"
+  "initializedAtSeq", "recentActionState", "playerName", "jerseyNumber",
+  "headCoachTechnicals", "designationId", "displayNameSnapshot", "coachTechnicalCount", "disqualificationReviewRequired"
 ]);
 
 function collectForbiddenPublicKeys(value: unknown, found = new Set<string>()) {

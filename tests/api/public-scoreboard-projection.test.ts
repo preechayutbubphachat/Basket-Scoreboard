@@ -55,6 +55,13 @@ describe("public scoreboard projection boundary", () => {
         jerseyNumber: "7",
         fouls: 2
       }],
+      headCoachTechnicals: [{
+        designationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        teamSide: "HOME",
+        displayNameSnapshot: "Private Head Coach",
+        coachTechnicalCount: 2,
+        disqualificationReviewRequired: true
+      }],
       timeouts: {
         home: { used: 1, remaining: 4 },
         away: { used: 0, remaining: 5 }
@@ -112,7 +119,7 @@ describe("public scoreboard projection boundary", () => {
     });
     expect(publicProjection.activeTimeout).toEqual({ teamSide: "HOME", remainingMs: 42000 });
     expect(JSON.stringify(publicProjection)).not.toMatch(
-      /homeTeamId|awayTeamId|playerId|playerFouls|roster|teamFoulsByPeriod|recentActionState|sourceEventSeq|initializedAtSeq|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq|projectionVersion|nestedDebug|requestedBy|durationMs|actor/i
+      /homeTeamId|awayTeamId|playerId|playerFouls|headCoachTechnicals|designationId|displayNameSnapshot|coachTechnicalCount|disqualificationReviewRequired|roster|teamFoulsByPeriod|recentActionState|sourceEventSeq|initializedAtSeq|currentSeq|lastEventSeq|seqNo|eventSeq|projectionSeq|expectedSeq|projectionVersion|nestedDebug|requestedBy|durationMs|actor/i
     );
     expect(protectedProjection).toMatchObject({ currentSeq: 124, lastEventSeq: 124 });
     expect(protectedProjection.playerFouls).toHaveLength(1);

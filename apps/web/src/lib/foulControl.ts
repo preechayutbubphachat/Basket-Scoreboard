@@ -84,6 +84,13 @@ export type PlayerFoulPresentation = {
   hasReachedPersonalFoulLimit: boolean;
 };
 
+export function getHeadCoachTechnicalPresentation(
+  projection: ScoreboardProjection,
+  teamSide: "HOME" | "AWAY"
+) {
+  return projection.headCoachTechnicals?.find((coach) => coach.teamSide === teamSide) ?? null;
+}
+
 export type PersonalFoulRosterPresentationExtended = {
   available: boolean;
   playersBySide: Record<

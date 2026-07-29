@@ -18,6 +18,8 @@ export type CorrectionEventType = (typeof correctionEventTypes)[number];
 export const foulEventTypes = [
   "TEAM_FOUL_ADDED",
   "PLAYER_FOUL_ADDED",
+  "HEAD_COACH_TECHNICAL_FOUL_RECORDED",
+  "HEAD_COACH_TECHNICAL_FOUL_CORRECTED",
   "FREE_THROW_ENTITLEMENT_CREATED",
   "PLAY_RESUMPTION_DECLARED"
 ] as const;
@@ -112,6 +114,17 @@ export type PlayerFoulAddedPayload = TeamFoulAddedPayload & {
  playerId: string;
 };
 
+export type HeadCoachTechnicalFoulRecordedPayload = {
+  teamSide: TeamSide;
+  headCoachDesignationId: string;
+  headCoachDisplayNameSnapshot: string;
+  classification: "C";
+  periodNumber: number;
+  gameClockSnapshot: string;
+  ruleProfileId: "FIBA_2024";
+  ruleVersion: string;
+};
+
 export type FreeThrowEntitlementCreatedPayload = {
   sourceFoulEventId: string;
   attempts: 1;
@@ -122,6 +135,12 @@ export type FreeThrowEntitlementCreatedPayload = {
 export type PlayResumptionDeclaredPayload = {
   sourceEntitlementEventId: string;
   mode: "RESUME_INTERRUPTED_PLAY";
+  resumptionLocation: "POINT_OF_INTERRUPTION";
+  /** Null means this bounded projection does not track an authoritative team-control fact. */
+  teamControlSnapshot: TeamSide | null;
+  periodNumber: number;
+  gameClockSnapshot: string;
+  shotClockSnapshot: string;
   ruleProfileId: "FIBA_2024";
 };
 
@@ -168,6 +187,13 @@ export type ScoreboardProjection = {
    personalFouls: number;
    technicalFouls: number;
    totalTowardLimit: number;
+ }>;
+ headCoachTechnicals: Array<{
+   designationId: string;
+   teamSide: TeamSide;
+   displayNameSnapshot: string;
+   coachTechnicalCount: number;
+   disqualificationReviewRequired: boolean;
  }>;
  periodNumber: number;
  gameClockRemainingMs: number;
