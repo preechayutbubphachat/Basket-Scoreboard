@@ -96,7 +96,7 @@ Use only these status values:
 | RM-03 | Unified LiveMatchShell Foundation | `INTEGRATED` |
 | RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
 | RM-05 | Score Control Dashboard | `INTEGRATED` |
-| RM-06 | Foul Control Dashboard | `CURRENT` |
+| RM-06 | Foul Control Dashboard | `INTEGRATED` |
 | RM-07 | Timeout Dashboard | `PENDING` |
 | RM-08 | Lineup / Roster Dashboard | `PENDING` |
 | RM-09 | Match Pairing Dashboard | `PENDING` |
@@ -156,16 +156,16 @@ RM-05-P3 = IMPLEMENTATION COMPLETE
 RM-05-P4 = IMPLEMENTATION COMPLETE
 RM-05-P5 = REGRESSION CLOSURE COMPLETE
 RM-05-I = INTEGRATED
-RM-06 = CURRENT
+RM-06 = INTEGRATED
 RM-06-D1 = DISCOVERY COMPLETE
 RM-06-P1 = IMPLEMENTATION COMPLETE
 RM-06-P2 = IMPLEMENTATION COMPLETE
 RM-06-P3 = IMPLEMENTATION COMPLETE
 RM-06-P4 = IMPLEMENTATION COMPLETE
 RM-06-I = INTEGRATED (FAST-FORWARD)
-RM-06 later slices = PENDING (NOT AUTHORIZED)
+RM-06 optional foul variants = DEFERRED / NOT REQUIRED FOR RM-06 CLOSURE
 RM-07 through RM-18 = PENDING
-Next safe step: decision/authorization gate for remaining RM-06 work; do not advance automatically
+Next safe step: RM-07 planning authorization gate; do not begin implementation automatically
 ```
 
 ## 6. Straight-Line Diagram
@@ -319,7 +319,7 @@ There is no parallel top-level path.
 - Objective: deliver player/team foul operation and correction safety.
 - Visual target: `UI Foul Control Dashboard.png`.
 - Intended roles: SCORER, ASSISTANT_SCORER, MATCH_OPERATOR, ADMIN.
-- Current implementation state: `CURRENT`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
+- Current implementation state: `INTEGRATED`; RM-06-D1 is `DISCOVERY COMPLETE`; RM-06-P1
   `Personal Player Foul Contract and Effective Access Gate`, RM-06-P2 `Deliberate Personal-Foul Attribution and
   Fail-Closed Intent Queue`, RM-06-P3 `Terminal Status Fail-Closed Guard`, and RM-06-P4 `Foul LiveMatchShell
   Presentation Adoption` are `IMPLEMENTATION COMPLETE`. P4 Task
@@ -328,8 +328,9 @@ There is no parallel top-level path.
   `4d268b75f7a5ec38cd9db630ce6abe74e071ccd9` are integrated into `main` with the complete RM-06 P1-P4 history.
   Integration used an exact fast-forward from `9a86239bcd586fdb021cebfe6ffff1df40f052c9` to
   `4d268b75f7a5ec38cd9db630ce6abe74e071ccd9`; PR #5 is observed `CLOSED / MERGED` by GitHub after that direct
-  fast-forward. Deployment and production verification are `NOT PERFORMED`. Later RM-06 work remains pending and is
-  not authorized; RM-06 remains `CURRENT`.
+  fast-forward. Subsequent source-backed bounded Tasks added private foul-limit presentation, active-player technical,
+  head-coach direct technical, and assistant-coach bench technical workflows and were integrated linearly through
+  `a8581f30d09cd773729efa2d6d01760311e60738`. Deployment and production verification are `NOT PERFORMED`.
 - Domain dependencies: roster eligibility, foul projection, foul-out state, compensating correction.
 - API/socket dependencies: protected foul commands with expected sequence/idempotency.
 - Database dependencies: append-only foul/correction events and projections.
@@ -343,13 +344,26 @@ There is no parallel top-level path.
   safe, EffectiveMatchAccess fails closed, reconnect refreshes projection and access together, correction eligibility
   remains exact-target and append-only, and projection/replay clamps counts nonnegative.
 - Production gate: DB-backed role/assignment tests and owner verification.
-- Known blockers: direct team-foul product meaning/causation, special foul count/consequence semantics, foul-out
-  automation, team-penalty automation, overtime carry-forward automation, free throws, and possession consequences.
-- Source requirements: `[NEEDS SOURCE]` for complete technical/unsportsmanlike/disqualifying/fighting/offensive/bench/
-  coach/special foul penalty matrix. RM-06-P1 may proceed without `FOUL_PENALTY_MATRIX.md` only because it is minimal
-  and fail-closed.
-- Next milestone: RM-07 after RM-06 completion; next safe step is an explicit decision/authorization gate for remaining
-  RM-06 work. Do not advance automatically.
+- Closure classification: the Roadmap-required bounded foul dashboard is complete. Personal player fouls, player/team
+  count derivation, private foul-limit presentation, correction/replay safety, effective access, reconnect, privacy,
+  and the integrated technical-foul workflows satisfy the approved RM-06 scope. Optional classifications and complete
+  penalty administration were never required by the RM-06 acceptance contract.
+- Deferred/non-blocking scope: direct team-foul entry remains prohibited by PD-01. Substitute, excluded-player and team-
+  follower bench variants; unsportsmanlike, disqualifying, fighting, double and multiple fouls; Article 42 sequencing;
+  automatic disqualification/substitution; free-throw and throw-in administration; possession/shot-clock consequence
+  automation; and administered compound correction remain future source/architecture/product-governed work. They are
+  not silently claimed as implemented and do not keep RM-06 open.
+- Source requirements: `docs/rules/FOUL_PENALTY_MATRIX.md` binds the FIBA 2024 Rules and Interpretations hashes and
+  classifies the remaining special categories as source-complete but deferred. Any future implementation still
+  requires a new immutable Task and bounded architecture decision.
+- RM-06 closure evidence: Task `TASK-20260728-002-rm06-player-technical-foul` at
+  `07ce58438aae7cf071d144ac2a1a9964e5f5f129`, Task `TASK-20260728-003-rm06-head-coach-technical-foul` at
+  `80e79bb8db4f4c3011d91c15e55b80d26d45647f`, and Task
+  `TASK-20260730-004-rm06-assistant-coach-bench-technical` at
+  `a8581f30d09cd773729efa2d6d01760311e60738` are closed, independently verified, and fast-forward integrated. No P5
+  identifier was assigned. DNT files remained excluded. No deployment or production verification is claimed.
+- Next milestone: RM-07. The next safe step is the RM-07 planning authorization gate; do not begin RM-07 implementation
+  automatically.
 
 ### RM-07 - Timeout Dashboard
 
