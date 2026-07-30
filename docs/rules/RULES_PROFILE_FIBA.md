@@ -360,15 +360,19 @@ timeoutConfig:
 
 ### 9.1 Timeout opportunity policy
 
-[OFFICIAL RULE] Time-out opportunities must follow FIBA time-out rules.
+[OFFICIAL RULE] Under FIBA 2024 Rules 18.2.2–18.2.4 (PDF p. 24), a time-out may be granted only during a time-out opportunity. It opens for both teams only when the ball is dead, the game clock is stopped, and referee communication with the scorer's table has ended; for both teams after the ball becomes dead following a successful last free throw; or for the non-scoring team after a goal. It closes when the ball is at a player's disposal for a throw-in or first free throw. Interpretations 18/19-1–7 (PDF pp. 41–43) additionally establish period-start/end and free-throw boundaries.
 
-[SYSTEM RECOMMENDATION] For MVP, the system may not fully detect every live-ball/dead-ball timeout opportunity automatically. If not enough state exists to validate a timeout opportunity, the system must require the scorer/referee to confirm and record the reason.
+[OFFICIAL RULE] Under Rule 18.2.8 (PDF p. 24), at 2:00 or less in Q4 or overtime following a successful goal, the scoring team is not permitted a time-out unless a referee interrupted the game.
+
+[SYSTEM RECOMMENDATION] Persist the complete match-bound officiating facts needed by these rules and derive opportunity server-side. `LIVE`, a stopped clock, or ball-dead state alone must fail closed; an operator legality override is not an authoritative substitute.
 
 ```yaml
 timeoutOpportunityMode:
-  mvp: OPERATOR_CONFIRMED
+  mvp: RULE_VALIDATED_FAIL_CLOSED
   productionTarget: RULE_VALIDATED
 ```
+
+Source identity, hashes and exact citations are pinned in `FIBA_2024_SOURCE_MANIFEST.md` and `FIBA_2024_TIMEOUT_SOURCE_MAPPING.md`.
 
 ### 9.2 Timeout event types
 

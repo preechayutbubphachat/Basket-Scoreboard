@@ -725,7 +725,9 @@ timeout duration: 60 seconds
 
 ### Important Limitation
 
-[NEEDS SOURCE] สิทธิ์ขอ timeout ตามสถานการณ์ live/dead ball และกรณีทีมที่เพิ่งทำคะแนนในช่วงท้ายเกม ต้องอ้างอิงรายละเอียด official rule + interpretation ก่อน implement automation เต็มรูปแบบ
+[OFFICIAL RULE] FIBA 2024 Rules 18.2.2–18.2.4 and 18.2.8 (PDF p. 24), together with Interpretations 18/19-1–7 (PDF pp. 41–43), define the bounded opening, closing, eligible-team, period-boundary and free-throw conditions. A stopped clock, dead ball or `LIVE` match status alone is insufficient. At Q4/overtime 2:00 or less after a successful goal, the scoring team is ineligible unless a referee interruption is authoritatively established.
+
+[SYSTEM RECOMMENDATION] Runtime automation must derive the decision from persisted, match-bound and sequence-bound officiating facts and fail closed when any required fact is absent. See `FIBA_2024_SOURCE_MANIFEST.md` and `FIBA_2024_TIMEOUT_SOURCE_MAPPING.md`.
 
 ### Output Cases
 
