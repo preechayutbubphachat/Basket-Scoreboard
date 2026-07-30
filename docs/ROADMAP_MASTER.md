@@ -97,7 +97,7 @@ Use only these status values:
 | RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
 | RM-05 | Score Control Dashboard | `INTEGRATED` |
 | RM-06 | Foul Control Dashboard | `INTEGRATED` |
-| RM-07 | Timeout Dashboard | `PENDING` |
+| RM-07 | Timeout Dashboard | `CURRENT` |
 | RM-08 | Lineup / Roster Dashboard | `PENDING` |
 | RM-09 | Match Pairing Dashboard | `PENDING` |
 | RM-10 | Court Operations Dashboard | `PENDING` |
@@ -164,8 +164,12 @@ RM-06-P3 = IMPLEMENTATION COMPLETE
 RM-06-P4 = IMPLEMENTATION COMPLETE
 RM-06-I = INTEGRATED (FAST-FORWARD)
 RM-06 optional foul variants = DEFERRED / NOT REQUIRED FOR RM-06 CLOSURE
-RM-07 through RM-18 = PENDING
-Next safe step: RM-07 planning authorization gate; do not begin implementation automatically
+RM-07 = CURRENT
+RM-07 planning = COMPLETE / INTEGRATED
+RM-07 official timeout source verification = INTEGRATED
+RM-07 timeout opportunity Task 012 = BLOCKED / IMMUTABLE / NOT INTEGRATED
+RM-08 through RM-18 = PENDING
+Next safe step: authorized docs-only Task 014 Roadmap reconciliation, followed by a separately governed Task 015 canonical timeout-opportunity rebuild; do not start Timeout Control or a demo automatically
 ```
 
 ## 6. Straight-Line Diagram
@@ -367,9 +371,12 @@ There is no parallel top-level path.
 
 ### RM-07 - Timeout Dashboard
 
-- Planning state: `PLANNING COMPLETE / IMPLEMENTATION NOT AUTHORIZED`. Planning Task
-  `TASK-20260730-005-rm07-planning` reconstructs this contract from live Repository, Project Brain, UI, rules, and
-  executable-test evidence. No RM-07 implementation Task exists.
+- Current implementation state: `CURRENT / CANONICAL REBUILD AUTHORIZED AFTER RECONCILIATION`. Planning Task
+  `TASK-20260730-005-rm07-planning` is complete and integrated. Official-source verification Task
+  `TASK-20260730-011-rm07-official-timeout-source-verification` is independently verified and integrated at
+  `204da94de3c9723c5517be80e1e32eff623429c3`. Task
+  `TASK-20260730-012-rm07-timeout-opportunity-foundation` is immutable
+  `BLOCKED_CRITICAL_REVIEW_RECONCILIATION_REQUIRED`; its rejected candidate was not committed or integrated.
 - Objective `[ROADMAP_EXPLICIT]`: deliver production timeout operation with rule-aware availability and correction.
 - Problem statement `[REPOSITORY_INFERENCE]`: the current route already grants and ends timeouts through append-only
   `TIMEOUT_GRANTED` / `TIMEOUT_ENDED` events, but server validation only rejects an overlapping active timeout and the
@@ -400,11 +407,12 @@ There is no parallel top-level path.
 - Explicit exclusions `[SYSTEM_RECOMMENDATION]`: score-domain redesign (RM-05), foul-domain changes (RM-06), mutable
   timeout totals, client-authoritative eligibility, automatic live/dead-ball opportunity inference without official
   source/state evidence, media timeouts, deployment, and production access.
-- First bounded slice proposed `[PROPOSED_FOR_AUTHORIZATION]`: `RM-07-P1 FIBA Timeout Quota Decision Foundation and
-  Operator Eligibility Presentation`—server-derived first-half/second-half/per-overtime quota decision plus the
-  nested late-Q4 cap within the second-half pool,
-  projection-backed remaining-window display, and fail-closed command/UI states using the existing event/API route.
-  It is not authorized to begin; no implementation Task has been created.
+- Current authorized rebuild direction `[USER_AUTHORIZED]`: after docs-only reconciliation Task
+  `TASK-20260730-014-rm07-roadmap-reconciliation` integrates, create a new immutable Task 015 from exact integrated
+  `origin/main`. Reuse canonical score, lifecycle, period, and clock events; add only precise missing officiating facts;
+  derive timeout-opportunity state through the same production reducer for live application, full replay,
+  snapshot-plus-tail, and protected reconnect. Never accept sequence, period, clocks, inferred score facts, eligible
+  teams, or legality conclusions from the client. Task 013, Timeout Control, and the local demo remain unauthorized.
 - Database direction `[SYSTEM_RECOMMENDATION]`: `NO_MIGRATION`; retain `match_events`, command receipts, and derived
   projection JSON. A projection payload extension for per-overtime/window counts is permitted only in a separately
   authorized implementation Task.
@@ -418,7 +426,7 @@ There is no parallel top-level path.
   command/event/audit causation follows proposed `AD-RM07-11` and must be authorized before dispatch.
 - Production gate `[ROADMAP_EXPLICIT]`: DB-backed role, quota, late-game, overtime, correction, replay, reconnect,
   public-boundary, and owner verification. Deployment and production access remain separately authorized gates.
-- Mandatory stop: `RM07_FIRST_BOUNDED_SLICE_AUTHORIZATION_REQUIRED`.
+- Mandatory stop after the canonical rebuild integrates: `RM07_TIMEOUT_CONTROL_REAUTHORIZATION_REQUIRED`.
 - Next milestone: RM-08.
 
 ### RM-08 - Lineup / Roster Dashboard
