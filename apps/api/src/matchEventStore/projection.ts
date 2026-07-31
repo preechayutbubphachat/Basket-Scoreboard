@@ -54,8 +54,14 @@ export type ScoreboardProjection = {
     secondHalf: TimeoutBySide;
     overtime: TimeoutBySide;
   };
+  timeoutsByOvertime: Record<string, TimeoutBySide>;
   activeTimeout: {
+    timeoutEventId: string;
     teamSide: "HOME" | "AWAY";
+    grantedAtSeq: number;
+    period: number;
+    opportunitySourceEventId: string;
+    opportunitySourceEventSeq: number;
     startedAt: string;
     durationMs: number;
     remainingMs: number;
@@ -117,6 +123,7 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     playerFouls: [],
     timeouts: createDefaultTimeouts(),
     timeoutsByHalf: createDefaultTimeoutsByHalf(),
+    timeoutsByOvertime: {},
     activeTimeout: null,
     periodType: "REGULATION",
     regulationPeriods: 4,
@@ -174,6 +181,7 @@ export function normalizeScoreboardProjection(
       : [],
     timeouts: normalizeTimeouts(projection.timeouts),
     timeoutsByHalf: normalizeTimeoutsByHalf(projection.timeoutsByHalf),
+    timeoutsByOvertime: normalizeTimeoutsByOvertime(projection.timeoutsByOvertime),
     activeTimeout: normalizeActiveTimeout(projection.activeTimeout),
     periodType: projection.periodType === "OVERTIME" ? "OVERTIME" : "REGULATION",
     regulationPeriods: numberOrDefault(projection.regulationPeriods, 4),
@@ -553,6 +561,73 @@ function withBenchTechnicalReviews(projection: ScoreboardProjection): Scoreboard
   };
 }
 
+export type DerivedTimeoutGrantAuthority =
+  | { eligible: false; reasonCode: string }
+  | {
+      eligible: true;
+      opportunityId: string;
+      opportunitySeq: number;
+      ruleProfileId: "FIBA_2024";
+      quotaWindow: string;
+      quota: number;
+      usedBefore: number;
+      usedAfter: number;
+      remainingAfter: number;
+    };
+
+/** Derives timeout legality solely from the locked Task-015 projection. */
+export function deriveTimeoutGrantAuthority(projection: ScoreboardProjection, teamSide: "HOME" | "AWAY"): DerivedTimeoutGrantAuthority {
+  if (projection.status === "FINISHED" || projection.status === "FINAL") return { eligible: false, reasonCode: "MATCH_TERMINAL" };
+  if (projection.status !== "LIVE" && projection.status !== "OVERTIME") return { eligible: false, reasonCode: "PERIOD_NOT_STARTED_OR_ENDED" };
+  if (!projection.currentPeriodStartedAt) return { eligible: false, reasonCode: "PERIOD_NOT_STARTED" };
+  if (projection.activeTimeout) return { eligible: false, reasonCode: "ACTIVE_TIMEOUT_CONFLICT" };
+  const opportunity = projection.timeoutOpportunity;
+  if (opportunity.status === "UNKNOWN") return { eligible: false, reasonCode: "TIMEOUT_OPPORTUNITY_UNKNOWN" };
+  if (opportunity.status !== "OPEN") return { eligible: false, reasonCode: "TIMEOUT_OPPORTUNITY_CLOSED" };
+  if (!opportunity.sourceEventId || opportunity.sourceSeq === null || opportunity.sourceSeq > projection.currentSeq) return { eligible: false, reasonCode: "TIMEOUT_OPPORTUNITY_STALE" };
+  if (!opportunity.eligibleTeams.includes(teamSide)) return { eligible: false, reasonCode: "TEAM_NOT_ELIGIBLE" };
+  const side = teamSide === "HOME" ? "home" : "away";
+  let quotaWindow: string;
+  let quota: number;
+  let usedBefore: number;
+  if (projection.periodType === "OVERTIME" || projection.periodNumber > 4) {
+    quotaWindow = `OVERTIME_${projection.periodNumber}`;
+    quota = 1;
+    usedBefore = projection.timeoutsByOvertime[String(projection.periodNumber)]?.[side] ?? 0;
+  } else if (projection.periodNumber <= 2) {
+    quotaWindow = "FIRST_HALF";
+    quota = 2;
+    usedBefore = projection.timeoutsByHalf.firstHalf[side];
+  } else {
+    const lateQ4 = projection.periodNumber === 4 && projection.gameClockRemainingMs <= 120000;
+    quotaWindow = lateQ4 ? "SECOND_HALF_LATE_Q4" : "SECOND_HALF";
+    quota = lateQ4 ? 2 : 3;
+    usedBefore = projection.timeoutsByHalf.secondHalf[side];
+  }
+  if (usedBefore >= quota) return { eligible: false, reasonCode: "TIMEOUT_QUOTA_EXHAUSTED" };
+  return { eligible: true, opportunityId: opportunity.sourceEventId, opportunitySeq: opportunity.sourceSeq, ruleProfileId: "FIBA_2024", quotaWindow, quota, usedBefore, usedAfter: usedBefore + 1, remainingAfter: quota - usedBefore - 1 };
+}
+
+export function applyTeamTimeoutCorrected(projection: ScoreboardProjection, payload: { targetEventId: string; targetSeq: number; teamSide: "HOME" | "AWAY"; periodNumber: number }, seqNo: number): ScoreboardProjection {
+  const side = payload.teamSide === "HOME" ? "home" : "away";
+  const half = getHalfKey(payload.periodNumber);
+  const overtimeKey = payload.periodNumber > projection.regulationPeriods ? String(payload.periodNumber) : null;
+  return {
+    ...projection,
+    timeouts: { ...projection.timeouts, [side]: { used: Math.max(0, projection.timeouts[side].used - 1), remaining: projection.timeouts[side].remaining + 1 } },
+    timeoutsByHalf: { ...projection.timeoutsByHalf, [half]: { ...projection.timeoutsByHalf[half], [side]: Math.max(0, projection.timeoutsByHalf[half][side] - 1) } },
+    timeoutsByOvertime: overtimeKey ? {
+      ...projection.timeoutsByOvertime,
+      [overtimeKey]: {
+        ...(projection.timeoutsByOvertime[overtimeKey] ?? { home: 0, away: 0 }),
+        [side]: Math.max(0, (projection.timeoutsByOvertime[overtimeKey]?.[side] ?? 0) - 1)
+      }
+    } : projection.timeoutsByOvertime,
+    activeTimeout: projection.activeTimeout?.teamSide === payload.teamSide ? null : projection.activeTimeout,
+    currentSeq: seqNo
+  };
+}
+
 export function applyTimeoutGranted(
   projection: ScoreboardProjection,
   payload: TimeoutGrantedPayload & {
@@ -560,8 +635,11 @@ export function applyTimeoutGranted(
     periodNumber: number;
     gameClockRemainingMs: number | null;
     shotClockRemainingMs: number | null;
+    opportunityId: string;
+    opportunitySeq: number;
   },
-  seqNo: number
+  seqNo: number,
+  eventId: string
 ): ScoreboardProjection {
   const sideKey = payload.teamSide === "HOME" ? "home" : "away";
   const halfKey = getHalfKey(payload.periodNumber);
@@ -572,6 +650,7 @@ export function applyTimeoutGranted(
     ...timeoutsByHalf[halfKey],
     [sideKey]: timeoutsByHalf[halfKey][sideKey] + 1
   };
+  const overtimeKey = payload.periodNumber > projection.regulationPeriods ? String(payload.periodNumber) : null;
 
   return withRecentAction({
     ...projection,
@@ -586,8 +665,20 @@ export function applyTimeoutGranted(
       ...timeoutsByHalf,
       [halfKey]: nextHalf
     },
+    timeoutsByOvertime: overtimeKey ? {
+      ...projection.timeoutsByOvertime,
+      [overtimeKey]: {
+        ...(projection.timeoutsByOvertime[overtimeKey] ?? { home: 0, away: 0 }),
+        [sideKey]: (projection.timeoutsByOvertime[overtimeKey]?.[sideKey] ?? 0) + 1
+      }
+    } : projection.timeoutsByOvertime,
     activeTimeout: {
+      timeoutEventId: eventId,
       teamSide: payload.teamSide,
+      grantedAtSeq: seqNo,
+      period: payload.periodNumber,
+      opportunitySourceEventId: payload.opportunityId,
+      opportunitySourceEventSeq: payload.opportunitySeq,
       startedAt: payload.startedAt,
       durationMs: payload.durationMs,
       remainingMs: payload.durationMs,
@@ -908,7 +999,7 @@ export function applyTimeoutCorrected(
       ...timeouts,
       [sideKey]: {
         used: nextUsed,
-        remaining: Math.max(0, 5 - nextUsed)
+        remaining: timeouts[sideKey].remaining + 1
       }
     },
     timeoutsByHalf: {
@@ -1170,6 +1261,15 @@ function normalizeTimeoutsByHalf(value: unknown) {
   };
 }
 
+function normalizeTimeoutsByOvertime(value: unknown): Record<string, TimeoutBySide> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([period]) => /^\d+$/.test(period))
+      .map(([period, counts]) => [period, normalizeTimeoutBySide(counts)])
+  );
+}
+
 function normalizeTimeoutBySide(value: unknown): TimeoutBySide {
   if (!value || typeof value !== "object") {
     return { home: 0, away: 0 };
@@ -1192,7 +1292,12 @@ function normalizeActiveTimeout(value: unknown): ScoreboardProjection["activeTim
   }
 
   return {
+    timeoutEventId: typeof candidate.timeoutEventId === "string" ? candidate.timeoutEventId : "LEGACY_TIMEOUT_EVENT_UNKNOWN",
     teamSide: candidate.teamSide,
+    grantedAtSeq: numberOrDefault(candidate.grantedAtSeq, 0),
+    period: numberOrDefault(candidate.period, 0),
+    opportunitySourceEventId: typeof candidate.opportunitySourceEventId === "string" ? candidate.opportunitySourceEventId : "LEGACY_OPPORTUNITY_SOURCE_UNKNOWN",
+    opportunitySourceEventSeq: numberOrDefault(candidate.opportunitySourceEventSeq, 0),
     startedAt: typeof candidate.startedAt === "string" ? candidate.startedAt : new Date(0).toISOString(),
     durationMs: numberOrDefault(candidate.durationMs, 60000),
     remainingMs: numberOrDefault(candidate.remainingMs, 60000),

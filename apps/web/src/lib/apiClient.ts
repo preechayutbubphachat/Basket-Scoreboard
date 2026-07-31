@@ -40,7 +40,6 @@ import type {
   TeamDisplayProfileInput,
   TeamDisplayProfileResponse,
   TimeoutEndedPayload,
-  TimeoutGrantedPayload,
   TournamentDisplayThemeInput,
   TournamentDisplayThemeResponse,
   TournamentLiveDashboardResponse,
@@ -863,7 +862,7 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         { acceptRawSuccess: true }
       );
     },
-    async grantTimeout(matchId: string, input: { expectedSeq: number; payload: TimeoutGrantedPayload }) {
+    async grantTimeout(matchId: string, input: { expectedSeq: number; payload: { teamSide: "HOME" | "AWAY" } }) {
       return request<CommandResult>(
         `/matches/${encodeURIComponent(matchId)}/commands/timeout/grant`,
         {

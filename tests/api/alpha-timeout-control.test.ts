@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { createHash } from "node:crypto";
 import { buildApiApp } from "../../apps/api/src/app";
 import { createInitialScoreboardProjection, type ScoreboardProjection } from "../../apps/api/src/matchEventStore/projection";
 import type { CommandResult } from "../../packages/api-contracts/src";
@@ -14,10 +15,7 @@ function timeoutCommand(overrides: Record<string, unknown> = {}) {
     correlationId: "33333333-3333-4333-8333-333333333333",
     clientTimestamp: "2026-07-02T10:00:00.000Z",
     payload: {
-      teamSide: "HOME",
-      requestedBy: "HEAD_COACH",
-      durationMs: 60000,
-      reason: "Alpha timeout"
+      teamSide: "HOME"
     },
     ...overrides
   };
@@ -31,7 +29,9 @@ function createTimeoutPool(options: {
   let currentSeq = options.currentSeq ?? 0;
   let projection = options.projection ?? {
     ...createInitialScoreboardProjection(matchId),
-    status: "LIVE" as const
+    status: "LIVE" as const,
+    currentPeriodStartedAt: "2026-07-02T09:00:00.000Z",
+    timeoutOpportunity: { status: "OPEN" as const, eligibleTeams: ["HOME" as const, "AWAY" as const], sourceEventId: "11111111-1111-4111-8111-111111111112", sourceSeq: currentSeq, sourceFactType: "DEAD_BALL_CONFIRMED" as const, ruleProfileId: "FIBA_2024" as const }
   };
   const events: Array<{ eventType: string; payload: unknown }> = [];
 
@@ -42,7 +42,10 @@ function createTimeoutPool(options: {
     release: vi.fn(),
     async query(sql: string, params: unknown[] = []) {
       if (sql.includes("FROM command_deduplication")) {
-        return [options.duplicateResult ? [{ result: JSON.stringify(options.duplicateResult) }] : [], []];
+        return [options.duplicateResult ? [{
+          request_hash: createHash("sha256").update(JSON.stringify(timeoutCommand())).digest("hex"),
+          result: JSON.stringify(options.duplicateResult)
+        }] : [], []];
       }
 
       if (sql.includes("SELECT last_seq_no FROM match_streams")) {
@@ -119,14 +122,14 @@ describe("alpha timeout control routes", () => {
       expect(response.json()).toMatchObject({
         status: "ACCEPTED",
         currentSeq: 1,
-        appendedEvents: [{ seqNo: 1, eventType: "TIMEOUT_GRANTED" }]
+        appendedEvents: [{ seqNo: 1, eventType: "TEAM_TIMEOUT_GRANTED" }]
       });
       expect(fake.events).toHaveLength(1);
-      expect(fake.events[0]).toMatchObject({ eventType: "TIMEOUT_GRANTED" });
+      expect(fake.events[0]).toMatchObject({ eventType: "TEAM_TIMEOUT_GRANTED" });
       expect(fake.projection).toMatchObject({
         currentSeq: 1,
         timeouts: { home: { used: 1, remaining: 4 }, away: { used: 0, remaining: 5 } },
-        activeTimeout: { teamSide: "HOME", requestedBy: "HEAD_COACH", durationMs: 60000 }
+        activeTimeout: { teamSide: "HOME", requestedBy: "OTHER", durationMs: 60000 }
       });
     } finally {
       await app.close();
@@ -250,7 +253,7 @@ describe("alpha timeout control routes", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         status: "ACCEPTED",
-        appendedEvents: [{ eventType: "TIMEOUT_ENDED" }]
+        appendedEvents: [{ eventType: "TEAM_TIMEOUT_ENDED" }]
       });
       expect(fake.projection.activeTimeout).toBeNull();
     } finally {

@@ -1394,8 +1394,9 @@ export const shotClockSetCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: shotClockSetPayloadSchema
 });
 
-export const timeoutGrantCommandSchema = commandEnvelopeBaseSchema.extend({
-  payload: timeoutGrantedPayloadSchema
+/** Strict grant envelope: every legality and accounting field is server-owned. */
+export const timeoutGrantCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({ teamSide: z.enum(["HOME", "AWAY"]) }).strict()
 });
 
 export const timeoutEndCommandSchema = commandEnvelopeBaseSchema.extend({
@@ -1549,6 +1550,9 @@ export type MatchEventType =
   | "SHOT_CLOCK_SET"
   | "TIMEOUT_GRANTED"
   | "TIMEOUT_ENDED"
+  | "TEAM_TIMEOUT_GRANTED"
+  | "TEAM_TIMEOUT_ENDED"
+  | "TEAM_TIMEOUT_CORRECTED"
   | "CORRECTION_REQUESTED"
   | "SCORE_REMOVED_BY_CORRECTION"
   | "CORRECTION_APPLIED"
@@ -1647,7 +1651,12 @@ export type ScoreboardProjection = {
    overtime: { home: number; away: number };
  };
  activeTimeout?: {
+   timeoutEventId: string;
    teamSide: "HOME" | "AWAY";
+   grantedAtSeq: number;
+   period: number;
+   opportunitySourceEventId: string;
+   opportunitySourceEventSeq: number;
    startedAt: string;
    durationMs: number;
    remainingMs: number;

@@ -19,6 +19,9 @@ import {
   applyPeriodStarted,
   applyScoreAdded,
   applyScoreRemovedByCorrection,
+  applyTimeoutEnded,
+  applyTimeoutGranted,
+  applyTeamTimeoutCorrected,
   applyTimeoutOpportunityCorrection,
   applyTimeoutOpportunityFact,
   createInitialScoreboardProjection,
@@ -43,6 +46,9 @@ const eventGroups: Record<string, ReplayEventGroup> = {
   PLAY_RESUMPTION_DECLARED: "FOUL",
   TIMEOUT_GRANTED: "TIMEOUT",
   TIMEOUT_ENDED: "TIMEOUT",
+  TEAM_TIMEOUT_GRANTED: "TIMEOUT",
+  TEAM_TIMEOUT_ENDED: "TIMEOUT",
+  TEAM_TIMEOUT_CORRECTED: "CORRECTION",
   GAME_CLOCK_STARTED: "CLOCK",
   GAME_CLOCK_STOPPED: "CLOCK",
   GAME_CLOCK_SET: "CLOCK",
@@ -217,8 +223,10 @@ function buildTitle(eventType: string, payload: Record<string, unknown>, teamSid
     case "PLAY_RESUMPTION_DECLARED":
       return "Interrupted-play resumption";
     case "TIMEOUT_GRANTED":
+    case "TEAM_TIMEOUT_GRANTED":
       return `${teamSide ?? "Team"} timeout granted`;
     case "TIMEOUT_ENDED":
+    case "TEAM_TIMEOUT_ENDED":
       return "Timeout ended";
     case "GAME_CLOCK_STARTED":
       return "Game clock started";
@@ -297,8 +305,10 @@ function buildDescription(
     case "TEAM_FOUL_ADDED":
       return `${teamSide ?? "Team"} team foul recorded.`;
     case "TIMEOUT_GRANTED":
+    case "TEAM_TIMEOUT_GRANTED":
       return `${teamSide ?? "Team"} timeout granted${stringOrNull(payload.requestedBy) ? ` by ${stringOrNull(payload.requestedBy)}` : ""}.`;
     case "TIMEOUT_ENDED":
+    case "TEAM_TIMEOUT_ENDED":
       return "Active timeout ended.";
     case "GAME_CLOCK_STARTED":
     case "GAME_CLOCK_STOPPED":
@@ -372,6 +382,18 @@ export function rebuildTimeoutOpportunityProjection(
       case "MATCH_FINISHED": state = applyMatchFinished(state, p, event.seqNo, event.eventId); break;
       case "TIMEOUT_OPPORTUNITY_FACT_RECORDED": state = applyTimeoutOpportunityFact(state, p, event.seqNo); break;
       case "TIMEOUT_OPPORTUNITY_CORRECTED": state = applyTimeoutOpportunityCorrection(state, p, event.seqNo); break;
+      case "TEAM_TIMEOUT_GRANTED": state = applyTimeoutGranted(state, p, event.seqNo, event.eventId); break;
+      case "TEAM_TIMEOUT_ENDED": state = applyTimeoutEnded(state, p, event.seqNo); break;
+      case "TEAM_TIMEOUT_CORRECTED": {
+        const old = payloadRecord(p.oldValue);
+        state = applyTeamTimeoutCorrected(state, {
+          targetEventId: stringOrNull(p.causationId) ?? "",
+          targetSeq: numberOrDefault(p.correctedEventSeq, 0),
+          teamSide: parseTeamSide(old.teamSide) ?? "HOME",
+          periodNumber: numberOrDefault(old.periodNumber, state.periodNumber)
+        }, event.seqNo);
+        break;
+      }
       default: state = { ...state, currentSeq: event.seqNo };
     }
   }

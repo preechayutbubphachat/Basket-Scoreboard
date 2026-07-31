@@ -1,9 +1,7 @@
 import type {
   CommandResult,
   ScoreboardProjection,
-  TimeoutEndedPayload,
-  TimeoutGrantedPayload,
-  TimeoutRequestedBy
+  TimeoutEndedPayload
 } from "@basket-scoreboard/api-contracts";
 import {
   buildOperatorMatchClockLink,
@@ -20,15 +18,12 @@ type TimeoutDisplayProjection = Partial<Pick<ScoreboardProjection, "timeouts" | 
     teamSide: "HOME" | "AWAY";
     remainingMs: number;
   } | null;
+  timeoutOpportunity?: {
+    status: "UNKNOWN" | "OPEN" | "CLOSED";
+    eligibleTeams: Array<"HOME" | "AWAY">;
+  } | null;
 };
 
-export const timeoutRequestedByOptions: TimeoutRequestedBy[] = [
-  "HEAD_COACH",
-  "ASSISTANT_COACH",
-  "BENCH",
-  "OFFICIAL",
-  "OTHER"
-];
 
 export function buildTimeoutControlPanels(projection: TimeoutDisplayProjection | null) {
   const timeouts = getTimeouts(projection);
@@ -50,21 +45,47 @@ export function buildTimeoutControlPanels(projection: TimeoutDisplayProjection |
   ];
 }
 
+export function buildTimeoutOpportunityPresentation(projection: TimeoutDisplayProjection | null) {
+  const timeouts = getTimeouts(projection);
+  const eligibleTeams = projection?.timeoutOpportunity?.eligibleTeams ?? [];
+  const restrictedTeams = (["HOME", "AWAY"] as const).filter((teamSide) => !eligibleTeams.includes(teamSide));
+
+  return {
+    status: projection?.timeoutOpportunity?.status ?? "CLOSED",
+    eligibleTeams: eligibleTeams.length > 0 ? eligibleTeams.join(", ") : "None",
+    lateQ4Restriction: restrictedTeams.length > 0 ? `${restrictedTeams.join(", ")} restricted` : "None",
+    quotas: {
+      home: { ...timeouts.home },
+      away: { ...timeouts.away }
+    }
+  };
+}
+
+export function buildTimeoutControlState(
+  projection: TimeoutDisplayProjection,
+  options: { canOperate: boolean; pending: boolean }
+) {
+  const panels = buildTimeoutControlPanels(projection);
+  const opportunity = projection.timeoutOpportunity;
+  const canGrant = options.canOperate && !options.pending && opportunity?.status === "OPEN";
+  const toState = (panel: (typeof panels)[number]) => ({
+    ...panel,
+    enabled: Boolean(canGrant && opportunity.eligibleTeams.includes(panel.teamSide) && panel.remaining > 0)
+  });
+
+  return {
+    home: toState(panels[0]!),
+    away: toState(panels[1]!)
+  };
+}
+
 export function buildTimeoutGrantPayload(
   projection: ScoreboardProjection,
-  teamSide: TimeoutControlTeamSide,
-  requestedBy: TimeoutRequestedBy,
-  durationMs: number,
-  reason: string | null
-): { expectedSeq: number; payload: TimeoutGrantedPayload } {
+  teamSide: TimeoutControlTeamSide
+): { expectedSeq: number; payload: { teamSide: TimeoutControlTeamSide } } {
   return {
     expectedSeq: projection.currentSeq,
-    payload: {
-      teamSide,
-      requestedBy,
-      durationMs,
-      reason: normalizeReason(reason)
-    }
+    payload: { teamSide }
   };
 }
 

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Pool } from "mysql2/promise";
+import type { Pool, PoolConnection } from "mysql2/promise";
 import type {
   CommandResult,
   MatchEventType,
@@ -12,17 +12,25 @@ import type { AuthenticatedUser } from "../auth/sessionAuth.js";
 import { insertAuditLog } from "./auditRepository.js";
 import {
   ensurePlaceholderUser,
-  findDuplicateCommand,
+  findDuplicateCommandIdentity,
   getScoreboardProjection,
   insertCommandResult,
   lockMatchStream,
   recoverMatchStreamReadConflict,
   updateScoreboardProjection
 } from "./repositories.js";
-import { applyTimeoutEnded, applyTimeoutGranted, type ScoreboardProjection } from "./projection.js";
+import { applyTimeoutEnded, applyTimeoutGranted, deriveTimeoutGrantAuthority, type ScoreboardProjection } from "./projection.js";
 
 type TimeoutCommand = TimeoutGrantCommand | TimeoutEndCommand;
-type TimeoutEventType = Extract<MatchEventType, "TIMEOUT_GRANTED" | "TIMEOUT_ENDED">;
+type TimeoutEventType = Extract<MatchEventType, "TEAM_TIMEOUT_GRANTED" | "TEAM_TIMEOUT_ENDED">;
+export type TimeoutCommandFailureSeam = "afterEvent" | "afterHead" | "afterProjection" | "afterReceipt" | "afterAudit" | "beforeCommit";
+type FailureControls = { injectFailureAt?: TimeoutCommandFailureSeam; onFailureSeam?: (seam: TimeoutCommandFailureSeam, connection: PoolConnection) => Promise<void>; beforeStreamLockBarrier?: (connection: PoolConnection) => Promise<void> };
+
+async function failAt(actual: TimeoutCommandFailureSeam, controls: FailureControls, connection: PoolConnection) {
+  if (actual !== controls.injectFailureAt) return;
+  await controls.onFailureSeam?.(actual, connection);
+  throw new Error(`INJECTED_TIMEOUT_COMMAND_FAILURE:${actual}`);
+}
 
 function requestHash(command: TimeoutCommand) {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
@@ -32,10 +40,10 @@ export function appendTimeoutGrantCommand(options: {
   pool: Pool;
   command: TimeoutGrantCommand;
   user: AuthenticatedUser;
-}) {
+} & FailureControls) {
   return appendTimeoutCommand({
     ...options,
-    eventType: "TIMEOUT_GRANTED",
+    eventType: "TEAM_TIMEOUT_GRANTED",
     commandType: "timeout/grant"
   });
 }
@@ -44,10 +52,10 @@ export function appendTimeoutEndCommand(options: {
   pool: Pool;
   command: TimeoutEndCommand;
   user: AuthenticatedUser;
-}) {
+} & FailureControls) {
   return appendTimeoutCommand({
     ...options,
-    eventType: "TIMEOUT_ENDED",
+    eventType: "TEAM_TIMEOUT_ENDED",
     commandType: "timeout/end"
   });
 }
@@ -58,33 +66,29 @@ async function appendTimeoutCommand(options: {
   user: AuthenticatedUser;
   eventType: TimeoutEventType;
   commandType: "timeout/grant" | "timeout/end";
-}): Promise<CommandResult> {
+} & FailureControls): Promise<CommandResult> {
   const connection = await options.pool.getConnection();
 
   try {
     await connection.beginTransaction();
     await ensurePlaceholderUser(connection, options.user);
 
-    const duplicate = await findDuplicateCommand(
-      connection,
-      options.command.matchId,
-      options.command.commandId
-    );
-
-    if (duplicate) {
-      await connection.rollback();
-      return {
-        ...duplicate,
-        status: "DUPLICATE_ACCEPTED",
-        appendedEvents: []
-      };
-    }
-
+    const commandHash = requestHash(options.command);
+    await options.beforeStreamLockBarrier?.(connection);
     const currentSeq = await lockMatchStream(connection, options.command.matchId);
 
     if (currentSeq === null) {
       await connection.rollback();
       return rejected(options.command, reasonCodes.MATCH_NOT_FOUND, "Match stream was not found", 0);
+    }
+
+    const lockedDuplicate = await findDuplicateCommandIdentity(connection, options.command.matchId, options.command.commandId);
+    if (lockedDuplicate) {
+      await connection.rollback();
+      if (lockedDuplicate.requestHash !== commandHash) {
+        return rejected(options.command, reasonCodes.DUPLICATE_COMMAND, "Command ID was already used with a different payload", lockedDuplicate.result.currentSeq);
+      }
+      return { ...lockedDuplicate.result, status: "DUPLICATE_ACCEPTED" as const, appendedEvents: [] };
     }
 
     if (currentSeq !== options.command.expectedSeq) {
@@ -106,7 +110,7 @@ async function appendTimeoutCommand(options: {
       throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
     }
 
-    const validation = validateTimeoutCommand(options.eventType, projection);
+    const validation = validateTimeoutCommand(options.eventType, projection, options.command);
     if (!validation.ok) {
       await connection.rollback();
       return rejected(options.command, reasonCodes.VALIDATION_ERROR, validation.message, currentSeq);
@@ -135,14 +139,16 @@ async function appendTimeoutCommand(options: {
         getReason(options.command)
       ]
     );
+    await failAt("afterEvent", options, connection);
 
     await connection.query("UPDATE match_streams SET last_seq_no = ? WHERE match_id = ?", [
       nextSeq,
       options.command.matchId
     ]);
+    await failAt("afterHead", options, connection);
 
     const updatedProjection =
-      options.eventType === "TIMEOUT_GRANTED"
+      options.eventType === "TEAM_TIMEOUT_GRANTED"
         ? applyTimeoutGranted(
             projection,
             payload as TimeoutGrantedPayload & {
@@ -150,12 +156,36 @@ async function appendTimeoutCommand(options: {
               periodNumber: number;
               gameClockRemainingMs: number | null;
               shotClockRemainingMs: number | null;
+              opportunityId: string;
+              opportunitySeq: number;
             },
-            nextSeq
+            nextSeq,
+            eventId
           )
         : applyTimeoutEnded(projection, payload as { reason: string | null; endedAt: string }, nextSeq);
 
     await updateScoreboardProjection(connection, updatedProjection);
+    await failAt("afterProjection", options, connection);
+    const result: CommandResult = {
+      status: "ACCEPTED",
+      commandId: options.command.commandId,
+      matchId: options.command.matchId,
+      currentSeq: nextSeq,
+      appendedEvents: [{ eventId, seqNo: nextSeq, eventType: options.eventType }],
+      reasonCode: null,
+      message: null,
+      projection: updatedProjection
+    };
+
+    await insertCommandResult(connection, {
+      commandId: options.command.commandId,
+      matchId: options.command.matchId,
+      commandType: options.commandType,
+      requestHash: commandHash,
+      result
+    });
+    await failAt("afterReceipt", options, connection);
+
     await insertAuditLog(connection, {
       entityType: "match",
       entityId: options.command.matchId,
@@ -170,25 +200,8 @@ async function appendTimeoutCommand(options: {
       causationId: eventId,
       eventSeq: nextSeq
     });
-
-    const result: CommandResult = {
-      status: "ACCEPTED",
-      commandId: options.command.commandId,
-      matchId: options.command.matchId,
-      currentSeq: nextSeq,
-      appendedEvents: [{ eventId, seqNo: nextSeq, eventType: options.eventType }],
-      reasonCode: null,
-      message: null
-    };
-
-    await insertCommandResult(connection, {
-      commandId: options.command.commandId,
-      matchId: options.command.matchId,
-      commandType: options.commandType,
-      requestHash: requestHash(options.command),
-      result
-    });
-
+    await failAt("afterAudit", options, connection);
+    await failAt("beforeCommit", options, connection);
     await connection.commit();
     return result;
   } catch (error) {
@@ -201,12 +214,13 @@ async function appendTimeoutCommand(options: {
   }
 }
 
-function validateTimeoutCommand(eventType: TimeoutEventType, projection: ScoreboardProjection) {
-  if (eventType === "TIMEOUT_GRANTED" && projection.activeTimeout) {
-    return { ok: false as const, message: "A timeout is already active" };
+function validateTimeoutCommand(eventType: TimeoutEventType, projection: ScoreboardProjection, command?: TimeoutCommand) {
+  if (eventType === "TEAM_TIMEOUT_GRANTED") {
+    const authority = deriveTimeoutGrantAuthority(projection, (command as TimeoutGrantCommand | undefined)?.payload.teamSide ?? "HOME");
+    if (!authority.eligible) return { ok: false as const, message: authority.reasonCode };
   }
 
-  if (eventType === "TIMEOUT_ENDED" && !projection.activeTimeout) {
+  if (eventType === "TEAM_TIMEOUT_ENDED" && !projection.activeTimeout) {
     return { ok: false as const, message: "No active timeout exists" };
   }
 
@@ -221,17 +235,20 @@ function buildPayload(
 ) {
   const serverTimestamp = serverTime.toISOString();
 
-  if (eventType === "TIMEOUT_GRANTED") {
+  if (eventType === "TEAM_TIMEOUT_GRANTED") {
     const grantCommand = command as TimeoutGrantCommand;
+    const authority = deriveTimeoutGrantAuthority(projection, grantCommand.payload.teamSide);
+    if (!authority.eligible) throw new Error(authority.reasonCode);
     return {
       teamSide: grantCommand.payload.teamSide,
-      requestedBy: grantCommand.payload.requestedBy,
-      durationMs: grantCommand.payload.durationMs,
-      reason: grantCommand.payload.reason,
+      requestedBy: "OTHER" as const,
+      durationMs: 60000,
+      reason: null,
       periodNumber: projection.periodNumber || 1,
       gameClockRemainingMs: deriveClockRemainingMs(projection.gameClock, serverTime),
       shotClockRemainingMs: deriveClockRemainingMs(projection.shotClock, serverTime),
-      startedAt: serverTimestamp
+      startedAt: serverTimestamp,
+      ...authority
     };
   }
 
@@ -258,7 +275,7 @@ function deriveClockRemainingMs(
 }
 
 function getReason(command: TimeoutCommand) {
-  return typeof command.payload.reason === "string" ? command.payload.reason : null;
+  return "reason" in command.payload && typeof command.payload.reason === "string" ? command.payload.reason : null;
 }
 
 function rejected(

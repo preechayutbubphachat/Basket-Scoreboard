@@ -485,7 +485,12 @@ function normalizeActiveTimeout(value: unknown): NonNullable<ApiScoreboardProjec
   }
 
   return {
+    timeoutEventId: typeof candidate.timeoutEventId === "string" ? candidate.timeoutEventId : "LEGACY_TIMEOUT_EVENT_UNKNOWN",
     teamSide: candidate.teamSide,
+    grantedAtSeq: numberOrDefault(candidate.grantedAtSeq, 0),
+    period: numberOrDefault(candidate.period, 0),
+    opportunitySourceEventId: typeof candidate.opportunitySourceEventId === "string" ? candidate.opportunitySourceEventId : "LEGACY_OPPORTUNITY_SOURCE_UNKNOWN",
+    opportunitySourceEventSeq: numberOrDefault(candidate.opportunitySourceEventSeq, 0),
     startedAt: typeof candidate.startedAt === "string" ? candidate.startedAt : new Date(0).toISOString(),
     durationMs: numberOrDefault(candidate.durationMs, 60000),
     remainingMs: numberOrDefault(candidate.remainingMs, 60000),

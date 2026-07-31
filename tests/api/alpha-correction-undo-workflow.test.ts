@@ -25,6 +25,20 @@ function correctionCommand(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function timeoutCorrectionCommand(overrides: Record<string, unknown> = {}) {
+  return correctionCommand({
+    correctionKind: "TIMEOUT_UNDO",
+    reason: "Timeout granted to wrong team",
+    payload: {
+      correctionKind: "TIMEOUT_UNDO",
+      target: { seqNo: 1 },
+      delta: null,
+      newValue: null
+    },
+    ...overrides
+  });
+}
+
 function eventRow(seqNo: number, eventType: string, payload: Record<string, unknown>, reason: string | null = null) {
   return {
     event_id: `event-${seqNo}`,
@@ -293,6 +307,69 @@ describe("alpha correction undo workflow", () => {
         reasonCode: "DUPLICATE_COMMAND"
       });
       expect(fake.appendedEvents).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("preserves the authoritative grant and appends a compensating timeout correction that recomputes usage", async () => {
+    process.env.AUTH_TEST_DISABLE_CSRF = "true";
+    const grantPayload = {
+      teamSide: "HOME",
+      period: 4,
+      quotaWindow: "SECOND_HALF",
+      usedBefore: 0,
+      usedAfter: 1,
+      remainingAfter: 3,
+      opportunitySourceEventId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      opportunitySourceEventSeq: 0
+    };
+    const fake = createCorrectionPool({
+      events: [eventRow(1, "TEAM_TIMEOUT_GRANTED", grantPayload)],
+      projection: {
+        ...createInitialScoreboardProjection(matchId),
+        status: "LIVE",
+        periodNumber: 4,
+        currentSeq: 1,
+        timeouts: { home: { used: 1, remaining: 3 }, away: { used: 0, remaining: 4 } },
+        timeoutsByHalf: {
+          firstHalf: { home: 0, away: 0 },
+          secondHalf: { home: 1, away: 0 },
+          overtime: { home: 0, away: 0 }
+        }
+      }
+    });
+    const app = buildApiApp({ pool: fake.pool as never });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/corrections`,
+        headers: { "x-dev-user-role": "ADMIN" },
+        payload: timeoutCorrectionCommand()
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        ok: true,
+        eventType: "TEAM_TIMEOUT_CORRECTED",
+        projection: {
+           timeouts: { home: { used: 0, remaining: 4 } },
+          timeoutsByHalf: { secondHalf: { home: 0, away: 0 } }
+        }
+      });
+      expect(fake.appendedEvents).toHaveLength(1);
+      expect(fake.appendedEvents[0]).toMatchObject({
+        eventType: "TEAM_TIMEOUT_CORRECTED",
+        reason: "Timeout granted to wrong team",
+        payload: {
+          correctedEventSeq: 1,
+          correctedEventType: "TEAM_TIMEOUT_GRANTED",
+          oldValue: { teamSide: "HOME", periodNumber: 4 },
+          newValue: { teamSide: "HOME", activeTimeout: null }
+        }
+      });
+      expect(fake.queries.some((sql) => /UPDATE\s+match_events|DELETE\s+FROM\s+match_events/i.test(sql))).toBe(false);
     } finally {
       await app.close();
     }

@@ -4317,37 +4317,34 @@ describe("clock control UI policy", () => {
 });
 
 describe("timeout control UI policy", () => {
-  test("builds timeout panels from projection defaults and active timeout state", () => {
-    const projection: ScoreboardProjection = {
-      ...scoreboardProjection,
-      timeouts: { home: { used: 1, remaining: 4 }, away: { used: 0, remaining: 5 } },
-      activeTimeout: {
-        teamSide: "HOME",
-        startedAt: "2026-07-02T10:00:00.000Z",
-        durationMs: 60000,
-        remainingMs: 45000,
-        requestedBy: "HEAD_COACH"
-      }
-    };
-
-    expect(buildTimeoutControlPanels(projection)).toEqual([
-      { teamSide: "HOME", teamName: "Bangkok HOME", used: 1, remaining: 4, pendingKey: "grant-HOME" },
-      { teamSide: "AWAY", teamName: "Chiang Mai AWAY", used: 0, remaining: 5, pendingKey: "grant-AWAY" }
-    ]);
-    expect(getActiveTimeoutLabel(projection)).toBe("Bangkok HOME timeout - 45s remaining");
-    expect(timeoutRequestedByOptions).toContain("HEAD_COACH");
-  });
-
-  test("builds timeout command payloads with expectedSeq", () => {
-    expect(buildTimeoutGrantPayload(scoreboardProjection, "AWAY", "BENCH", 60000, "TV break")).toEqual({
-      expectedSeq: 3,
-      payload: { teamSide: "AWAY", requestedBy: "BENCH", durationMs: 60000, reason: "TV break" }
-    });
-    expect(buildTimeoutEndPayload(scoreboardProjection, "Done")).toEqual({
-      expectedSeq: 3,
-      payload: { reason: "Done" }
-    });
-  });
+test("builds timeout panels from projection defaults and active timeout state", () => {
+  const projection: ScoreboardProjection = {
+    ...scoreboardProjection,
+    timeouts: { home: { used: 1, remaining: 4 }, away: { used: 0, remaining: 5 } },
+    activeTimeout: {
+      teamSide: "HOME",
+      startedAt: "2026-07-02T10:00:00.000Z",
+      durationMs: 60000,
+      remainingMs: 45000,
+      requestedBy: "HEAD_COACH"
+    }
+  };
+  expect(buildTimeoutControlPanels(projection)).toEqual([
+    { teamSide: "HOME", teamName: "Bangkok HOME", used: 1, remaining: 4, pendingKey: "grant-HOME" },
+    { teamSide: "AWAY", teamName: "Chiang Mai AWAY", used: 0, remaining: 5, pendingKey: "grant-AWAY" }
+  ]);
+  expect(getActiveTimeoutLabel(projection)).toBe("Bangkok HOME timeout - 45s remaining");
+});
+test("builds timeout command payloads with expectedSeq", () => {
+   expect(buildTimeoutGrantPayload(scoreboardProjection, "AWAY")).toEqual({
+     expectedSeq: 3,
+     payload: { teamSide: "AWAY" }
+   });
+  expect(buildTimeoutEndPayload(scoreboardProjection, "Done")).toEqual({
+    expectedSeq: 3,
+    payload: { reason: "Done" }
+   });
+ });
 
   test("maps timeout command feedback", () => {
     expect(getTimeoutControlFeedback({

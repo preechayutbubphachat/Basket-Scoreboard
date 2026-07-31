@@ -25,7 +25,7 @@ import type {
   ReplayItem,
   PublicScoreboardProjection,
   ScoreboardProjection,
-  TimeoutRequestedBy,
+
   TournamentLiveDashboardResponse,
   TournamentScheduleMatch,
   TournamentScheduleResponse,
@@ -140,12 +140,13 @@ import {
   validateShotClockSetInput
 } from "./lib/clockControl";
 import {
+  buildTimeoutControlState,
   buildTimeoutControlPanels,
   buildTimeoutEndPayload,
   buildTimeoutGrantPayload,
+  buildTimeoutOpportunityPresentation,
   getActiveTimeoutLabel,
   getTimeoutControlFeedback,
-  timeoutRequestedByOptions,
   type TimeoutControlTeamSide
 } from "./lib/timeoutControl";
 import {
@@ -4710,11 +4711,11 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [requestedBy, setRequestedBy] = useState<TimeoutRequestedBy>("HEAD_COACH");
-  const [durationSeconds, setDurationSeconds] = useState(60);
-  const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
-  const canSubmitTimeout = canOperateTimeout(currentUser, matchId);
+  const canSubmitTimeout = canOperateTimeout(currentUser, matchId) &&
+    effectiveAccess?.matchId === matchId &&
+    effectiveAccess.capabilities.matchRead &&
+    effectiveAccess.capabilities.timeoutOperate;
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
@@ -4773,7 +4774,7 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
     try {
       const result = await api.grantTimeout(
         matchId,
-        buildTimeoutGrantPayload(projection, teamSide, requestedBy, durationSeconds * 1000, reason)
+        buildTimeoutGrantPayload(projection, teamSide)
       );
 
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
@@ -4784,7 +4785,6 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
 
       await refreshAfterCommand(previousSeq);
       setMessage(getTimeoutControlFeedback(result));
-      setReason("");
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
@@ -4799,7 +4799,7 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
     const previousSeq = projection.currentSeq;
 
     try {
-      const result = await api.endTimeout(matchId, buildTimeoutEndPayload(projection, reason));
+      const result = await api.endTimeout(matchId, buildTimeoutEndPayload(projection, null));
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getTimeoutControlFeedback(result));
         await refreshAfterCommand(previousSeq);
@@ -4808,13 +4808,17 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
 
       await refreshAfterCommand(previousSeq);
       setMessage(getTimeoutControlFeedback(result));
-      setReason("");
     } catch (error) {
       setMessage(toUiMessage(error));
     } finally {
       setPendingKey(null);
     }
   }
+
+  const timeoutPresentation = buildTimeoutOpportunityPresentation(projection);
+  const timeoutControl = projection
+    ? buildTimeoutControlState(projection, { canOperate: canSubmitTimeout, pending: Boolean(pendingKey) })
+    : null;
 
   return (
     <OperatorLiveMatchFrame
@@ -4845,31 +4849,11 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
             <div><dt>Status</dt><dd>{projection.status}</dd></div>
             <div><dt>Period</dt><dd>{projection.periodNumber}</dd></div>
             <div><dt>Sync</dt><dd>{getRealtimeConnectionLabel(realtimeState)}</dd></div>
+            <div><dt>Opportunity</dt><dd>{timeoutPresentation.status}</dd></div>
+            <div><dt>Eligible teams</dt><dd>{timeoutPresentation.eligibleTeams}</dd></div>
+            <div><dt>Late Q4 restriction</dt><dd>{timeoutPresentation.lateQ4Restriction}</dd></div>
           </dl>
-          <div className="form-grid compact">
-            <label>
-              Requested by
-              <select value={requestedBy} onChange={(event) => setRequestedBy(event.target.value as TimeoutRequestedBy)}>
-                {timeoutRequestedByOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Duration seconds
-              <input
-                type="number"
-                min="1"
-                max="120"
-                value={durationSeconds}
-                onChange={(event) => setDurationSeconds(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Reason
-              <input value={reason} onChange={(event) => setReason(event.target.value)} />
-            </label>
-          </div>
+
           <section className="inline-panel">
             <h2>{getActiveTimeoutLabel(projection)}</h2>
             <button
@@ -4881,29 +4865,27 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
             </button>
           </section>
           <div className="score-actions">
-            {buildTimeoutControlPanels(projection).map((panel) => (
-              <div key={panel.teamSide}>
-                <h2>{panel.teamName}</h2>
-                <div className="foul-count">
-                  <span>Timeouts</span>
-                  <strong>{panel.remaining}</strong>
-                  <small>Used {panel.used}</small>
+            {buildTimeoutControlPanels(projection).map((panel) => {
+              const control = panel.teamSide === "HOME" ? timeoutControl?.home : timeoutControl?.away;
+              return (
+                <div key={panel.teamSide}>
+                  <h2>{panel.teamName}</h2>
+                  <div className="foul-count">
+                    <span>Timeouts</span>
+                    <strong>{panel.remaining}</strong>
+                    <small>Used {panel.used}</small>
+                  </div>
+                  <button
+                    type="button"
+                    className="score-button"
+                    disabled={Boolean(projection.activeTimeout) || !control?.enabled}
+                    onClick={() => void grantTimeout(panel.teamSide)}
+                  >
+                    {pendingKey === panel.pendingKey ? "Saving..." : "Grant Timeout"}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="score-button"
-                  disabled={
-                    !canSubmitTimeout ||
-                    Boolean(pendingKey) ||
-                    Boolean(projection.activeTimeout) ||
-                    panel.remaining <= 0
-                  }
-                  onClick={() => void grantTimeout(panel.teamSide)}
-                >
-                  {pendingKey === panel.pendingKey ? "Saving..." : "Grant Timeout"}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : null}

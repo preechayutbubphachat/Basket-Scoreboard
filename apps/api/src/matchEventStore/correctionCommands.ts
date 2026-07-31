@@ -857,6 +857,8 @@ function correctionKindForEvent(event: MatchEventRecord): AlphaCorrectionKind | 
       return "BENCH_TECHNICAL_UNDO";
     case "TIMEOUT_GRANTED":
     case "TIMEOUT_ENDED":
+    case "TEAM_TIMEOUT_GRANTED":
+    case "TEAM_TIMEOUT_ENDED":
       return "TIMEOUT_UNDO";
     case "GAME_CLOCK_SET":
       return "GAME_CLOCK_SET_CORRECTION";
@@ -1018,13 +1020,13 @@ function buildCorrectionEventPayload(options: {
     case "TIMEOUT_UNDO": {
       const teamSide = parseTeamSide(targetPayload.teamSide);
       return {
-        eventType: "TIMEOUT_CORRECTED",
+        eventType: "TEAM_TIMEOUT_CORRECTED",
         payload: {
           ...common,
           oldValue: {
             teamSide,
             activeTimeout: options.projection.activeTimeout,
-            periodNumber: numberOrNull(targetPayload.periodNumber)
+            periodNumber: numberOrNull(targetPayload.period ?? targetPayload.periodNumber)
           },
           newValue: { teamSide, activeTimeout: null },
           delta: teamSide ? { teamSide, timeoutsUsed: -1 } : null
@@ -1121,6 +1123,7 @@ function applyAlphaCorrectionProjection(
         chargedHeadCoachDesignationId: stringOrNull(oldValue.chargedHeadCoachDesignationId) ?? ""
       }, seqNo);
     case "TIMEOUT_CORRECTED":
+    case "TEAM_TIMEOUT_CORRECTED":
       return applyTimeoutCorrected(projection, {
         teamSide: parseTeamSide(oldValue.teamSide),
         periodNumber: numberOrNull(oldValue.periodNumber),

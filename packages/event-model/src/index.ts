@@ -43,9 +43,15 @@ export const timeoutOpportunityEventTypes = [
   "TIMEOUT_OPPORTUNITY_CORRECTED"
 ] as const;
 
+export const teamTimeoutEventTypes = [
+  "TEAM_TIMEOUT_GRANTED",
+  "TEAM_TIMEOUT_ENDED",
+  "TEAM_TIMEOUT_CORRECTED"
+] as const;
+
 export type TimeoutOpportunityEventType = (typeof timeoutOpportunityEventTypes)[number];
 
-export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType | TimeoutOpportunityEventType;
+export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType | TimeoutOpportunityEventType | (typeof teamTimeoutEventTypes)[number];
 
 export type CorrectionRequestedPayload = {
   targetSeq: number;
