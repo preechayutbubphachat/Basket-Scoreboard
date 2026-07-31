@@ -28,9 +28,13 @@ import {
   shotClockSetCommandSchema,
   syncQuerySchema,
   timeoutEndCommandSchema,
-  timeoutGrantCommandSchema
+  timeoutGrantCommandSchema,
+  timeoutOpportunityFactCommandSchema,
+  timeoutOpportunityCorrectionCommandSchema
 } from "@basket-scoreboard/api-contracts";
 import { appendScoreAddedCommand } from "../matchEventStore/appendScoreCommand.js";
+import { appendTimeoutOpportunityFactCommand } from "../matchEventStore/appendTimeoutOpportunityFactCommand.js";
+import { appendTimeoutOpportunityCorrectionCommand } from "../matchEventStore/appendTimeoutOpportunityCorrectionCommand.js";
 import {
   appendGameClockSetCommand,
   appendGameClockStartCommand,
@@ -703,6 +707,30 @@ export function registerMatchRoutes(
       (request: FastifyRequest) => (request.params as { matchId: string }).matchId
     )
   ];
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/timeout-opportunity/fact",
+    { preHandler: [auth.requireAuth, auth.requireCsrf, auth.requireMatchPermission("match.correction.request", (request) => (request.params as { matchId: string }).matchId)] },
+    async (request, reply) => {
+      const command = timeoutOpportunityFactCommandSchema.parse(request.body);
+      if (command.matchId !== request.params.matchId) return reply.send(commandMatchIdMismatch(command));
+      const result = await appendTimeoutOpportunityFactCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return reply.send(result);
+    }
+  );
+
+  app.post<{ Params: { matchId: string } }>(
+    "/api/v1/matches/:matchId/commands/timeout-opportunity/correct",
+    { preHandler: [auth.requireAuth, auth.requireCsrf, auth.requireMatchPermission("match.correction.request", (request) => (request.params as { matchId: string }).matchId)] },
+    async (request, reply) => {
+      const command = timeoutOpportunityCorrectionCommandSchema.parse(request.body);
+      if (command.matchId !== request.params.matchId) return reply.send(commandMatchIdMismatch(command));
+      const result = await appendTimeoutOpportunityCorrectionCommand({ pool, command, user: request.user! });
+      await emitProjectionUpdateForAcceptedCommand(pool, realtime, result.matchId, result.status);
+      return reply.send(result);
+    }
+  );
 
   const lifecyclePreHandlers = [
     auth.requireAuth,

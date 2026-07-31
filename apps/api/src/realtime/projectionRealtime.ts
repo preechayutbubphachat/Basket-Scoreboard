@@ -46,12 +46,22 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
 
       const payload = parsed.data;
 
-      if (payload.view !== "PUBLIC_SCOREBOARD") {
-        socket.emit("match:error", createRealtimeError({
-          reasonCode: reasonCodes.FORBIDDEN,
-          message: "Operator realtime rooms are not enabled in this slice",
-          matchId: payload.matchId
-        }));
+      if (payload.view === "OPERATOR") {
+        const response = await app.inject({
+          method: "GET",
+          url: `/api/v1/matches/${payload.matchId}/sync?lastEventSeq=${payload.lastSeq ?? 0}`,
+          headers: operatorAuthHeaders(socket.handshake.headers)
+        });
+        if (response.statusCode !== 200) {
+          socket.emit("match:error", createRealtimeError({
+            reasonCode: response.statusCode === 404 ? reasonCodes.MATCH_NOT_FOUND : reasonCodes.FORBIDDEN,
+            message: "Authenticated operator match access is required",
+            matchId: payload.matchId
+          }));
+          return;
+        }
+        await socket.join(operatorMatchRoom(payload.matchId));
+        socket.emit("match:operator-snapshot", response.json());
         return;
       }
 
@@ -111,6 +121,18 @@ export function registerProjectionRealtime(app: FastifyInstance, pool: Pool): Pr
 
 export function matchRoom(matchId: string) {
   return `match:${matchId}`;
+}
+
+export function operatorMatchRoom(matchId: string) {
+  return `match:${matchId}:operator`;
+}
+
+function operatorAuthHeaders(headers: Record<string, string | string[] | undefined>) {
+  const allowed = ["cookie", "x-dev-user-id", "x-dev-user-role", "x-dev-device-id", "x-dev-match-ids"] as const;
+  return Object.fromEntries(allowed.flatMap((name) => {
+    const value = headers[name];
+    return typeof value === "string" ? [[name, value]] : [];
+  }));
 }
 
 export function parseRealtimeSocketTransports(rawValue: string | undefined): NonNullable<ServerOptions["transports"]> {

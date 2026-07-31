@@ -38,7 +38,14 @@ export const clockEventTypes = [
 
 export type ClockEventType = (typeof clockEventTypes)[number];
 
-export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType;
+export const timeoutOpportunityEventTypes = [
+  "TIMEOUT_OPPORTUNITY_FACT_RECORDED",
+  "TIMEOUT_OPPORTUNITY_CORRECTED"
+] as const;
+
+export type TimeoutOpportunityEventType = (typeof timeoutOpportunityEventTypes)[number];
+
+export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType | TimeoutOpportunityEventType;
 
 export type CorrectionRequestedPayload = {
   targetSeq: number;

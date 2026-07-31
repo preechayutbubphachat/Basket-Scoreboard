@@ -1406,6 +1406,29 @@ export const lifecycleCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: lifecycleCommandPayloadSchema
 });
 
+/** Operator-observed facts only. Ordering and all legal conclusions are server-derived. */
+export const timeoutOpportunityFactCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.discriminatedUnion("factType", [
+    z.object({ factType: z.literal("DEAD_BALL_CONFIRMED") }).strict(),
+    z.object({ factType: z.literal("TABLE_COMMUNICATION_COMPLETED") }).strict(),
+    z.object({ factType: z.literal("THROW_IN_DISPOSAL") }).strict(),
+    z.object({ factType: z.literal("FIRST_FREE_THROW_DISPOSAL") }).strict(),
+    z.object({ factType: z.literal("FINAL_FREE_THROW_DISPOSAL") }).strict(),
+    z.object({
+      factType: z.literal("REFEREE_INTERRUPTION"),
+      referencedGoalEventId: z.string().uuid()
+    }).strict()
+  ])
+});
+
+export const timeoutOpportunityCorrectionCommandSchema = commandEnvelopeBaseSchema.strict().extend({
+  payload: z.object({
+    targetEventId: z.string().uuid(),
+    targetSeq: z.number().int().positive(),
+    reason: z.string().trim().min(1).max(500)
+  }).strict()
+});
+
 export const applyScoreCorrectionCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: applyScoreCorrectionPayloadSchema
 });
@@ -1489,6 +1512,8 @@ export type ShotClockSetCommand = z.infer<typeof shotClockSetCommandSchema>;
 export type TimeoutGrantCommand = z.infer<typeof timeoutGrantCommandSchema>;
 export type TimeoutEndCommand = z.infer<typeof timeoutEndCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
+export type TimeoutOpportunityFactCommand = z.infer<typeof timeoutOpportunityFactCommandSchema>;
+export type TimeoutOpportunityCorrectionCommand = z.infer<typeof timeoutOpportunityCorrectionCommandSchema>;
 export type CorrectionRequestPayload = z.infer<typeof correctionRequestPayloadSchema>;
 export type ApplyScoreCorrectionPayload = z.infer<typeof applyScoreCorrectionPayloadSchema>;
 export type RejectCorrectionPayload = z.infer<typeof rejectCorrectionPayloadSchema>;
@@ -1533,7 +1558,9 @@ export type MatchEventType =
   | "PLAYER_FOUL_CORRECTED"
   | "TIMEOUT_CORRECTED"
   | "GAME_CLOCK_CORRECTED"
-  | "SHOT_CLOCK_CORRECTED";
+  | "SHOT_CLOCK_CORRECTED"
+  | "TIMEOUT_OPPORTUNITY_FACT_RECORDED"
+  | "TIMEOUT_OPPORTUNITY_CORRECTED";
 
 export type CorrectionEligibleEvent = {
   seqNo: number;

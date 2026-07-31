@@ -49,7 +49,7 @@ async function buildMigratedApp() {
   return { app: buildApiApp({ pool }), pool };
 }
 
-async function seedRole(pool: Pool, roleKey: "ADMIN" | "SCORER" | "REFEREE") {
+async function seedRole(pool: Pool, roleKey: "ADMIN" | "SCORER" | "REFEREE" | "VIEWER") {
   await pool.query("INSERT IGNORE INTO roles (role_id, role_key, role_name) VALUES (?, ?, ?)", [
     randomUUID(), roleKey, roleKey
   ]);
@@ -58,7 +58,15 @@ async function seedRole(pool: Pool, roleKey: "ADMIN" | "SCORER" | "REFEREE") {
     ? ["match.create", "match.read", ...operatorPermissions, "match.correction.request", "match.correction.apply", "match.correction.reject", "match.audit.read", "public.scoreboard.read"]
     : roleKey === "REFEREE"
       ? ["match.read", "match.correction.request", "match.correction.apply", "match.correction.reject", "match.audit.read", "public.scoreboard.read"]
+      : roleKey === "VIEWER"
+        ? ["match.read", "public.scoreboard.read"]
       : ["match.read", ...operatorPermissions, "match.correction.request", "public.scoreboard.read"];
+  if (roleKey === "VIEWER") {
+    await pool.query(
+      "DELETE rp FROM role_permissions rp JOIN permissions p ON p.permission_id = rp.permission_id WHERE rp.role_id = ? AND p.permission_key NOT IN ('match.read', 'public.scoreboard.read')",
+      [roles[0]!.role_id]
+    );
+  }
   for (const permission of permissions) {
     await pool.query("INSERT IGNORE INTO permissions (permission_id, permission_key, description) VALUES (?, ?, ?)", [randomUUID(), permission, permission]);
     const [rows] = await pool.query<RowDataPacket[]>("SELECT permission_id FROM permissions WHERE permission_key = ?", [permission]);
@@ -67,7 +75,7 @@ async function seedRole(pool: Pool, roleKey: "ADMIN" | "SCORER" | "REFEREE") {
   return roles[0]!.role_id as string;
 }
 
-async function seedUser(pool: Pool, roleKey: "ADMIN" | "SCORER" | "REFEREE") {
+async function seedUser(pool: Pool, roleKey: "ADMIN" | "SCORER" | "REFEREE" | "VIEWER") {
   const userId = randomUUID();
   const email = `${userId}@permission.test`;
   const password = "isolated permission test";
@@ -150,6 +158,12 @@ const commands = {
   correctionReject: { path: "corrections/reject", payload: { correctionRequestSeq: 1, reason: "synthetic correction" } }
 } as const;
 
+function timeoutOpportunityCorrection(targetEventId: string, targetSeq: number, reason = "Verified correction") {
+  return { path: "timeout-opportunity/correct", payload: { targetEventId, targetSeq, reason } } as const;
+}
+
+const timeoutOpportunityFact = { path: "timeout-opportunity/fact", payload: { factType: "DEAD_BALL_CONFIRMED" } } as const;
+
 function playerFoul(playerId: string) {
   return {
     path: "foul/player/add",
@@ -160,7 +174,18 @@ function playerFoul(playerId: string) {
 async function state(pool: Pool, matchId: string) {
   const [events] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) event_count, COALESCE(MAX(seq_no), 0) latest_seq FROM match_events WHERE match_id = ?", [matchId]);
   const [projection] = await pool.query<RowDataPacket[]>("SELECT * FROM match_projections WHERE match_id = ?", [matchId]);
-  return { eventCount: Number(events[0]!.event_count), latestSeq: Number(events[0]!.latest_seq), projection: projection[0] ?? null, snapshotCount: 0 };
+  const [stream] = await pool.query<RowDataPacket[]>("SELECT last_seq_no FROM match_streams WHERE match_id = ?", [matchId]);
+  const [receipts] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) receipt_count FROM command_deduplication WHERE match_id = ?", [matchId]);
+  const [audits] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) audit_count FROM audit_logs WHERE entity_id = ?", [matchId]);
+  return {
+    eventCount: Number(events[0]!.event_count),
+    latestSeq: Number(events[0]!.latest_seq),
+    streamSeq: Number(stream[0]?.last_seq_no ?? 0),
+    projection: projection[0] ?? null,
+    receiptCount: Number(receipts[0]!.receipt_count),
+    auditCount: Number(audits[0]!.audit_count),
+    snapshotCount: 0
+  };
 }
 
 async function send(app: App, session: Session, matchId: string, command: { path: string; payload: Record<string, unknown> }, options: { csrf?: string | null; expectedSeq?: number; commandId?: string; extra?: Record<string, unknown> } = {}) {
@@ -507,9 +532,16 @@ describeDb.sequential("DB-backed granular operator permission matrix", { timeout
       const retryMatch = await createMatch(app, admin);
       await assign(pool, retryMatch, concurrentUser.userId, "SCORER", adminUser.userId);
       const retryCommandId = randomUUID();
+      const retryEnvelope = envelope(retryMatch, commands.score.payload, 0, retryCommandId);
+      const sendExactRetry = () => app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${retryMatch}/commands/${commands.score.path}`,
+        headers: { cookie: concurrentSession.cookie, "x-csrf-token": concurrentSession.csrfToken },
+        payload: retryEnvelope
+      });
       const [retryOne, retryTwo] = await Promise.all([
-        send(app, concurrentSession, retryMatch, commands.score, { commandId: retryCommandId }),
-        send(app, concurrentSession, retryMatch, commands.score, { commandId: retryCommandId })
+        sendExactRetry(),
+        sendExactRetry()
       ]);
       expect([retryOne.statusCode, retryTwo.statusCode]).not.toContain(500);
       expect([retryOne.json<{ status: string }>().status, retryTwo.json<{ status: string }>().status]).toEqual(
@@ -523,6 +555,71 @@ describeDb.sequential("DB-backed granular operator permission matrix", { timeout
       expect(await state(pool, retryMatch)).toEqual(staleBefore);
       expect(isMatchStreamReadConflict({ code: "ER_DUP_ENTRY", errno: 1062, sqlState: "23000", sqlMessage: "duplicate" })).toBe(false);
       expect(isMatchStreamReadConflict(new Error("unknown persistence failure"))).toBe(false);
+    } finally {
+      await app.close(); await pool.end();
+    }
+  }, 60_000);
+
+  it("enforces Task015 correction CSRF, RBAC, effective assignment and target boundaries", async () => {
+    const { app, pool } = await buildMigratedApp();
+    try {
+      const adminUser = await seedUser(pool, "ADMIN");
+      const scorerUser = await seedUser(pool, "SCORER");
+      const refereeUser = await seedUser(pool, "REFEREE");
+      const viewerUser = await seedUser(pool, "VIEWER");
+      const unassignedUser = await seedUser(pool, "SCORER");
+      const admin = await login(app, adminUser);
+      const scorer = await login(app, scorerUser);
+      const referee = await login(app, refereeUser);
+      const viewer = await login(app, viewerUser);
+      const unassigned = await login(app, unassignedUser);
+      const matchId = await createMatch(app, admin);
+      const assignmentId = await assign(pool, matchId, scorerUser.userId, "SCORER", adminUser.userId);
+      const refereeMatchId = await createMatch(app, admin);
+      await assign(pool, refereeMatchId, refereeUser.userId, "REFEREE", adminUser.userId);
+      await assign(pool, refereeMatchId, unassignedUser.userId, "SCORER", adminUser.userId);
+      expect((await send(app, admin, matchId, commands.lifecycle)).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
+      expect((await send(app, admin, matchId, commands.gameStart, { expectedSeq: 1 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
+      const fact = await send(app, scorer, matchId, timeoutOpportunityFact, { expectedSeq: 2 });
+      expect(fact.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      const [factRows] = await pool.query<RowDataPacket[]>("SELECT event_id FROM match_events WHERE match_id = ? AND seq_no = 3", [matchId]);
+      const correction = timeoutOpportunityCorrection(factRows[0]!.event_id, 3);
+      const stable = await state(pool, matchId);
+      for (const response of [
+        await send(app, scorer, matchId, correction, { expectedSeq: 3, csrf: null }),
+        await send(app, scorer, matchId, correction, { expectedSeq: 3, csrf: "invalid" }),
+        await send(app, viewer, matchId, correction, { expectedSeq: 3 }),
+        await send(app, unassigned, matchId, correction, { expectedSeq: 3 }),
+        await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/${correction.path}`, payload: envelope(matchId, correction.payload, 3) })
+      ]) {
+        expect([401, 403]).toContain(response.statusCode);
+        expect(await state(pool, matchId)).toEqual(stable);
+      }
+      expect((await send(app, scorer, matchId, { ...correction, payload: { ...correction.payload, reason: "" } }, { expectedSeq: 3 })).statusCode).toBe(400);
+      expect(await state(pool, matchId)).toEqual(stable);
+      const forgedRole = await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${matchId}/commands/${correction.path}`,
+        headers: { cookie: viewer.cookie, "x-csrf-token": viewer.csrfToken, "x-dev-user-role": "ADMIN", "x-dev-match-ids": matchId },
+        payload: envelope(matchId, correction.payload, 3)
+      });
+      expect(forgedRole.statusCode).toBe(403);
+      expect(await state(pool, matchId)).toEqual(stable);
+
+      expect((await send(app, admin, refereeMatchId, commands.lifecycle)).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
+      expect((await send(app, admin, refereeMatchId, commands.gameStart, { expectedSeq: 1 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
+      const refereeFact = await send(app, referee, refereeMatchId, timeoutOpportunityFact, { expectedSeq: 2 });
+      expect(refereeFact.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      const refereeFactBody = refereeFact.json<{ appendedEvents: Array<{ eventId: string; seqNo: number }> }>();
+      const crossTarget = timeoutOpportunityCorrection(refereeFactBody.appendedEvents[0]!.eventId, refereeFactBody.appendedEvents[0]!.seqNo);
+      expect((await send(app, scorer, matchId, crossTarget, { expectedSeq: 3 })).json()).toMatchObject({ status: "REJECTED" });
+      expect(await state(pool, matchId)).toEqual(stable);
+      await pool.query("UPDATE match_officials SET assignment_status = 'REVOKED', revoked_by_user_id = ?, revoked_at = NOW(3) WHERE id = ?", [adminUser.userId, assignmentId]);
+      expect((await send(app, scorer, matchId, correction, { expectedSeq: 3 })).statusCode).toBe(403);
+      expect(await state(pool, matchId)).toEqual(stable);
+      await pool.query("UPDATE match_officials SET assignment_status = 'ACTIVE', revoked_by_user_id = NULL, revoked_at = NULL WHERE id = ?", [assignmentId]);
+      expect((await send(app, scorer, matchId, correction, { expectedSeq: 3 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      expect((await send(app, referee, refereeMatchId, timeoutOpportunityCorrection(refereeFactBody.appendedEvents[0]!.eventId, 3), { expectedSeq: 3 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
     } finally {
       await app.close(); await pool.end();
     }

@@ -1,8 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import type { RowDataPacket } from "mysql2/promise";
+import type { PoolConnection, RowDataPacket } from "mysql2/promise";
+import { io as createSocketClient, type Socket } from "socket.io-client";
+import bcrypt from "bcryptjs";
 import { buildApiApp } from "../../apps/api/src/app";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
@@ -14,9 +16,20 @@ import {
 import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
 import { insertAuditLog, listAuditLogsForMatch } from "../../apps/api/src/matchEventStore/auditRepository";
 import { appendTeamFoulAddedCommand } from "../../apps/api/src/matchEventStore/appendFoulCommand";
+import { appendTimeoutOpportunityFactCommand, type TimeoutOpportunityFailureSeam } from "../../apps/api/src/matchEventStore/appendTimeoutOpportunityFactCommand";
+import { listMatchEvents } from "../../apps/api/src/matchEventStore/repositories";
+import { rebuildTimeoutOpportunityProjection } from "../../apps/api/src/matchEventStore/replayService";
+import { getMatchSync } from "../../apps/api/src/matchEventStore/syncService";
 import { correctionEventTypes } from "../../packages/event-model/src";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
+
+function onceSocketEvent<T>(socket: Socket, eventName: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${eventName}`)), 5000);
+    socket.once(eventName, (payload: T) => { clearTimeout(timer); resolve(payload); });
+  });
+}
 const adminHeaders = {
   "x-dev-user-role": "ADMIN",
   "x-dev-user-id": "00000000-0000-4000-8000-0000000000aa"
@@ -42,7 +55,8 @@ function viewerHeaders(matchId: string) {
   };
 }
 
-async function buildMigratedApp() {
+async function buildMigratedApp(options: { realtime?: boolean } = {}) {
+  process.env.AUTH_COOKIE_SECURE = "false";
   process.env.AUTH_TEST_DISABLE_CSRF = "true";
   const pool = createDatabasePool();
   const connection = await pool.getConnection();
@@ -56,7 +70,7 @@ async function buildMigratedApp() {
     connection.release();
   }
 
-  const app = buildApiApp({ pool });
+  const app = buildApiApp({ pool, realtime: { enabled: options.realtime } });
 
   return { app, pool };
 }
@@ -77,6 +91,21 @@ function scoreCommand(matchId: string, expectedSeq: number, commandId = randomUU
       note: null
     }
   };
+}
+
+function task015Command(matchId: string, expectedSeq: number, commandId = randomUUID()) {
+  return {
+    commandId,
+    matchId,
+    expectedSeq,
+    correlationId: randomUUID(),
+    clientTimestamp: new Date().toISOString(),
+    payload: { factType: "DEAD_BALL_CONFIRMED" as const }
+  };
+}
+
+function lifecycleStartCommand(matchId: string, expectedSeq = 0) {
+  return { commandId: randomUUID(), matchId, expectedSeq, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(), payload: { reason: null } };
 }
 
 function clockCommand(
@@ -1220,6 +1249,322 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       expect(crossMatch.json()).toMatchObject({ status: "REJECTED", reasonCode: "MATCH_NOT_FOUND", currentSeq: 0 });
       const [crossRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS event_count FROM match_events WHERE match_id = ?", [matchB.matchId]);
       expect(Number(crossRows[0]!.event_count)).toBe(0);
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
+  it("proves Task015 rollback seams, two-connection concurrency, and mounted correction on real MariaDB", async () => {
+    const { app, pool } = await buildMigratedApp();
+    const user = { userId: "00000000-0000-4000-8000-0000000000bb", role: "SCORER" as const, deviceId: "task015-real-db" };
+    const createStartedMatch = async () => {
+      const createdResponse = await app.inject({ method: "POST", url: "/api/v1/matches", headers: adminHeaders, payload: { matchCode: `T015-${randomUUID()}`, ruleProfileId: "FIBA_2024" } });
+      const created = createdResponse.json<{ matchId: string }>();
+      const started = await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/lifecycle/start-match`, headers: adminHeaders, payload: lifecycleStartCommand(created.matchId) });
+      expect(started.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
+      const clockStarted = await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(created.matchId, 1) });
+      expect(clockStarted.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
+      return created.matchId;
+    };
+    try {
+      const taskCommandState = async (matchId: string, commandId: string, database: PoolConnection | typeof pool = pool) => {
+        const [rows] = await database.query<RowDataPacket[]>(
+          "SELECT (SELECT COUNT(*) FROM match_events WHERE match_id = ? AND command_id = ?) AS event_count, (SELECT last_seq_no FROM match_streams WHERE match_id = ?) AS head_seq, (SELECT last_event_seq FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard') AS projection_seq, (SELECT COUNT(*) FROM command_deduplication WHERE match_id = ? AND command_id = ?) AS receipt_count, (SELECT COUNT(*) FROM audit_logs WHERE entity_id = ? AND action = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED') AS audit_count",
+          [matchId, commandId, matchId, matchId, matchId, commandId, matchId]
+        );
+        return {
+          eventCount: Number(rows[0]!.event_count),
+          headSeq: Number(rows[0]!.head_seq),
+          projectionSeq: Number(rows[0]!.projection_seq),
+          receiptCount: Number(rows[0]!.receipt_count),
+          auditCount: Number(rows[0]!.audit_count)
+        };
+      };
+      const seams: TimeoutOpportunityFailureSeam[] = ["afterEvent", "afterHead", "afterProjection", "afterReceipt", "afterAudit", "beforeCommit"];
+      for (const seam of seams) {
+        const matchId = await createStartedMatch();
+        const command = task015Command(matchId, 2);
+        const [baselineProjectionRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [matchId]);
+        const baselineProjection = typeof baselineProjectionRows[0]!.projection_data === "string" ? JSON.parse(baselineProjectionRows[0]!.projection_data) : baselineProjectionRows[0]!.projection_data;
+        await expect(appendTimeoutOpportunityFactCommand({
+          pool,
+          command,
+          user,
+          injectFailureAt: seam,
+          onFailureSeam: async (_heldSeam, transactionalConnection) => {
+            const observerConnection = await pool.getConnection();
+            try {
+              const [transactionRows] = await transactionalConnection.query<RowDataPacket[]>("SELECT CONNECTION_ID() AS connection_id");
+              const [observerRows] = await observerConnection.query<RowDataPacket[]>("SELECT CONNECTION_ID() AS connection_id");
+              expect(Number(observerRows[0]!.connection_id)).not.toBe(Number(transactionRows[0]!.connection_id));
+              expect(await taskCommandState(matchId, command.commandId, observerConnection)).toEqual({ eventCount: 0, headSeq: 2, projectionSeq: 2, receiptCount: 0, auditCount: 0 });
+            } finally {
+              observerConnection.release();
+            }
+          }
+        })).rejects.toThrow(`INJECTED_TIMEOUT_OPPORTUNITY_FAILURE:${seam}`);
+        expect(await taskCommandState(matchId, command.commandId)).toEqual({ eventCount: 0, headSeq: 2, projectionSeq: 2, receiptCount: 0, auditCount: 0 });
+        const retry = await appendTimeoutOpportunityFactCommand({ pool, command, user });
+        expect(retry.status).toBe("ACCEPTED");
+        expect(await taskCommandState(matchId, command.commandId)).toEqual({ eventCount: 1, headSeq: 3, projectionSeq: 3, receiptCount: 1, auditCount: 1 });
+        const [exactRows] = await pool.query<RowDataPacket[]>(
+          "SELECT e.event_id, e.seq_no, e.event_type, e.payload AS event_payload, e.command_id, e.expected_seq, e.correlation_id, e.causation_id, d.command_type, d.request_hash, d.status AS receipt_status, d.result, p.projection_data, a.action, a.actor_user_id, a.actor_role, a.device_id, a.old_value, a.new_value, a.reason AS audit_reason, a.correlation_id AS audit_correlation_id, a.causation_id AS audit_causation_id, a.event_seq AS audit_event_seq, a.created_at AS audit_created_at FROM match_events e JOIN command_deduplication d ON d.match_id = e.match_id AND d.command_id = e.command_id JOIN match_projections p ON p.match_id = e.match_id AND p.projection_type = 'scoreboard' JOIN audit_logs a ON a.entity_id = e.match_id AND a.action = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED' AND a.event_seq = e.seq_no WHERE e.match_id = ? AND e.command_id = ?",
+          [matchId, command.commandId]
+        );
+        expect(exactRows).toHaveLength(1);
+        const exact = exactRows[0]!;
+        const eventPayload = typeof exact.event_payload === "string" ? JSON.parse(exact.event_payload) : exact.event_payload;
+        const storedResult = typeof exact.result === "string" ? JSON.parse(exact.result) : exact.result;
+        const storedProjection = typeof exact.projection_data === "string" ? JSON.parse(exact.projection_data) : exact.projection_data;
+        const auditOldValue = typeof exact.old_value === "string" ? JSON.parse(exact.old_value) : exact.old_value;
+        const auditNewValue = typeof exact.new_value === "string" ? JSON.parse(exact.new_value) : exact.new_value;
+        expect(exact).toMatchObject({ seq_no: 3, event_type: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", command_id: command.commandId, expected_seq: 2, correlation_id: command.correlationId, causation_id: null, command_type: "timeout-opportunity/fact", request_hash: createHash("sha256").update(JSON.stringify(command)).digest("hex"), receipt_status: "ACCEPTED", action: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", actor_user_id: user.userId, actor_role: user.role, device_id: user.deviceId, audit_reason: null, audit_correlation_id: command.correlationId, audit_event_seq: 3 });
+        expect(eventPayload).toEqual({ factType: "DEAD_BALL_CONFIRMED", sourceEventId: exact.event_id, sourceSeq: 3, occurredAt: command.clientTimestamp, periodNumber: 1, gameClockRemainingMs: 600000, gameClockRunning: true, matchStatus: "LIVE", ruleProfileId: "FIBA_2024" });
+        expect(storedResult).toEqual(retry);
+        expect(storedProjection).toEqual(retry.projection);
+        expect(auditOldValue).toEqual(baselineProjection.timeoutOpportunity);
+        expect(auditNewValue).toEqual(storedProjection.timeoutOpportunity);
+        expect(exact.audit_causation_id).toBe(exact.event_id);
+        expect(Number.isNaN(new Date(exact.audit_created_at).getTime())).toBe(false);
+      }
+
+      const concurrentMatchId = await createStartedMatch();
+      const connectionIds = new Set<number>();
+      let barrierArrivals = 0;
+      let releaseBarrier!: () => void;
+      const barrier = new Promise<void>((resolve) => { releaseBarrier = resolve; });
+      const beforeStreamLockBarrier = async (connection: PoolConnection) => {
+        const [rows] = await connection.query<RowDataPacket[]>("SELECT CONNECTION_ID() AS connection_id");
+        connectionIds.add(Number(rows[0]!.connection_id));
+        barrierArrivals += 1;
+        if (barrierArrivals === 2) releaseBarrier();
+        await barrier;
+      };
+      const concurrentResults = await Promise.all([
+        appendTimeoutOpportunityFactCommand({ pool, command: task015Command(concurrentMatchId, 2), user, beforeStreamLockBarrier }),
+        appendTimeoutOpportunityFactCommand({ pool, command: task015Command(concurrentMatchId, 2), user, beforeStreamLockBarrier })
+      ]);
+      expect(barrierArrivals).toBe(2);
+      expect(connectionIds.size).toBe(2);
+      expect(concurrentResults.map((result) => result.status).sort()).toEqual(["ACCEPTED", "SYNC_REQUIRED"]);
+      const [concurrentEvents] = await pool.query<RowDataPacket[]>("SELECT seq_no FROM match_events WHERE match_id = ? AND event_type = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED'", [concurrentMatchId]);
+      expect(concurrentEvents.map((row) => Number(row.seq_no))).toEqual([3]);
+
+      const restartedMatchId = await createStartedMatch();
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/score/add`, headers: adminHeaders, payload: scoreCommand(restartedMatchId, 2) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      const [goalRows] = await pool.query<RowDataPacket[]>("SELECT event_id FROM match_events WHERE match_id = ? AND seq_no = 3 AND event_type = 'SCORE_ADDED'", [restartedMatchId]);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/clock/game/stop`, headers: adminHeaders, payload: clockCommand(restartedMatchId, 3) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(restartedMatchId, 4) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
+      const restartedGoalAttempt = await appendTimeoutOpportunityFactCommand({
+        pool,
+        user,
+        command: {
+          commandId: randomUUID(), matchId: restartedMatchId, expectedSeq: 5, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(),
+          payload: { factType: "REFEREE_INTERRUPTION", referencedGoalEventId: goalRows[0]!.event_id, referencedGoalSeq: 3 }
+        }
+      });
+      expect(restartedGoalAttempt).toMatchObject({ status: "REJECTED", currentSeq: 5, appendedEvents: [] });
+      const [restartFactRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS count FROM match_events WHERE match_id = ? AND event_type = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED'", [restartedMatchId]);
+      expect(Number(restartFactRows[0]!.count)).toBe(0);
+
+      const mountedMatchId = await createStartedMatch();
+      await pool.query("INSERT INTO match_officials (id, match_id, user_id, role_code, assignment_status, assigned_at, created_at) VALUES (?, ?, ?, 'SCORER', 'ACTIVE', NOW(3), NOW(3))", [randomUUID(), mountedMatchId, user.userId]);
+      const [mountedBaselineRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [mountedMatchId]);
+      const mountedBaselineProjection = typeof mountedBaselineRows[0]!.projection_data === "string" ? JSON.parse(mountedBaselineRows[0]!.projection_data) : mountedBaselineRows[0]!.projection_data;
+      const mountedBaselineTimeouts = structuredClone(mountedBaselineProjection.timeouts);
+      const mountedFact = task015Command(mountedMatchId, 2);
+      const acceptedFact = await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: scorerHeaders(mountedMatchId), payload: mountedFact });
+      expect(acceptedFact.statusCode, acceptedFact.body).toBe(200);
+      const factBody = acceptedFact.json<{ status: string; appendedEvents: Array<{ eventId: string; seqNo: number }> }>();
+      expect(factBody.status).toBe("ACCEPTED");
+      const correction = { commandId: randomUUID(), matchId: mountedMatchId, expectedSeq: 3, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(), payload: { targetEventId: factBody.appendedEvents[0]!.eventId, targetSeq: factBody.appendedEvents[0]!.seqNo, reason: "Verified table correction" } };
+      const acceptedCorrection = await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/correct`, headers: scorerHeaders(mountedMatchId), payload: correction });
+      expect(acceptedCorrection.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      const correctionRetry = await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/correct`, headers: scorerHeaders(mountedMatchId), payload: correction });
+      expect(correctionRetry.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 4 });
+      const correctionCollision = await app.inject({
+        method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/correct`, headers: scorerHeaders(mountedMatchId),
+        payload: { ...correction, payload: { ...correction.payload, reason: "Changed collision payload" } }
+      });
+      expect(correctionCollision.json()).toMatchObject({ status: "REJECTED", currentSeq: 4 });
+      const [causalRows] = await pool.query<RowDataPacket[]>(
+        "SELECT event_id, event_type, causation_id, payload FROM match_events WHERE match_id = ? AND seq_no IN (3, 4) ORDER BY seq_no",
+        [mountedMatchId]
+      );
+      expect(causalRows[0]!.causation_id).toBeNull();
+      expect(causalRows[1]!.causation_id).toBe(causalRows[0]!.event_id);
+      const correctionPayload = typeof causalRows[1]!.payload === "string" ? JSON.parse(causalRows[1]!.payload) : causalRows[1]!.payload;
+      expect(correctionPayload).toMatchObject({
+        targetEventId: causalRows[0]!.event_id,
+        targetSeq: 3,
+        reason: "Verified table correction",
+        actorUserId: user.userId,
+        actorRole: "SCORER",
+        deviceId: expect.any(String),
+        oldEffect: expect.any(Object),
+        newEffect: expect.any(Object)
+      });
+      const [causalAudits] = await pool.query<RowDataPacket[]>(
+        "SELECT action, causation_id FROM audit_logs WHERE entity_id = ? AND action IN ('TIMEOUT_OPPORTUNITY_FACT_RECORDED', 'TIMEOUT_OPPORTUNITY_CORRECTED') ORDER BY event_seq",
+        [mountedMatchId]
+      );
+      expect(causalAudits).toMatchObject([
+        { action: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", causation_id: causalRows[0]!.event_id },
+        { action: "TIMEOUT_OPPORTUNITY_CORRECTED", causation_id: causalRows[1]!.event_id }
+      ]);
+      const [collisionCounts] = await pool.query<RowDataPacket[]>(
+        "SELECT (SELECT COUNT(*) FROM match_events WHERE match_id = ?) AS event_count, (SELECT COUNT(*) FROM command_deduplication WHERE match_id = ?) AS receipt_count, (SELECT COUNT(*) FROM audit_logs WHERE entity_id = ?) AS audit_count",
+        [mountedMatchId, mountedMatchId, mountedMatchId]
+      );
+      expect(collisionCounts[0]).toMatchObject({ event_count: 4, receipt_count: 4, audit_count: 4 });
+      const [mountedFinalRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [mountedMatchId]);
+      const mountedFinalProjection = typeof mountedFinalRows[0]!.projection_data === "string" ? JSON.parse(mountedFinalRows[0]!.projection_data) : mountedFinalRows[0]!.projection_data;
+      expect(mountedFinalProjection.timeouts).toEqual(mountedBaselineTimeouts);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: viewerHeaders(mountedMatchId), payload: task015Command(mountedMatchId, 4) })).statusCode).toBe(403);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, payload: task015Command(mountedMatchId, 4) })).statusCode).toBe(401);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: scorerHeaders(randomUUID()), payload: task015Command(mountedMatchId, 4) })).statusCode).toBe(403);
+    } finally {
+      await app.close();
+      await pool.end();
+    }
+  });
+
+  it("converges replacement score identity across live, replay, snapshot-tail, and protected sync without granting a timeout", async () => {
+    const { app, pool } = await buildMigratedApp({ realtime: true });
+    try {
+      const created = (await app.inject({
+        method: "POST",
+        url: "/api/v1/matches",
+        headers: adminHeaders,
+        payload: { matchCode: `T015-IDENTITY-${randomUUID()}`, ruleProfileId: "FIBA_2024" }
+      })).json<{ matchId: string }>();
+      const [baselineRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [created.matchId]);
+      const baselineProjection = typeof baselineRows[0]!.projection_data === "string" ? JSON.parse(baselineRows[0]!.projection_data) : baselineRows[0]!.projection_data;
+      const baselineTimeouts = structuredClone(baselineProjection.timeouts);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/lifecycle/start-match`, headers: adminHeaders, payload: lifecycleStartCommand(created.matchId) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(created.matchId, 1) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/score/add`, headers: adminHeaders, payload: scoreCommand(created.matchId, 2) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      const request = correctionRequestCommand(created.matchId, 3, 3);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/corrections/request`, headers: adminHeaders, payload: request })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      const applied = (await app.inject({
+        method: "POST",
+        url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
+        headers: adminHeaders,
+        payload: applyScoreCorrectionCommand(created.matchId, 4, 4, 3)
+      })).json<{ status: string; projection: { timeoutOpportunity: { sourceEventId: string | null } } }>();
+      expect(applied.status).toBe("ACCEPTED");
+
+      const [projectionRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [created.matchId]);
+      const liveProjection = typeof projectionRows[0]!.projection_data === "string"
+        ? JSON.parse(projectionRows[0]!.projection_data)
+        : projectionRows[0]!.projection_data;
+      expect(liveProjection.timeouts).toEqual(baselineTimeouts);
+      const connection = await pool.getConnection();
+      let events;
+      try {
+        events = await listMatchEvents(connection, created.matchId);
+      } finally {
+        connection.release();
+      }
+      const replacement = events.find((event) => event.seqNo === 6 && event.eventType === "SCORE_ADDED");
+      expect(replacement).toBeDefined();
+      const fullReplay = rebuildTimeoutOpportunityProjection(created.matchId, events);
+      const beforeCorrectionSnapshot = rebuildTimeoutOpportunityProjection(created.matchId, events.filter((event) => event.seqNo <= 3));
+      const snapshotTail = rebuildTimeoutOpportunityProjection(created.matchId, events, beforeCorrectionSnapshot);
+      const protectedSync = await getMatchSync({ pool, matchId: created.matchId, lastEventSeq: 3 });
+      const mountedSyncResponse = await app.inject({
+        method: "GET",
+        url: `/api/v1/matches/${created.matchId}/sync?lastEventSeq=3`,
+        headers: adminHeaders
+      });
+      expect(mountedSyncResponse.statusCode).toBe(200);
+      const mountedSync = mountedSyncResponse.json<{ projection: typeof fullReplay; missedEvents: Array<{ seqNo: number }> }>();
+      expect([
+        liveProjection.timeoutOpportunity.sourceEventId,
+        fullReplay.timeoutOpportunity.sourceEventId,
+        snapshotTail.timeoutOpportunity.sourceEventId,
+        protectedSync.projection?.timeoutOpportunity.sourceEventId,
+        mountedSync.projection.timeoutOpportunity.sourceEventId
+      ]).toEqual(Array(5).fill(replacement!.eventId));
+      expect(mountedSync.projection.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
+      expect(mountedSync.projection.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
+      expect(protectedSync.projection?.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
+      expect(protectedSync.projection?.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
+      expect(liveProjection.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
+      expect(liveProjection.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
+      expect(snapshotTail.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
+      expect(snapshotTail.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
+      expect(mountedSync.missedEvents.map((event) => event.seqNo)).toEqual([4, 5, 6, 7]);
+
+      const [forbiddenRows] = await pool.query<RowDataPacket[]>(
+        "SELECT event_type FROM match_events WHERE match_id = ? AND event_type IN ('TIMEOUT_GRANTED', 'TIMEOUT_ENDED', 'TIMEOUT_CORRECTED', 'TEAM_TIMEOUT_GRANTED', 'TEAM_TIMEOUT_ENDED', 'TEAM_TIMEOUT_CORRECTED')",
+        [created.matchId]
+      );
+      expect(forbiddenRows).toEqual([]);
+      const persistedProjection = JSON.stringify(projectionRows[0]!.projection_data);
+      expect(persistedProjection).not.toContain("timeoutQuota");
+      expect(persistedProjection).not.toContain("lateQ4");
+
+      const publicResponse = await app.inject({ method: "GET", url: `/api/v1/public/matches/${created.matchId}/scoreboard` });
+      const publicJson = JSON.stringify(publicResponse.json());
+      for (const privateField of ["timeoutOpportunity", "sourceEventId", "actorUserId", "deviceId", "Wrong team selected", "Corrected from HOME to AWAY"]) {
+        expect(publicJson).not.toContain(privateField);
+      }
+      const productionUserId = randomUUID();
+      const productionEmail = `${productionUserId}@task015-session.test`;
+      const productionPassword = "Task015 isolated session password";
+      await pool.query("INSERT IGNORE INTO roles (role_id, role_key, role_name) VALUES (?, 'ADMIN', 'ADMIN')", [randomUUID()]);
+      await pool.query("INSERT IGNORE INTO permissions (permission_id, permission_key, description) VALUES (?, 'match.read', 'match.read')", [randomUUID()]);
+      const [adminRoleRows] = await pool.query<RowDataPacket[]>("SELECT role_id FROM roles WHERE role_key = 'ADMIN'");
+      const [matchReadRows] = await pool.query<RowDataPacket[]>("SELECT permission_id FROM permissions WHERE permission_key = 'match.read'");
+      await pool.query("INSERT IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)", [adminRoleRows[0]!.role_id, matchReadRows[0]!.permission_id]);
+      await pool.query("INSERT INTO users (user_id, email, display_name, password_hash, status) VALUES (?, ?, 'Task015 Session Admin', ?, 'ACTIVE')", [productionUserId, productionEmail, await bcrypt.hash(productionPassword, 4)]);
+      await pool.query("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", [productionUserId, adminRoleRows[0]!.role_id]);
+      const loginResponse = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload: { email: productionEmail, password: productionPassword } });
+      expect(loginResponse.statusCode).toBe(200);
+      const productionSessionCookie = String(loginResponse.headers["set-cookie"]).split(";")[0]!;
+      const address = await app.listen({ host: "127.0.0.1", port: 0 });
+      const operatorSnapshots: Array<{ projection: typeof fullReplay; missedEvents: Array<{ seqNo: number }> }> = [];
+      const operatorSocket = createSocketClient(address, {
+        transports: ["polling"], forceNew: true, reconnection: false, autoConnect: false,
+        extraHeaders: { cookie: productionSessionCookie }
+      });
+      try {
+        for (let reconnectAttempt = 0; reconnectAttempt < 2; reconnectAttempt += 1) {
+          const connected = onceSocketEvent(operatorSocket, "connect");
+          operatorSocket.connect();
+          await connected;
+          const operatorSnapshotPromise = onceSocketEvent<{ projection: typeof fullReplay; missedEvents: Array<{ seqNo: number }> }>(operatorSocket, "match:operator-snapshot");
+          operatorSocket.emit("match:join", { matchId: created.matchId, lastSeq: 3, view: "OPERATOR" });
+          operatorSnapshots.push(await operatorSnapshotPromise);
+          operatorSocket.disconnect();
+        }
+      } finally {
+        operatorSocket.disconnect();
+      }
+      for (const operatorSnapshot of operatorSnapshots) {
+        expect(operatorSnapshot.projection.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
+        expect(operatorSnapshot.projection.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
+        expect(operatorSnapshot.missedEvents.map((event) => event.seqNo)).toEqual([4, 5, 6, 7]);
+      }
+      const socket = createSocketClient(address, { transports: ["polling"], forceNew: true, reconnection: false, autoConnect: false });
+      try {
+        const connected = onceSocketEvent(socket, "connect");
+        socket.connect();
+        await connected;
+        const snapshotPromise = onceSocketEvent<Record<string, unknown>>(socket, "match:snapshot");
+        socket.emit("match:join", { matchId: created.matchId, view: "PUBLIC_SCOREBOARD" });
+        const socketJson = JSON.stringify(await snapshotPromise);
+        for (const privateField of ["timeoutOpportunity", "timeoutOpportunityHistory", "sourceEventId", "actorUserId", "actorRole", "deviceId", "commandId", "correctionRequestSeq", "originalScoreEventId", "Wrong team selected", "Corrected from HOME to AWAY"]) {
+          expect(socketJson).not.toContain(privateField);
+        }
+        const rejectionPromise = onceSocketEvent<{ reasonCode: string }>(socket, "COMMAND_REJECTED");
+        socket.emit("COMMAND_SUBMIT", { commandType: "timeout-opportunity/correct", matchId: created.matchId });
+        expect(await rejectionPromise).toMatchObject({ reasonCode: "FORBIDDEN" });
+      } finally {
+        socket.disconnect();
+      }
     } finally {
       await app.close();
       await pool.end();

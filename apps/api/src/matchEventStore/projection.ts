@@ -23,6 +23,9 @@ type ClockState = {
 };
 type MatchLifecycleStatus = "SCHEDULED" | "READY" | "LIVE" | "PERIOD_BREAK" | "OVERTIME" | "FINISHED" | "FINAL";
 type PeriodType = "REGULATION" | "OVERTIME";
+export type TimeoutOpportunityFactType = "DEAD_BALL_CONFIRMED" | "TABLE_COMMUNICATION_COMPLETED" | "THROW_IN_DISPOSAL" | "FIRST_FREE_THROW_DISPOSAL" | "FINAL_FREE_THROW_DISPOSAL" | "REFEREE_INTERRUPTION" | "VALID_GOAL" | "FINAL_FREE_THROW_SUCCESS" | "PLAYING_TIME_STARTED" | "PLAYING_TIME_ENDED";
+export type TimeoutOpportunityHistoryEntry = { eventId: string; seq: number; factType: TimeoutOpportunityFactType | "CORRECTION"; occurredAt: string; corrected: boolean; targetEventId: string | null; referencedGoalEventId?: string; referencedGoalSeq?: number; scoringTeamSide?: "HOME" | "AWAY"; periodNumber?: number; periodType?: PeriodType; gameClockRemainingMs?: number; gameClockRunning?: boolean; matchStatus?: MatchLifecycleStatus };
+export type TimeoutOpportunityProjection = { status: "UNKNOWN" | "CLOSED" | "OPEN"; eligibleTeams: Array<"HOME" | "AWAY">; sourceEventId: string | null; sourceSeq: number | null; sourceFactType: TimeoutOpportunityFactType | null; ruleProfileId: "FIBA_2024" };
 
 export type PlayerFoulProjection = {
   playerId: string;
@@ -87,6 +90,9 @@ export type ScoreboardProjection = {
   disqualificationReviewRequired: boolean;
   disqualificationReviewReason: "TWO_COACH_TECHNICALS" | "THREE_BENCH_TECHNICALS" | "ONE_COACH_TWO_BENCH_TECHNICALS" | null;
 }>;
+  /** Protected operator-only evidence. */
+  timeoutOpportunity: TimeoutOpportunityProjection;
+  timeoutOpportunityHistory: TimeoutOpportunityHistoryEntry[];
 };
 
 export type DerivedFinalOutcome = {
@@ -132,7 +138,9 @@ export function createInitialScoreboardProjection(matchId: string): ScoreboardPr
     currentSeq: 0,
     projectionVersion: "scoreboard-v1",
     recentActionState: createInternalRecentActionState(0),
-    headCoachTechnicals: []
+    headCoachTechnicals: [],
+    timeoutOpportunity: unknownTimeoutOpportunity(),
+    timeoutOpportunityHistory: []
   };
 }
 
@@ -197,6 +205,8 @@ export function normalizeScoreboardProjection(
         disqualificationReviewReason: hc.disqualificationReviewReason === "TWO_COACH_TECHNICALS" || hc.disqualificationReviewReason === "THREE_BENCH_TECHNICALS" || hc.disqualificationReviewReason === "ONE_COACH_TWO_BENCH_TECHNICALS" ? hc.disqualificationReviewReason : null
       }))
       : [],
+    timeoutOpportunity: normalizeTimeoutOpportunity(projection.timeoutOpportunity),
+    timeoutOpportunityHistory: Array.isArray(projection.timeoutOpportunityHistory) ? projection.timeoutOpportunityHistory : [],
     recentActionState: normalizeInternalRecentActionState(
       projection.recentActionState,
       numberOrDefault(projection.currentSeq, 0)
@@ -209,7 +219,8 @@ export function normalizeScoreboardProjection(
 export function applyScoreAdded(
   projection: ScoreboardProjection,
   payload: ScoreAddedPayload,
-  seqNo: number
+  seqNo: number,
+  sourceEventId?: string
 ): ScoreboardProjection {
   const wasFinished = isFinishedStatus(projection.status);
   const updatedProjection: ScoreboardProjection = {
@@ -228,19 +239,35 @@ export function applyScoreAdded(
     currentSeq: seqNo
   };
 
-  return recomputeFinalOutcomeIfFinished(withRecentAction(updatedProjection, "SCORE_ADDED", payload, seqNo));
+  const withScore = recomputeFinalOutcomeIfFinished(withRecentAction(updatedProjection, "SCORE_ADDED", payload, seqNo));
+  if (!sourceEventId) return withScore;
+  const opportunity = deriveScoreTimeoutOpportunity(projection, payload, sourceEventId, seqNo);
+  const factType = opportunity.sourceFactType!;
+  return {
+    ...withScore,
+    timeoutOpportunity: opportunity,
+    timeoutOpportunityHistory: [...withScore.timeoutOpportunityHistory, { eventId: sourceEventId, seq: seqNo, factType, occurredAt: projection.clockUpdatedAt ?? new Date(0).toISOString(), corrected: false, targetEventId: null, scoringTeamSide: payload.teamSide, periodNumber: projection.periodNumber, periodType: projection.periodType, gameClockRemainingMs: projection.gameClockRemainingMs, gameClockRunning: projection.gameClock.running, matchStatus: projection.status }]
+  };
 }
 
 export function applyGameClockStarted(
   projection: ScoreboardProjection,
   payload: { startedAt: string; remainingMsBeforeStart: number },
-  seqNo: number
+  seqNo: number,
+  eventId?: string
 ): ScoreboardProjection {
   const shotClockRemainingMs = Math.max(0, projection.shotClock.remainingMs);
   const shotClockRunning = shotClockRemainingMs > 0;
 
   return {
     ...projection,
+    ...(eventId ? {
+      timeoutOpportunity: closedOpportunity(eventId, seqNo, "PLAYING_TIME_STARTED"),
+      timeoutOpportunityHistory: [
+        ...projection.timeoutOpportunityHistory,
+        lifecycleOpportunityEntry(eventId, seqNo, "PLAYING_TIME_STARTED", payload.startedAt, projection, projection.periodNumber, projection.periodType, payload.remainingMsBeforeStart, true)
+      ]
+    } : {}),
     gameClockRemainingMs: payload.remainingMsBeforeStart,
     shotClockRemainingMs,
     gameClock: {
@@ -609,13 +636,16 @@ export function applyMatchStarted(
     shotClockRemainingMs: number;
     reason: string | null;
   },
-  seqNo: number
+  seqNo: number,
+  eventId?: string
 ): ScoreboardProjection {
   return withRecentAction({
     ...projection,
     status: "LIVE",
+    ...(eventId ? { timeoutOpportunity: closedOpportunity(eventId, seqNo, "PLAYING_TIME_ENDED") } : {}),
     periodNumber: payload.periodNumber,
     periodType: payload.periodType,
+    timeoutOpportunityHistory: projection.timeoutOpportunityHistory,
     matchStartedAt: projection.matchStartedAt ?? payload.startedAt,
     currentPeriodStartedAt: payload.startedAt,
     currentPeriodEndedAt: null,
@@ -642,13 +672,16 @@ export function applyPeriodEnded(
     shotClockRemainingMs: number;
     reason: string | null;
   },
-  seqNo: number
+  seqNo: number,
+  eventId?: string
 ): ScoreboardProjection {
   return withRecentAction({
     ...projection,
     status: "PERIOD_BREAK",
+    ...(eventId ? { timeoutOpportunity: closedOpportunity(eventId, seqNo, "PLAYING_TIME_ENDED") } : {}),
     periodNumber: payload.periodNumber,
     periodType: payload.periodType,
+    timeoutOpportunityHistory: eventId ? [...projection.timeoutOpportunityHistory, lifecycleOpportunityEntry(eventId, seqNo, "PLAYING_TIME_ENDED", payload.endedAt, projection, payload.periodNumber, payload.periodType, payload.gameClockRemainingMs, false)] : projection.timeoutOpportunityHistory,
     currentPeriodEndedAt: payload.endedAt,
     gameClockRemainingMs: payload.gameClockRemainingMs,
     shotClockRemainingMs: payload.shotClockRemainingMs,
@@ -670,13 +703,16 @@ export function applyPeriodStarted(
     shotClockRemainingMs: number;
     reason: string | null;
   },
-  seqNo: number
+  seqNo: number,
+  eventId?: string
 ): ScoreboardProjection {
   return withRecentAction({
     ...projection,
     status: "LIVE",
+    ...(eventId ? { timeoutOpportunity: closedOpportunity(eventId, seqNo, "PLAYING_TIME_ENDED") } : {}),
     periodNumber: payload.periodNumber,
     periodType: payload.periodType,
+    timeoutOpportunityHistory: projection.timeoutOpportunityHistory,
     currentPeriodStartedAt: payload.startedAt,
     currentPeriodEndedAt: null,
     gameClockRemainingMs: payload.gameClockRemainingMs,
@@ -699,13 +735,16 @@ export function applyOvertimeStarted(
     shotClockRemainingMs: number;
     reason: string | null;
   },
-  seqNo: number
+  seqNo: number,
+  eventId?: string
 ): ScoreboardProjection {
   return withRecentAction({
     ...projection,
     status: "OVERTIME",
+    ...(eventId ? { timeoutOpportunity: closedOpportunity(eventId, seqNo, "PLAYING_TIME_ENDED") } : {}),
     periodNumber: payload.periodNumber,
     periodType: payload.periodType,
+    timeoutOpportunityHistory: projection.timeoutOpportunityHistory,
     currentPeriodStartedAt: payload.startedAt,
     currentPeriodEndedAt: null,
     gameClockRemainingMs: payload.gameClockRemainingMs,
@@ -727,13 +766,16 @@ export function applyMatchFinished(
     winnerSide: "HOME" | "AWAY" | null;
     reason: string | null;
   },
-  seqNo: number
+  seqNo: number,
+  eventId?: string
 ): ScoreboardProjection {
   const finalOutcome = deriveFinalOutcome(projection.homeScore, projection.awayScore);
 
   return withRecentAction({
     ...projection,
     status: "FINISHED",
+    ...(eventId ? { timeoutOpportunity: closedOpportunity(eventId, seqNo, "PLAYING_TIME_ENDED") } : {}),
+    timeoutOpportunityHistory: eventId ? [...projection.timeoutOpportunityHistory, lifecycleOpportunityEntry(eventId, seqNo, "PLAYING_TIME_ENDED", payload.finishedAt, projection, projection.periodNumber, projection.periodType, projection.gameClock.remainingMs, false)] : projection.timeoutOpportunityHistory,
     matchFinishedAt: payload.finishedAt,
     ...finalOutcome,
     gameClockRemainingMs: projection.gameClock.remainingMs,
@@ -748,11 +790,20 @@ export function applyMatchFinished(
 
 export function applyScoreRemovedByCorrection(
   projection: ScoreboardProjection,
-  payload: Pick<ScoreAddedPayload, "teamSide" | "points"> & { originalScoreSeq?: number; correctedEventSeq?: number },
-  seqNo: number
+  payload: Pick<ScoreAddedPayload, "teamSide" | "points"> & { originalScoreSeq?: number; originalScoreEventId?: string; correctedEventSeq?: number },
+  seqNo: number,
+  correctionEventId?: string
 ): ScoreboardProjection {
+  const scoreTarget = projection.timeoutOpportunityHistory.find((entry) =>
+    (payload.originalScoreEventId ? entry.eventId === payload.originalScoreEventId : entry.seq === (payload.originalScoreSeq ?? payload.correctedEventSeq))
+    && (entry.factType === "VALID_GOAL" || entry.factType === "FINAL_FREE_THROW_SUCCESS")
+    && !entry.corrected
+  );
+  const opportunityProjection = scoreTarget && correctionEventId
+    ? applyTimeoutOpportunityCorrection(projection, { targetEventId: scoreTarget.eventId, targetSeq: scoreTarget.seq, reason: "Canonical score correction", correctionEventId, correctionSeq: seqNo, occurredAt: projection.clockUpdatedAt ?? new Date(0).toISOString() }, seqNo)
+    : projection;
   const updatedProjection: ScoreboardProjection = {
-    ...projection,
+    ...opportunityProjection,
     homeScore:
       payload.teamSide === "HOME" ? Math.max(0, projection.homeScore - payload.points) : projection.homeScore,
     awayScore:
@@ -917,6 +968,78 @@ export function advanceProjectionSeq(
     ...projection,
     currentSeq: seqNo
   };
+}
+
+function lifecycleOpportunityEntry(eventId: string, seq: number, factType: "PLAYING_TIME_STARTED" | "PLAYING_TIME_ENDED", occurredAt: string, projection: ScoreboardProjection, periodNumber: number, periodType: PeriodType, gameClockRemainingMs: number, gameClockRunning: boolean): TimeoutOpportunityHistoryEntry {
+  return { eventId, seq, factType, occurredAt, corrected: false, targetEventId: null, periodNumber, periodType, gameClockRemainingMs, gameClockRunning, matchStatus: factType === "PLAYING_TIME_STARTED" ? (periodType === "OVERTIME" ? "OVERTIME" : "LIVE") : projection.status };
+}
+
+export function deriveScoreTimeoutOpportunity(projection: ScoreboardProjection, payload: { teamSide: "HOME" | "AWAY"; points: number }, sourceEventId: string, sourceSeq: number): TimeoutOpportunityProjection {
+  const playingMarker = [...projection.timeoutOpportunityHistory]
+    .reverse()
+    .find((entry) => !entry.corrected && (entry.factType === "PLAYING_TIME_STARTED" || entry.factType === "PLAYING_TIME_ENDED"));
+  if ((projection.status !== "LIVE" && projection.status !== "OVERTIME") || playingMarker?.factType !== "PLAYING_TIME_STARTED") return closedOpportunity(sourceEventId, sourceSeq, "VALID_GOAL");
+  const latestActiveFact = [...projection.timeoutOpportunityHistory]
+    .reverse()
+    .find((entry) => !entry.corrected && entry.factType !== "CORRECTION");
+  if (payload.points === 1 && latestActiveFact?.factType === "FINAL_FREE_THROW_DISPOSAL") {
+    return openOpportunity(sourceEventId, sourceSeq, "FINAL_FREE_THROW_SUCCESS", ["HOME", "AWAY"]);
+  }
+  return openOpportunity(sourceEventId, sourceSeq, "VALID_GOAL", [opposite(payload.teamSide)]);
+}
+
+export function applyTimeoutOpportunityFact(projection: ScoreboardProjection, fact: { factType: TimeoutOpportunityFactType; sourceEventId: string; sourceSeq: number; occurredAt: string; referencedGoalEventId?: string; referencedGoalSeq?: number; scoringTeamSide?: "HOME" | "AWAY"; periodNumber?: number; periodType?: PeriodType; gameClockRemainingMs?: number; gameClockRunning?: boolean; matchStatus?: MatchLifecycleStatus }, seqNo: number): ScoreboardProjection {
+  const entry: TimeoutOpportunityHistoryEntry = { eventId: fact.sourceEventId, seq: fact.sourceSeq, factType: fact.factType, occurredAt: fact.occurredAt, corrected: false, targetEventId: null, ...(fact.referencedGoalEventId ? { referencedGoalEventId: fact.referencedGoalEventId, referencedGoalSeq: fact.referencedGoalSeq } : {}), ...(fact.scoringTeamSide ? { scoringTeamSide: fact.scoringTeamSide } : {}), periodNumber: fact.periodNumber ?? projection.periodNumber, periodType: fact.periodType ?? projection.periodType, gameClockRemainingMs: fact.gameClockRemainingMs ?? projection.gameClockRemainingMs, gameClockRunning: fact.gameClockRunning ?? projection.gameClock.running, matchStatus: fact.matchStatus ?? projection.status };
+  const history = [...projection.timeoutOpportunityHistory, entry];
+  const playingMarker = [...history].reverse().find((item) => !item.corrected && item.eventId !== fact.sourceEventId && (item.factType === "PLAYING_TIME_STARTED" || item.factType === "PLAYING_TIME_ENDED"));
+  let opportunity: TimeoutOpportunityProjection;
+  if (fact.factType === "THROW_IN_DISPOSAL" || fact.factType === "FIRST_FREE_THROW_DISPOSAL" || fact.factType === "FINAL_FREE_THROW_DISPOSAL" || fact.factType === "PLAYING_TIME_ENDED" || fact.factType === "PLAYING_TIME_STARTED") opportunity = closedOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType);
+  else if (fact.factType === "TABLE_COMMUNICATION_COMPLETED") {
+    const previous = [...history].reverse().find((item) => !item.corrected && item.eventId !== fact.sourceEventId && item.factType !== "CORRECTION");
+    opportunity = playingMarker?.factType === "PLAYING_TIME_STARTED" && previous?.factType === "DEAD_BALL_CONFIRMED" && !projection.gameClock.running ? openOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType, ["HOME", "AWAY"]) : closedOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType);
+  } else if (fact.factType === "REFEREE_INTERRUPTION") {
+    const late = (projection.periodNumber >= 4 || projection.periodType === "OVERTIME") && projection.gameClockRemainingMs <= 120000;
+    const referencedGoal = [...history].reverse().find((item) => !item.corrected && item.eventId === fact.referencedGoalEventId && item.factType === "VALID_GOAL");
+    const latestUnsupersededSource = [...history].reverse().find((item) => !item.corrected && item.eventId !== fact.sourceEventId && item.factType !== "CORRECTION");
+    opportunity = late && referencedGoal?.scoringTeamSide && referencedGoal.scoringTeamSide === fact.scoringTeamSide && latestUnsupersededSource?.eventId === referencedGoal.eventId
+      ? openOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType, ["HOME", "AWAY"])
+      : closedOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType);
+  } else if (fact.factType === "VALID_GOAL" && fact.scoringTeamSide) opportunity = openOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType, [opposite(fact.scoringTeamSide)]);
+  else if (fact.factType === "FINAL_FREE_THROW_SUCCESS") opportunity = openOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType, ["HOME", "AWAY"]);
+  else opportunity = closedOpportunity(fact.sourceEventId, fact.sourceSeq, fact.factType);
+  return { ...projection, timeoutOpportunity: opportunity, timeoutOpportunityHistory: history, currentSeq: seqNo };
+}
+
+export function applyTimeoutOpportunityCorrection(projection: ScoreboardProjection, correction: { targetEventId: string; targetSeq: number; reason: string; correctionEventId: string; correctionSeq: number; occurredAt: string }, seqNo: number): ScoreboardProjection {
+  const target = projection.timeoutOpportunityHistory.find((item) => item.eventId === correction.targetEventId && item.seq === correction.targetSeq && item.factType !== "CORRECTION");
+  if (!target) throw new Error("TIMEOUT_OPPORTUNITY_TARGET_MISMATCH");
+  const retained: TimeoutOpportunityHistoryEntry[] = projection.timeoutOpportunityHistory.map((item) => item.eventId === target.eventId ? { ...item, corrected: true } : item);
+  retained.push({ eventId: correction.correctionEventId, seq: correction.correctionSeq, factType: "CORRECTION", occurredAt: correction.occurredAt, corrected: false, targetEventId: target.eventId });
+  const active = retained.filter((item) => !item.corrected && item.factType !== "CORRECTION");
+  let state = { ...projection, timeoutOpportunity: unknownTimeoutOpportunity(), timeoutOpportunityHistory: [] as TimeoutOpportunityHistoryEntry[] };
+  for (const item of active) {
+    state = {
+      ...state,
+      periodNumber: item.periodNumber ?? state.periodNumber,
+      periodType: item.periodType ?? state.periodType,
+      gameClockRemainingMs: item.gameClockRemainingMs ?? state.gameClockRemainingMs,
+      gameClock: { ...state.gameClock, remainingMs: item.gameClockRemainingMs ?? state.gameClock.remainingMs, running: item.gameClockRunning ?? state.gameClock.running },
+      status: item.matchStatus ?? state.status
+    };
+    state = applyTimeoutOpportunityFact(state, { factType: item.factType as TimeoutOpportunityFactType, sourceEventId: item.eventId, sourceSeq: item.seq, occurredAt: item.occurredAt, ...(item.referencedGoalEventId ? { referencedGoalEventId: item.referencedGoalEventId, referencedGoalSeq: item.referencedGoalSeq } : {}), ...(item.scoringTeamSide ? { scoringTeamSide: item.scoringTeamSide } : {}), ...(item.periodNumber !== undefined ? { periodNumber: item.periodNumber } : {}), ...(item.periodType !== undefined ? { periodType: item.periodType } : {}), ...(item.gameClockRemainingMs !== undefined ? { gameClockRemainingMs: item.gameClockRemainingMs } : {}), ...(item.gameClockRunning !== undefined ? { gameClockRunning: item.gameClockRunning } : {}), ...(item.matchStatus !== undefined ? { matchStatus: item.matchStatus } : {}) }, item.seq);
+  }
+  return { ...projection, timeoutOpportunity: state.timeoutOpportunity, timeoutOpportunityHistory: retained, currentSeq: seqNo };
+}
+
+function unknownTimeoutOpportunity(): TimeoutOpportunityProjection { return { status: "UNKNOWN", eligibleTeams: [], sourceEventId: null, sourceSeq: null, sourceFactType: null, ruleProfileId: "FIBA_2024" }; }
+function closedOpportunity(eventId: string, seq: number, factType: TimeoutOpportunityFactType): TimeoutOpportunityProjection { return { status: "CLOSED", eligibleTeams: [], sourceEventId: eventId, sourceSeq: seq, sourceFactType: factType, ruleProfileId: "FIBA_2024" }; }
+function openOpportunity(eventId: string, seq: number, factType: TimeoutOpportunityFactType, eligibleTeams: Array<"HOME" | "AWAY">): TimeoutOpportunityProjection { return { status: "OPEN", eligibleTeams, sourceEventId: eventId, sourceSeq: seq, sourceFactType: factType, ruleProfileId: "FIBA_2024" }; }
+function opposite(side: "HOME" | "AWAY") { return side === "HOME" ? "AWAY" as const : "HOME" as const; }
+function normalizeTimeoutOpportunity(value: unknown): TimeoutOpportunityProjection {
+  if (!value || typeof value !== "object") return unknownTimeoutOpportunity();
+  const candidate = value as Partial<TimeoutOpportunityProjection>;
+  if (candidate.status !== "OPEN" && candidate.status !== "CLOSED" && candidate.status !== "UNKNOWN") return unknownTimeoutOpportunity();
+  return { status: candidate.status, eligibleTeams: candidate.status === "OPEN" && Array.isArray(candidate.eligibleTeams) ? candidate.eligibleTeams.filter((side): side is "HOME" | "AWAY" => side === "HOME" || side === "AWAY") : [], sourceEventId: typeof candidate.sourceEventId === "string" ? candidate.sourceEventId : null, sourceSeq: typeof candidate.sourceSeq === "number" ? candidate.sourceSeq : null, sourceFactType: candidate.sourceFactType ?? null, ruleProfileId: "FIBA_2024" };
 }
 
 function numberOrDefault(value: unknown, fallback: number) {

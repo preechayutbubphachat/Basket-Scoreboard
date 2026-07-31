@@ -95,7 +95,9 @@ export async function appendScoreAddedCommand(options: {
     const rosterValidationStartedAt = performance.now();
     const payload = await buildScoreEventPayload({
       connection,
-      command: options.command
+      command: options.command,
+      periodNumber: projection.periodNumber,
+      gameClockRemainingMs: projection.gameClockRemainingMs
     });
     rosterValidationMs = performance.now() - rosterValidationStartedAt;
 
@@ -130,7 +132,7 @@ export async function appendScoreAddedCommand(options: {
     appendEventMs = performance.now() - appendEventStartedAt;
 
     const projectionUpdateStartedAt = performance.now();
-    const updatedProjection = applyScoreAdded(projection, payload.value, nextSeq);
+    const updatedProjection = applyScoreAdded(projection, payload.value, nextSeq, eventId);
     await updateScoreboardProjection(connection, updatedProjection);
     await insertAuditLog(connection, {
       entityType: "match",
@@ -236,12 +238,14 @@ function isFinishedMatchStatus(status: string) {
 async function buildScoreEventPayload(options: {
   connection: Awaited<ReturnType<Pool["getConnection"]>>;
   command: AddScoreCommand;
+  periodNumber: number;
+  gameClockRemainingMs: number;
 }): Promise<
   | { ok: true; value: ScoreAddedPayload }
   | { ok: false; message: string }
 > {
   if (!options.command.payload.playerId) {
-    return { ok: true, value: options.command.payload };
+    return { ok: true, value: { ...options.command.payload, periodNumber: options.periodNumber, gameClockRemainingMs: options.gameClockRemainingMs } };
   }
 
   const player = await getActiveRosterPlayerForMatchSide(
@@ -262,6 +266,8 @@ async function buildScoreEventPayload(options: {
     ok: true,
     value: {
       ...options.command.payload,
+      periodNumber: options.periodNumber,
+      gameClockRemainingMs: options.gameClockRemainingMs,
       playerNameSnapshot: player.playerName,
       jerseyNumberSnapshot: player.jerseyNumber
     }

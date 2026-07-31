@@ -407,34 +407,33 @@ export async function applyScoreCorrection(options: {
           points: originalEvent.payload.points,
           reason: options.command.payload.reason
         };
-        appendedEvents.push(
-          await appendMatchEvent(connection, {
-            eventId: removalEventId,
-            matchId: options.command.matchId,
-            seqNo,
-            eventType: "SCORE_REMOVED_BY_CORRECTION",
-            payload: removalPayload,
-            user: options.user,
-            occurredAt: new Date(options.command.clientTimestamp),
-            commandId: randomUUID(),
-            expectedSeq: options.command.expectedSeq,
-            correlationId: options.command.correlationId,
-            causationId: originalEvent.eventId,
-            reason: options.command.payload.reason
-          })
-        );
+        const removalEvent = await appendMatchEvent(connection, {
+          eventId: removalEventId,
+          matchId: options.command.matchId,
+          seqNo,
+          eventType: "SCORE_REMOVED_BY_CORRECTION",
+          payload: removalPayload,
+          user: options.user,
+          occurredAt: new Date(options.command.clientTimestamp),
+          commandId: randomUUID(),
+          expectedSeq: options.command.expectedSeq,
+          correlationId: options.command.correlationId,
+          causationId: originalEvent.eventId,
+          reason: options.command.payload.reason
+        });
+        appendedEvents.push(removalEvent);
         projection = applyScoreRemovedByCorrection(
           projection,
-          { ...originalEvent.payload, originalScoreSeq: originalEvent.seqNo },
-          seqNo
+          { ...originalEvent.payload, originalScoreSeq: originalEvent.seqNo, originalScoreEventId: originalEvent.eventId },
+          removalEvent.seqNo,
+          removalEvent.eventId
         );
       }
 
       if (options.command.payload.replacement) {
         seqNo += 1;
         replacementEventId = randomUUID();
-        appendedEvents.push(
-          await appendMatchEvent(connection, {
+        const replacementEvent = await appendMatchEvent(connection, {
             eventId: replacementEventId,
             matchId: options.command.matchId,
             seqNo,
@@ -447,9 +446,14 @@ export async function applyScoreCorrection(options: {
             correlationId: options.command.correlationId,
             causationId: removalEventId ?? originalEvent.eventId,
             reason: options.command.payload.replacement.note
-          })
+          });
+        appendedEvents.push(replacementEvent);
+        projection = applyScoreAdded(
+          projection,
+          options.command.payload.replacement,
+          replacementEvent.seqNo,
+          replacementEvent.eventId
         );
-        projection = applyScoreAdded(projection, options.command.payload.replacement, seqNo);
       }
 
       seqNo += 1;

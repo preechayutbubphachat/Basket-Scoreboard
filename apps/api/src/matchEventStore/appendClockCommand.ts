@@ -174,7 +174,7 @@ async function appendClockCommand(options: {
       options.command.matchId
     ]);
 
-    const updatedProjection = applyClockProjection(projection, options.eventType, payload, nextSeq);
+    const updatedProjection = applyClockProjection(projection, options.eventType, payload, nextSeq, eventId);
     await updateScoreboardProjection(connection, updatedProjection);
     await insertAuditLog(connection, {
       entityType: "match",
@@ -265,14 +265,16 @@ function applyClockProjection(
   projection: ScoreboardProjection,
   eventType: ClockEventType,
   payload: ReturnType<typeof buildPayload>,
-  seqNo: number
+  seqNo: number,
+  eventId: string
 ) {
   switch (eventType) {
     case "GAME_CLOCK_STARTED":
       return applyGameClockStarted(
         projection,
         payload as { startedAt: string; remainingMsBeforeStart: number },
-        seqNo
+        seqNo,
+        eventId
       );
     case "GAME_CLOCK_STOPPED":
       return applyGameClockStopped(

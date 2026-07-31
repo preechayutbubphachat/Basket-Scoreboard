@@ -7,6 +7,24 @@ import type {
   ReplayItem
 } from "@basket-scoreboard/api-contracts";
 import { getScoreboardProjectionView, listMatchEvents, type MatchEventRecord } from "./repositories.js";
+import {
+  applyGameClockCorrected,
+  applyGameClockSet,
+  applyGameClockStarted,
+  applyGameClockStopped,
+  applyMatchFinished,
+  applyMatchStarted,
+  applyOvertimeStarted,
+  applyPeriodEnded,
+  applyPeriodStarted,
+  applyScoreAdded,
+  applyScoreRemovedByCorrection,
+  applyTimeoutOpportunityCorrection,
+  applyTimeoutOpportunityFact,
+  createInitialScoreboardProjection,
+  normalizeScoreboardProjection,
+  type ScoreboardProjection
+} from "./projection.js";
 
 type ReplayQuery = {
   group: ReplayGroupFilter;
@@ -327,6 +345,37 @@ function buildPlayer(payload: Record<string, unknown>): ReplayItem["player"] {
 
 function payloadRecord(payload: unknown) {
   return payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+}
+
+/** Deterministic private projector used by full replay and snapshot-plus-tail recovery. */
+export function rebuildTimeoutOpportunityProjection(
+  matchId: string,
+  events: MatchEventRecord[],
+  snapshot?: ScoreboardProjection
+): ScoreboardProjection {
+  let state = snapshot ? normalizeScoreboardProjection(snapshot) : createInitialScoreboardProjection(matchId);
+  const after = snapshot?.currentSeq ?? 0;
+  for (const event of [...events].filter((item) => item.seqNo > after).sort((a, b) => a.seqNo - b.seqNo)) {
+    const p = payloadRecord(event.payload) as any;
+    switch (event.eventType) {
+      case "SCORE_ADDED": state = applyScoreAdded(state, p, event.seqNo, event.eventId); break;
+      case "SCORE_REMOVED_BY_CORRECTION":
+      case "SCORE_CORRECTED": state = applyScoreRemovedByCorrection(state, p, event.seqNo, event.eventId); break;
+      case "GAME_CLOCK_STARTED": state = applyGameClockStarted(state, p, event.seqNo, event.eventId); break;
+      case "GAME_CLOCK_STOPPED": state = applyGameClockStopped(state, p, event.seqNo); break;
+      case "GAME_CLOCK_SET": state = applyGameClockSet(state, p, event.seqNo); break;
+      case "GAME_CLOCK_CORRECTED": state = applyGameClockCorrected(state, p, event.seqNo); break;
+      case "MATCH_STARTED": state = applyMatchStarted(state, p, event.seqNo, event.eventId); break;
+      case "PERIOD_STARTED": state = applyPeriodStarted(state, p, event.seqNo, event.eventId); break;
+      case "PERIOD_ENDED": state = applyPeriodEnded(state, p, event.seqNo, event.eventId); break;
+      case "OVERTIME_STARTED": state = applyOvertimeStarted(state, p, event.seqNo, event.eventId); break;
+      case "MATCH_FINISHED": state = applyMatchFinished(state, p, event.seqNo, event.eventId); break;
+      case "TIMEOUT_OPPORTUNITY_FACT_RECORDED": state = applyTimeoutOpportunityFact(state, p, event.seqNo); break;
+      case "TIMEOUT_OPPORTUNITY_CORRECTED": state = applyTimeoutOpportunityCorrection(state, p, event.seqNo); break;
+      default: state = { ...state, currentSeq: event.seqNo };
+    }
+  }
+  return state;
 }
 
 function recordOrNull(value: unknown) {

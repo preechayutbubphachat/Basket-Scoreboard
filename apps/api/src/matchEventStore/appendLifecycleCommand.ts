@@ -187,7 +187,7 @@ async function appendLifecycleCommand(options: {
       options.command.matchId
     ]);
 
-    const updatedProjection = applyLifecycleProjection(projection, options.eventType, payload, nextSeq);
+    const updatedProjection = applyLifecycleProjection(projection, options.eventType, payload, nextSeq, eventId);
     await updateScoreboardProjection(connection, updatedProjection);
     await insertAuditLog(connection, {
       entityType: "match",
@@ -333,19 +333,20 @@ function applyLifecycleProjection(
   projection: ScoreboardProjection,
   eventType: LifecycleEventType,
   payload: ReturnType<typeof buildPayload>,
-  seqNo: number
+  seqNo: number,
+  eventId: string
 ) {
   switch (eventType) {
     case "MATCH_STARTED":
-      return applyMatchStarted(projection, payload as Parameters<typeof applyMatchStarted>[1], seqNo);
+      return applyMatchStarted(projection, payload as Parameters<typeof applyMatchStarted>[1], seqNo, eventId);
     case "PERIOD_ENDED":
-      return applyPeriodEnded(projection, payload as Parameters<typeof applyPeriodEnded>[1], seqNo);
+      return applyPeriodEnded(projection, payload as Parameters<typeof applyPeriodEnded>[1], seqNo, eventId);
     case "PERIOD_STARTED":
-      return applyPeriodStarted(projection, payload as Parameters<typeof applyPeriodStarted>[1], seqNo);
+      return applyPeriodStarted(projection, payload as Parameters<typeof applyPeriodStarted>[1], seqNo, eventId);
     case "OVERTIME_STARTED":
-      return applyOvertimeStarted(projection, payload as Parameters<typeof applyOvertimeStarted>[1], seqNo);
+      return applyOvertimeStarted(projection, payload as Parameters<typeof applyOvertimeStarted>[1], seqNo, eventId);
     case "MATCH_FINISHED":
-      return applyMatchFinished(projection, payload as Parameters<typeof applyMatchFinished>[1], seqNo);
+      return applyMatchFinished(projection, payload as Parameters<typeof applyMatchFinished>[1], seqNo, eventId);
   }
 }
 
