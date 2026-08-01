@@ -97,8 +97,8 @@ Use only these status values:
 | RM-04 | Clock & Shot Clock Dashboard | `INTEGRATED` |
 | RM-05 | Score Control Dashboard | `INTEGRATED` |
 | RM-06 | Foul Control Dashboard | `INTEGRATED` |
-| RM-07 | Timeout Dashboard | `CURRENT` |
-| RM-08 | Lineup / Roster Dashboard | `PENDING` |
+| RM-07 | Timeout Dashboard | `INTEGRATED` |
+| RM-08 | Lineup / Roster Dashboard | `CURRENT` |
 | RM-09 | Match Pairing Dashboard | `PENDING` |
 | RM-10 | Court Operations Dashboard | `PENDING` |
 | RM-11 | Match Summary Dashboard | `PENDING` |
@@ -164,12 +164,16 @@ RM-06-P3 = IMPLEMENTATION COMPLETE
 RM-06-P4 = IMPLEMENTATION COMPLETE
 RM-06-I = INTEGRATED (FAST-FORWARD)
 RM-06 optional foul variants = DEFERRED / NOT REQUIRED FOR RM-06 CLOSURE
-RM-07 = CURRENT
+RM-07 = INTEGRATED
 RM-07 planning = COMPLETE / INTEGRATED
 RM-07 official timeout source verification = INTEGRATED
 RM-07 timeout opportunity Task 012 = BLOCKED / IMMUTABLE / NOT INTEGRATED
-RM-08 through RM-18 = PENDING
-Next safe step: authorized docs-only Task 014 Roadmap reconciliation, followed by a separately governed Task 015 canonical timeout-opportunity rebuild; do not start Timeout Control or a demo automatically
+RM-07 canonical timeout opportunity Task 015 = INTEGRATED
+RM-07 timeout control Task 013 = INTEGRATED at 178a5aee0dece3bac083bf4a925aa5506b77934a
+RM-08 = CURRENT
+RM-08-D1 = DISCOVERY COMPLETE / P1 BLOCKED BY MISSING ELIGIBILITY SOURCE AND PRODUCT DECISIONS
+RM-09 through RM-18 = PENDING
+Next safe step: RM-08-D1 closeout; any RM-08-P1 implementation requires a new immutable Task, explicit reauthorization, and closure of its stated source/product/architecture gates
 ```
 
 ## 6. Straight-Line Diagram
@@ -371,7 +375,7 @@ There is no parallel top-level path.
 
 ### RM-07 - Timeout Dashboard
 
-- Current implementation state: `CURRENT / CANONICAL REBUILD AUTHORIZED AFTER RECONCILIATION`. Planning Task
+- Current implementation state: `INTEGRATED`. Planning Task
   `TASK-20260730-005-rm07-planning` is complete and integrated. Official-source verification Task
   `TASK-20260730-011-rm07-official-timeout-source-verification` is independently verified and integrated at
   `204da94de3c9723c5517be80e1e32eff623429c3`. Task
@@ -431,6 +435,14 @@ There is no parallel top-level path.
 
 ### RM-08 - Lineup / Roster Dashboard
 
+- Current milestone state: `CURRENT`; discovery Task `TASK-20260801-001-rm08-lineup-roster-discovery` completed the
+  repository, contract, database, event-model, security/privacy, source, product-decision, and visual gap audit from
+  `178a5aee0dece3bac083bf4a925aa5506b77934a`. Application source, tests, and migrations were not changed by D1.
+- Active slice: `RM-08-D1 - Lineup / Roster Dashboard discovery and contract/visual gap audit`.
+- D1 outcome: `DISCOVERY COMPLETE / P1 BLOCKED BY MISSING ELIGIBILITY SOURCE`. The verified FIBA 2024 rules delegate
+  eligibility to the organizing body's regulations; no approved competition-specific tournament registration,
+  eligibility, late-change, suspension, lock-timing, or correction-authority document is loaded. Lock, captain,
+  readiness, publication, and post-lock correction product decisions also remain unresolved.
 - Objective: deliver roster readiness, starters, captain, lock, and correction workflows.
 - Visual target: `Lineup Dashboard.png`.
 - Intended roles: admin and authorized assigned scorer/operator.
@@ -444,6 +456,10 @@ There is no parallel top-level path.
 - Production gate: real roster/assignment verification.
 - Known blockers: roster-lock and captain policy decisions.
 - Source requirements: tournament eligibility governing document where required.
+- Next safe step: obtain and hash the applicable competition organizer's roster/eligibility regulations, resolve the
+  D1 product decisions, approve the proposed draft-row/event-projection boundary, then separately authorize a new
+  bounded P1 Task. D1 recommends protected event-sourced roster hydration and readiness-confirmation projection only;
+  P1 implementation is not authorized by this Roadmap update.
 - Next milestone: RM-09.
 
 ### RM-09 - Match Pairing Dashboard
