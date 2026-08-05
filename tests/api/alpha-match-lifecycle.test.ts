@@ -100,7 +100,7 @@ afterEach(() => {
 });
 
 describe("alpha match lifecycle routes", () => {
-  it("allows ADMIN to start a match with append-only lifecycle event", async () => {
+  it("rejects match start when authoritative roster readiness is missing", async () => {
     process.env.AUTH_TEST_DISABLE_CSRF = "true";
     const fake = createLifecyclePool();
     const app = buildApiApp({ pool: fake.pool as never });
@@ -114,24 +114,10 @@ describe("alpha match lifecycle routes", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({
-        status: "ACCEPTED",
-        currentSeq: 1,
-        appendedEvents: [{ seqNo: 1, eventType: "MATCH_STARTED" }]
-      });
-      expect(fake.events).toHaveLength(1);
-      expect(fake.events[0]).toMatchObject({ eventType: "MATCH_STARTED" });
-      expect(fake.projection).toMatchObject({
-        currentSeq: 1,
-        status: "LIVE",
-        periodNumber: 1,
-        periodType: "REGULATION",
-        gameClock: { remainingMs: 600000, running: false },
-        shotClock: { remainingMs: 24000, running: false },
-        activeTimeout: null
-      });
-      expect(fake.projection.matchStartedAt).toEqual(expect.any(String));
-      expect(fake.projection.currentPeriodStartedAt).toEqual(expect.any(String));
+      expect(response.json()).toMatchObject({ status: "REJECTED", reasonCode: "VALIDATION_ERROR" });
+      expect(fake.events).toHaveLength(0);
+      expect(fake.projection.currentSeq).toBe(0);
+      expect(fake.projection.status).toBe("READY");
     } finally {
       await app.close();
     }

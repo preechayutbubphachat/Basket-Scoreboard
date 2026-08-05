@@ -5,6 +5,7 @@ import type { Pool, RowDataPacket } from "mysql2/promise";
 import { buildApiApp } from "../../apps/api/src/app";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
+import { getReadinessForMatches } from "../../apps/api/src/matchReadiness/matchReadinessService";
 import { isMatchStreamReadConflict } from "../../apps/api/src/matchEventStore/repositories";
 import {
   MariaDbMigrationConnection,
@@ -12,6 +13,7 @@ import {
   runMigrations
 } from "../../apps/api/src/migrations";
 import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
+import { prepareAuthoritativeLifecycleFixture } from "../helpers/authoritativeLifecycleFixture";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 type App = ReturnType<typeof buildApiApp>;
@@ -575,53 +577,72 @@ describeDb.sequential("DB-backed granular operator permission matrix", { timeout
       const unassigned = await login(app, unassignedUser);
       const matchId = await createMatch(app, admin);
       const assignmentId = await assign(pool, matchId, scorerUser.userId, "SCORER", adminUser.userId);
+      await prepareAuthoritativeLifecycleFixture(pool, matchId);
+      await assertAuthoritativeLifecycleReadiness(pool, matchId);
       const refereeMatchId = await createMatch(app, admin);
       await assign(pool, refereeMatchId, refereeUser.userId, "REFEREE", adminUser.userId);
       await assign(pool, refereeMatchId, unassignedUser.userId, "SCORER", adminUser.userId);
-      expect((await send(app, admin, matchId, commands.lifecycle)).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      expect((await send(app, admin, matchId, commands.gameStart, { expectedSeq: 1 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
-      const fact = await send(app, scorer, matchId, timeoutOpportunityFact, { expectedSeq: 2 });
-      expect(fact.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
-      const [factRows] = await pool.query<RowDataPacket[]>("SELECT event_id FROM match_events WHERE match_id = ? AND seq_no = 3", [matchId]);
-      const correction = timeoutOpportunityCorrection(factRows[0]!.event_id, 3);
+      await prepareAuthoritativeLifecycleFixture(pool, refereeMatchId);
+      await assertAuthoritativeLifecycleReadiness(pool, refereeMatchId);
+      expect((await send(app, admin, matchId, commands.lifecycle, { expectedSeq: 2 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      expect((await send(app, admin, matchId, commands.gameStart, { expectedSeq: 3 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      const fact = await send(app, scorer, matchId, timeoutOpportunityFact, { expectedSeq: 4 });
+      expect(fact.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
+      const [factRows] = await pool.query<RowDataPacket[]>("SELECT event_id FROM match_events WHERE match_id = ? AND seq_no = 5", [matchId]);
+      const correction = timeoutOpportunityCorrection(factRows[0]!.event_id, 5);
       const stable = await state(pool, matchId);
       for (const response of [
-        await send(app, scorer, matchId, correction, { expectedSeq: 3, csrf: null }),
-        await send(app, scorer, matchId, correction, { expectedSeq: 3, csrf: "invalid" }),
-        await send(app, viewer, matchId, correction, { expectedSeq: 3 }),
-        await send(app, unassigned, matchId, correction, { expectedSeq: 3 }),
-        await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/${correction.path}`, payload: envelope(matchId, correction.payload, 3) })
+        await send(app, scorer, matchId, correction, { expectedSeq: 5, csrf: null }),
+        await send(app, scorer, matchId, correction, { expectedSeq: 5, csrf: "invalid" }),
+        await send(app, viewer, matchId, correction, { expectedSeq: 5 }),
+        await send(app, unassigned, matchId, correction, { expectedSeq: 5 }),
+        await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/${correction.path}`, payload: envelope(matchId, correction.payload, 5) })
       ]) {
         expect([401, 403]).toContain(response.statusCode);
         expect(await state(pool, matchId)).toEqual(stable);
       }
-      expect((await send(app, scorer, matchId, { ...correction, payload: { ...correction.payload, reason: "" } }, { expectedSeq: 3 })).statusCode).toBe(400);
+      expect((await send(app, scorer, matchId, { ...correction, payload: { ...correction.payload, reason: "" } }, { expectedSeq: 5 })).statusCode).toBe(400);
       expect(await state(pool, matchId)).toEqual(stable);
       const forgedRole = await app.inject({
         method: "POST",
         url: `/api/v1/matches/${matchId}/commands/${correction.path}`,
         headers: { cookie: viewer.cookie, "x-csrf-token": viewer.csrfToken, "x-dev-user-role": "ADMIN", "x-dev-match-ids": matchId },
-        payload: envelope(matchId, correction.payload, 3)
+        payload: envelope(matchId, correction.payload, 5)
       });
       expect(forgedRole.statusCode).toBe(403);
       expect(await state(pool, matchId)).toEqual(stable);
 
-      expect((await send(app, admin, refereeMatchId, commands.lifecycle)).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      expect((await send(app, admin, refereeMatchId, commands.gameStart, { expectedSeq: 1 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
-      const refereeFact = await send(app, referee, refereeMatchId, timeoutOpportunityFact, { expectedSeq: 2 });
-      expect(refereeFact.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      expect((await send(app, admin, refereeMatchId, commands.lifecycle, { expectedSeq: 2 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      expect((await send(app, admin, refereeMatchId, commands.gameStart, { expectedSeq: 3 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      const refereeFact = await send(app, referee, refereeMatchId, timeoutOpportunityFact, { expectedSeq: 4 });
+      expect(refereeFact.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
       const refereeFactBody = refereeFact.json<{ appendedEvents: Array<{ eventId: string; seqNo: number }> }>();
       const crossTarget = timeoutOpportunityCorrection(refereeFactBody.appendedEvents[0]!.eventId, refereeFactBody.appendedEvents[0]!.seqNo);
-      expect((await send(app, scorer, matchId, crossTarget, { expectedSeq: 3 })).json()).toMatchObject({ status: "REJECTED" });
+      expect((await send(app, scorer, matchId, crossTarget, { expectedSeq: 5 })).json()).toMatchObject({ status: "REJECTED" });
       expect(await state(pool, matchId)).toEqual(stable);
       await pool.query("UPDATE match_officials SET assignment_status = 'REVOKED', revoked_by_user_id = ?, revoked_at = NOW(3) WHERE id = ?", [adminUser.userId, assignmentId]);
-      expect((await send(app, scorer, matchId, correction, { expectedSeq: 3 })).statusCode).toBe(403);
+      expect((await send(app, scorer, matchId, correction, { expectedSeq: 5 })).statusCode).toBe(403);
       expect(await state(pool, matchId)).toEqual(stable);
       await pool.query("UPDATE match_officials SET assignment_status = 'ACTIVE', revoked_by_user_id = NULL, revoked_at = NULL WHERE id = ?", [assignmentId]);
-      expect((await send(app, scorer, matchId, correction, { expectedSeq: 3 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
-      expect((await send(app, referee, refereeMatchId, timeoutOpportunityCorrection(refereeFactBody.appendedEvents[0]!.eventId, 3), { expectedSeq: 3 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      expect((await send(app, scorer, matchId, correction, { expectedSeq: 5 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 6 });
+      expect((await send(app, referee, refereeMatchId, timeoutOpportunityCorrection(refereeFactBody.appendedEvents[0]!.eventId, 5), { expectedSeq: 5 })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 6 });
     } finally {
       await app.close(); await pool.end();
     }
   }, 60_000);
 });
+
+async function assertAuthoritativeLifecycleReadiness(pool: Pool, matchId: string) {
+  const [matches] = await pool.query<RowDataPacket[]>("SELECT rule_profile_id, home_team_id, away_team_id FROM matches WHERE match_id = ?", [matchId]);
+  expect(matches).toHaveLength(1);
+  expect(matches[0]).toMatchObject({ rule_profile_id: "FIBA_2024" });
+  expect(matches[0]!.home_team_id).toBeTruthy();
+  expect(matches[0]!.away_team_id).toBeTruthy();
+  const readiness = (await getReadinessForMatches(pool, [{ matchId, status: "SCHEDULED" }])).get(matchId);
+  expect(readiness?.officials.state).toBe("READY");
+  expect(readiness?.roster.state).toBe("READY");
+  expect(readiness?.lineup.state).toBe("READY");
+  expect(readiness?.authoritativeBaseline.source).toBe("EVENT_BACKED_BASELINE");
+  expect(readiness?.authoritativeBaseline.home).toMatchObject({ state: "READY", effective: true, confirmed: true });
+  expect(readiness?.authoritativeBaseline.away).toMatchObject({ state: "READY", effective: true, confirmed: true });
+}

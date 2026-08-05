@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApiApp } from "../../apps/api/src/app";
+
+beforeEach(() => {
+  vi.stubEnv("AUTH_TEST_PROVIDER", "server-owned");
+});
 
 const matchId = "11111111-1111-4111-8111-111111111111";
 const homePlayerId = "22222222-2222-4222-8222-222222222222";
@@ -175,6 +179,8 @@ function createSummaryPool(options: { matchExists?: boolean; includeRoster?: boo
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   delete process.env.AUTH_TEST_DISABLE_CSRF;
 });
 

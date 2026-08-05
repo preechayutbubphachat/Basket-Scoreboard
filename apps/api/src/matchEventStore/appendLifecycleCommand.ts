@@ -21,6 +21,7 @@ import {
   applyPeriodStarted,
   type ScoreboardProjection
 } from "./projection.js";
+import { getReadinessForMatches } from "../matchReadiness/matchReadinessService.js";
 
 type LifecycleEventType = Extract<
   MatchEventType,
@@ -150,6 +151,30 @@ async function appendLifecycleCommand(options: {
 
     if (!projection) {
       throw new Error(`Scoreboard projection not found for match ${options.command.matchId}`);
+    }
+
+    if (options.eventType === "MATCH_STARTED") {
+      let readiness;
+      try {
+        readiness = (await getReadinessForMatches(connection as unknown as Pool, [{
+          matchId: options.command.matchId,
+          status: projection.status
+        }])).get(options.command.matchId);
+      } catch {
+        readiness = null;
+      }
+
+      const authoritativeBaseline = readiness?.authoritativeBaseline;
+      const startReady = readiness?.officials.state === "READY"
+        && readiness.roster.state === "READY"
+        && readiness.lineup.state === "READY"
+        && authoritativeBaseline?.source === "EVENT_BACKED_BASELINE"
+        && authoritativeBaseline.home.effective
+        && authoritativeBaseline.away.effective;
+      if (!startReady) {
+        await connection.rollback();
+        return rejected(options.command, reasonCodes.VALIDATION_ERROR, "Authoritative FIBA_2024 roster and setup readiness is required before starting the match", currentSeq);
+      }
     }
 
     const validation = validateLifecycleCommand(options.eventType, projection);

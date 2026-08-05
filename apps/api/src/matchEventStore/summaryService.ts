@@ -7,6 +7,7 @@ import type {
   RosterStatus
 } from "@basket-scoreboard/api-contracts";
 import { getScoreboardProjectionView, listMatchEvents, type MatchEventRecord } from "./repositories.js";
+import { recoverRosterBaselineForMatch } from "../rosters/rosterBaselineRepository.js";
 
 type RosterSummaryRow = RowDataPacket & {
   roster_player_id: string;
@@ -82,12 +83,38 @@ export async function getMatchSummaryWithConnection(
   };
 }
 
-async function listSummaryRoster(connection: PoolConnection, matchId: string) {
+async function listSummaryRoster(connection: PoolConnection, matchId: string): Promise<RosterSummaryRow[]> {
   const [rows] = await connection.query<RosterSummaryRow[]>(
     "SELECT roster_player_id, match_id, team_side, team_id, player_id, display_name_snapshot, jersey_number_snapshot, roster_status, is_starter, is_captain FROM match_roster_players WHERE match_id = ? ORDER BY team_side, jersey_number_snapshot IS NULL, jersey_number_snapshot, display_name_snapshot",
     [matchId]
   );
-  return rows;
+  const recovered = await Promise.all(([
+    "HOME",
+    "AWAY"
+  ] as const).map(async (teamSide) => ({ teamSide, recovery: await recoverRosterBaselineForMatch(connection, matchId, teamSide) })));
+  const authoritativeBySide = new Map(
+    recovered
+      .filter((entry): entry is { teamSide: "HOME" | "AWAY"; recovery: NonNullable<typeof entry.recovery> } => entry.recovery !== null)
+      .map(({ teamSide, recovery }) => [teamSide, recovery.projection] as const)
+  );
+  if (authoritativeBySide.size === 0) return rows;
+
+  return ([("HOME" as const), ("AWAY" as const)]).flatMap((teamSide) => {
+    const projection = authoritativeBySide.get(teamSide);
+    if (!projection) return rows.filter((row) => row.team_side === teamSide);
+    return projection.members.map((member) => ({
+      roster_player_id: `baseline:${teamSide}:${member.playerId}`,
+      match_id: matchId,
+      team_side: teamSide,
+      team_id: member.teamId,
+      player_id: member.playerId,
+      display_name_snapshot: member.displayName,
+      jersey_number_snapshot: member.jerseyNumber,
+      roster_status: member.rosterStatus,
+      is_starter: member.isStarter,
+      is_captain: member.isCaptain
+    })) as unknown as RosterSummaryRow[];
+  });
 }
 
 function createPlayerMap(roster: RosterSummaryRow[]) {

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import { io as createSocketClient, type Socket } from "socket.io-client";
 import bcrypt from "bcryptjs";
@@ -14,6 +14,7 @@ import {
   runMigrations
 } from "../../apps/api/src/migrations";
 import { DB_INTEGRATION_TEST_TIMEOUT_MS } from "../helpers/dbIntegrationTimeout";
+import { prepareAuthoritativeLifecycleFixture } from "../helpers/authoritativeLifecycleFixture";
 import { insertAuditLog, listAuditLogsForMatch } from "../../apps/api/src/matchEventStore/auditRepository";
 import { appendTeamFoulAddedCommand } from "../../apps/api/src/matchEventStore/appendFoulCommand";
 import { appendTimeoutOpportunityFactCommand, type TimeoutOpportunityFailureSeam } from "../../apps/api/src/matchEventStore/appendTimeoutOpportunityFactCommand";
@@ -23,6 +24,9 @@ import { getMatchSync } from "../../apps/api/src/matchEventStore/syncService";
 import { correctionEventTypes } from "../../packages/event-model/src";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
+beforeEach(() => {
+  vi.stubEnv("AUTH_TEST_PROVIDER", "server-owned");
+});
 
 function onceSocketEvent<T>(socket: Socket, eventName: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -35,7 +39,9 @@ const adminHeaders = {
   "x-dev-user-id": "00000000-0000-4000-8000-0000000000aa"
 };
 
-afterAll(() => {
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   delete process.env.AUTH_TEST_DISABLE_CSRF;
 });
 
@@ -1261,10 +1267,11 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
     const createStartedMatch = async () => {
       const createdResponse = await app.inject({ method: "POST", url: "/api/v1/matches", headers: adminHeaders, payload: { matchCode: `T015-${randomUUID()}`, ruleProfileId: "FIBA_2024" } });
       const created = createdResponse.json<{ matchId: string }>();
-      const started = await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/lifecycle/start-match`, headers: adminHeaders, payload: lifecycleStartCommand(created.matchId) });
-      expect(started.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      const clockStarted = await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(created.matchId, 1) });
-      expect(clockStarted.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
+      await prepareAuthoritativeLifecycleFixture(pool, created.matchId);
+      const started = await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/lifecycle/start-match`, headers: adminHeaders, payload: lifecycleStartCommand(created.matchId, 2) });
+      expect(started.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      const clockStarted = await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(created.matchId, 3) });
+      expect(clockStarted.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
       return created.matchId;
     };
     try {
@@ -1284,7 +1291,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       const seams: TimeoutOpportunityFailureSeam[] = ["afterEvent", "afterHead", "afterProjection", "afterReceipt", "afterAudit", "beforeCommit"];
       for (const seam of seams) {
         const matchId = await createStartedMatch();
-        const command = task015Command(matchId, 2);
+        const command = task015Command(matchId, 4);
         const [baselineProjectionRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [matchId]);
         const baselineProjection = typeof baselineProjectionRows[0]!.projection_data === "string" ? JSON.parse(baselineProjectionRows[0]!.projection_data) : baselineProjectionRows[0]!.projection_data;
         await expect(appendTimeoutOpportunityFactCommand({
@@ -1298,16 +1305,16 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
               const [transactionRows] = await transactionalConnection.query<RowDataPacket[]>("SELECT CONNECTION_ID() AS connection_id");
               const [observerRows] = await observerConnection.query<RowDataPacket[]>("SELECT CONNECTION_ID() AS connection_id");
               expect(Number(observerRows[0]!.connection_id)).not.toBe(Number(transactionRows[0]!.connection_id));
-              expect(await taskCommandState(matchId, command.commandId, observerConnection)).toEqual({ eventCount: 0, headSeq: 2, projectionSeq: 2, receiptCount: 0, auditCount: 0 });
+              expect(await taskCommandState(matchId, command.commandId, observerConnection)).toEqual({ eventCount: 0, headSeq: 4, projectionSeq: 4, receiptCount: 0, auditCount: 0 });
             } finally {
               observerConnection.release();
             }
           }
         })).rejects.toThrow(`INJECTED_TIMEOUT_OPPORTUNITY_FAILURE:${seam}`);
-        expect(await taskCommandState(matchId, command.commandId)).toEqual({ eventCount: 0, headSeq: 2, projectionSeq: 2, receiptCount: 0, auditCount: 0 });
+        expect(await taskCommandState(matchId, command.commandId)).toEqual({ eventCount: 0, headSeq: 4, projectionSeq: 4, receiptCount: 0, auditCount: 0 });
         const retry = await appendTimeoutOpportunityFactCommand({ pool, command, user });
         expect(retry.status).toBe("ACCEPTED");
-        expect(await taskCommandState(matchId, command.commandId)).toEqual({ eventCount: 1, headSeq: 3, projectionSeq: 3, receiptCount: 1, auditCount: 1 });
+        expect(await taskCommandState(matchId, command.commandId)).toEqual({ eventCount: 1, headSeq: 5, projectionSeq: 5, receiptCount: 1, auditCount: 1 });
         const [exactRows] = await pool.query<RowDataPacket[]>(
           "SELECT e.event_id, e.seq_no, e.event_type, e.payload AS event_payload, e.command_id, e.expected_seq, e.correlation_id, e.causation_id, d.command_type, d.request_hash, d.status AS receipt_status, d.result, p.projection_data, a.action, a.actor_user_id, a.actor_role, a.device_id, a.old_value, a.new_value, a.reason AS audit_reason, a.correlation_id AS audit_correlation_id, a.causation_id AS audit_causation_id, a.event_seq AS audit_event_seq, a.created_at AS audit_created_at FROM match_events e JOIN command_deduplication d ON d.match_id = e.match_id AND d.command_id = e.command_id JOIN match_projections p ON p.match_id = e.match_id AND p.projection_type = 'scoreboard' JOIN audit_logs a ON a.entity_id = e.match_id AND a.action = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED' AND a.event_seq = e.seq_no WHERE e.match_id = ? AND e.command_id = ?",
           [matchId, command.commandId]
@@ -1319,8 +1326,8 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         const storedProjection = typeof exact.projection_data === "string" ? JSON.parse(exact.projection_data) : exact.projection_data;
         const auditOldValue = typeof exact.old_value === "string" ? JSON.parse(exact.old_value) : exact.old_value;
         const auditNewValue = typeof exact.new_value === "string" ? JSON.parse(exact.new_value) : exact.new_value;
-        expect(exact).toMatchObject({ seq_no: 3, event_type: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", command_id: command.commandId, expected_seq: 2, correlation_id: command.correlationId, causation_id: null, command_type: "timeout-opportunity/fact", request_hash: createHash("sha256").update(JSON.stringify(command)).digest("hex"), receipt_status: "ACCEPTED", action: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", actor_user_id: user.userId, actor_role: user.role, device_id: user.deviceId, audit_reason: null, audit_correlation_id: command.correlationId, audit_event_seq: 3 });
-        expect(eventPayload).toEqual({ factType: "DEAD_BALL_CONFIRMED", sourceEventId: exact.event_id, sourceSeq: 3, occurredAt: command.clientTimestamp, periodNumber: 1, gameClockRemainingMs: 600000, gameClockRunning: true, matchStatus: "LIVE", ruleProfileId: "FIBA_2024" });
+        expect(exact).toMatchObject({ seq_no: 5, event_type: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", command_id: command.commandId, expected_seq: 4, correlation_id: command.correlationId, causation_id: null, command_type: "timeout-opportunity/fact", request_hash: createHash("sha256").update(JSON.stringify(command)).digest("hex"), receipt_status: "ACCEPTED", action: "TIMEOUT_OPPORTUNITY_FACT_RECORDED", actor_user_id: user.userId, actor_role: user.role, device_id: user.deviceId, audit_reason: null, audit_correlation_id: command.correlationId, audit_event_seq: 5 });
+        expect(eventPayload).toEqual({ factType: "DEAD_BALL_CONFIRMED", sourceEventId: exact.event_id, sourceSeq: 5, occurredAt: command.clientTimestamp, periodNumber: 1, gameClockRemainingMs: 600000, gameClockRunning: true, matchStatus: "LIVE", ruleProfileId: "FIBA_2024" });
         expect(storedResult).toEqual(retry);
         expect(storedProjection).toEqual(retry.projection);
         expect(auditOldValue).toEqual(baselineProjection.timeoutOpportunity);
@@ -1342,29 +1349,29 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         await barrier;
       };
       const concurrentResults = await Promise.all([
-        appendTimeoutOpportunityFactCommand({ pool, command: task015Command(concurrentMatchId, 2), user, beforeStreamLockBarrier }),
-        appendTimeoutOpportunityFactCommand({ pool, command: task015Command(concurrentMatchId, 2), user, beforeStreamLockBarrier })
+        appendTimeoutOpportunityFactCommand({ pool, command: task015Command(concurrentMatchId, 4), user, beforeStreamLockBarrier }),
+        appendTimeoutOpportunityFactCommand({ pool, command: task015Command(concurrentMatchId, 4), user, beforeStreamLockBarrier })
       ]);
       expect(barrierArrivals).toBe(2);
       expect(connectionIds.size).toBe(2);
       expect(concurrentResults.map((result) => result.status).sort()).toEqual(["ACCEPTED", "SYNC_REQUIRED"]);
       const [concurrentEvents] = await pool.query<RowDataPacket[]>("SELECT seq_no FROM match_events WHERE match_id = ? AND event_type = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED'", [concurrentMatchId]);
-      expect(concurrentEvents.map((row) => Number(row.seq_no))).toEqual([3]);
+      expect(concurrentEvents.map((row) => Number(row.seq_no))).toEqual([5]);
 
       const restartedMatchId = await createStartedMatch();
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/score/add`, headers: adminHeaders, payload: scoreCommand(restartedMatchId, 2) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
-      const [goalRows] = await pool.query<RowDataPacket[]>("SELECT event_id FROM match_events WHERE match_id = ? AND seq_no = 3 AND event_type = 'SCORE_ADDED'", [restartedMatchId]);
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/clock/game/stop`, headers: adminHeaders, payload: clockCommand(restartedMatchId, 3) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(restartedMatchId, 4) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/score/add`, headers: adminHeaders, payload: scoreCommand(restartedMatchId, 4) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
+      const [goalRows] = await pool.query<RowDataPacket[]>("SELECT event_id FROM match_events WHERE match_id = ? AND seq_no = 5 AND event_type = 'SCORE_ADDED'", [restartedMatchId]);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/clock/game/stop`, headers: adminHeaders, payload: clockCommand(restartedMatchId, 5) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 6 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${restartedMatchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(restartedMatchId, 6) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 7 });
       const restartedGoalAttempt = await appendTimeoutOpportunityFactCommand({
         pool,
         user,
         command: {
-          commandId: randomUUID(), matchId: restartedMatchId, expectedSeq: 5, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(),
-          payload: { factType: "REFEREE_INTERRUPTION", referencedGoalEventId: goalRows[0]!.event_id, referencedGoalSeq: 3 }
+          commandId: randomUUID(), matchId: restartedMatchId, expectedSeq: 7, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(),
+          payload: { factType: "REFEREE_INTERRUPTION", referencedGoalEventId: goalRows[0]!.event_id, referencedGoalSeq: 5 }
         }
       });
-      expect(restartedGoalAttempt).toMatchObject({ status: "REJECTED", currentSeq: 5, appendedEvents: [] });
+      expect(restartedGoalAttempt).toMatchObject({ status: "REJECTED", currentSeq: 7, appendedEvents: [] });
       const [restartFactRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS count FROM match_events WHERE match_id = ? AND event_type = 'TIMEOUT_OPPORTUNITY_FACT_RECORDED'", [restartedMatchId]);
       expect(Number(restartFactRows[0]!.count)).toBe(0);
 
@@ -1373,23 +1380,23 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       const [mountedBaselineRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [mountedMatchId]);
       const mountedBaselineProjection = typeof mountedBaselineRows[0]!.projection_data === "string" ? JSON.parse(mountedBaselineRows[0]!.projection_data) : mountedBaselineRows[0]!.projection_data;
       const mountedBaselineTimeouts = structuredClone(mountedBaselineProjection.timeouts);
-      const mountedFact = task015Command(mountedMatchId, 2);
+      const mountedFact = task015Command(mountedMatchId, 4);
       const acceptedFact = await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: scorerHeaders(mountedMatchId), payload: mountedFact });
       expect(acceptedFact.statusCode, acceptedFact.body).toBe(200);
       const factBody = acceptedFact.json<{ status: string; appendedEvents: Array<{ eventId: string; seqNo: number }> }>();
       expect(factBody.status).toBe("ACCEPTED");
-      const correction = { commandId: randomUUID(), matchId: mountedMatchId, expectedSeq: 3, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(), payload: { targetEventId: factBody.appendedEvents[0]!.eventId, targetSeq: factBody.appendedEvents[0]!.seqNo, reason: "Verified table correction" } };
+      const correction = { commandId: randomUUID(), matchId: mountedMatchId, expectedSeq: 5, correlationId: randomUUID(), clientTimestamp: new Date().toISOString(), payload: { targetEventId: factBody.appendedEvents[0]!.eventId, targetSeq: factBody.appendedEvents[0]!.seqNo, reason: "Verified table correction" } };
       const acceptedCorrection = await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/correct`, headers: scorerHeaders(mountedMatchId), payload: correction });
-      expect(acceptedCorrection.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      expect(acceptedCorrection.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 6 });
       const correctionRetry = await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/correct`, headers: scorerHeaders(mountedMatchId), payload: correction });
-      expect(correctionRetry.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 4 });
+      expect(correctionRetry.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 6 });
       const correctionCollision = await app.inject({
         method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/correct`, headers: scorerHeaders(mountedMatchId),
         payload: { ...correction, payload: { ...correction.payload, reason: "Changed collision payload" } }
       });
-      expect(correctionCollision.json()).toMatchObject({ status: "REJECTED", currentSeq: 4 });
+      expect(correctionCollision.json()).toMatchObject({ status: "REJECTED", currentSeq: 6 });
       const [causalRows] = await pool.query<RowDataPacket[]>(
-        "SELECT event_id, event_type, causation_id, payload FROM match_events WHERE match_id = ? AND seq_no IN (3, 4) ORDER BY seq_no",
+        "SELECT event_id, event_type, causation_id, payload FROM match_events WHERE match_id = ? AND seq_no IN (5, 6) ORDER BY seq_no",
         [mountedMatchId]
       );
       expect(causalRows[0]!.causation_id).toBeNull();
@@ -1397,7 +1404,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       const correctionPayload = typeof causalRows[1]!.payload === "string" ? JSON.parse(causalRows[1]!.payload) : causalRows[1]!.payload;
       expect(correctionPayload).toMatchObject({
         targetEventId: causalRows[0]!.event_id,
-        targetSeq: 3,
+        targetSeq: 5,
         reason: "Verified table correction",
         actorUserId: user.userId,
         actorRole: "SCORER",
@@ -1417,13 +1424,13 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         "SELECT (SELECT COUNT(*) FROM match_events WHERE match_id = ?) AS event_count, (SELECT COUNT(*) FROM command_deduplication WHERE match_id = ?) AS receipt_count, (SELECT COUNT(*) FROM audit_logs WHERE entity_id = ?) AS audit_count",
         [mountedMatchId, mountedMatchId, mountedMatchId]
       );
-      expect(collisionCounts[0]).toMatchObject({ event_count: 4, receipt_count: 4, audit_count: 4 });
+      expect(collisionCounts[0]).toMatchObject({ event_count: 6, receipt_count: 4, audit_count: 4 });
       const [mountedFinalRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [mountedMatchId]);
       const mountedFinalProjection = typeof mountedFinalRows[0]!.projection_data === "string" ? JSON.parse(mountedFinalRows[0]!.projection_data) : mountedFinalRows[0]!.projection_data;
       expect(mountedFinalProjection.timeouts).toEqual(mountedBaselineTimeouts);
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: viewerHeaders(mountedMatchId), payload: task015Command(mountedMatchId, 4) })).statusCode).toBe(403);
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, payload: task015Command(mountedMatchId, 4) })).statusCode).toBe(401);
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: scorerHeaders(randomUUID()), payload: task015Command(mountedMatchId, 4) })).statusCode).toBe(403);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: viewerHeaders(mountedMatchId), payload: task015Command(mountedMatchId, 6) })).statusCode).toBe(403);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, payload: task015Command(mountedMatchId, 6) })).statusCode).toBe(401);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${mountedMatchId}/commands/timeout-opportunity/fact`, headers: scorerHeaders(randomUUID()), payload: task015Command(mountedMatchId, 6) })).statusCode).toBe(403);
     } finally {
       await app.close();
       await pool.end();
@@ -1439,19 +1446,20 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
         headers: adminHeaders,
         payload: { matchCode: `T015-IDENTITY-${randomUUID()}`, ruleProfileId: "FIBA_2024" }
       })).json<{ matchId: string }>();
+      await prepareAuthoritativeLifecycleFixture(pool, created.matchId);
       const [baselineRows] = await pool.query<RowDataPacket[]>("SELECT projection_data FROM match_projections WHERE match_id = ? AND projection_type = 'scoreboard'", [created.matchId]);
       const baselineProjection = typeof baselineRows[0]!.projection_data === "string" ? JSON.parse(baselineRows[0]!.projection_data) : baselineRows[0]!.projection_data;
       const baselineTimeouts = structuredClone(baselineProjection.timeouts);
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/lifecycle/start-match`, headers: adminHeaders, payload: lifecycleStartCommand(created.matchId) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(created.matchId, 1) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/score/add`, headers: adminHeaders, payload: scoreCommand(created.matchId, 2) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
-      const request = correctionRequestCommand(created.matchId, 3, 3);
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/corrections/request`, headers: adminHeaders, payload: request })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/lifecycle/start-match`, headers: adminHeaders, payload: lifecycleStartCommand(created.matchId, 2) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/clock/game/start`, headers: adminHeaders, payload: clockCommand(created.matchId, 3) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/score/add`, headers: adminHeaders, payload: scoreCommand(created.matchId, 4) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
+      const request = correctionRequestCommand(created.matchId, 5, 5);
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${created.matchId}/commands/corrections/request`, headers: adminHeaders, payload: request })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 6 });
       const applied = (await app.inject({
         method: "POST",
         url: `/api/v1/matches/${created.matchId}/commands/corrections/apply-score`,
         headers: adminHeaders,
-        payload: applyScoreCorrectionCommand(created.matchId, 4, 4, 3)
+        payload: applyScoreCorrectionCommand(created.matchId, 6, 6, 5)
       })).json<{ status: string; projection: { timeoutOpportunity: { sourceEventId: string | null } } }>();
       expect(applied.status).toBe("ACCEPTED");
 
@@ -1467,15 +1475,15 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       } finally {
         connection.release();
       }
-      const replacement = events.find((event) => event.seqNo === 6 && event.eventType === "SCORE_ADDED");
+      const replacement = events.find((event) => event.seqNo === 8 && event.eventType === "SCORE_ADDED");
       expect(replacement).toBeDefined();
       const fullReplay = rebuildTimeoutOpportunityProjection(created.matchId, events);
-      const beforeCorrectionSnapshot = rebuildTimeoutOpportunityProjection(created.matchId, events.filter((event) => event.seqNo <= 3));
+      const beforeCorrectionSnapshot = rebuildTimeoutOpportunityProjection(created.matchId, events.filter((event) => event.seqNo <= 5));
       const snapshotTail = rebuildTimeoutOpportunityProjection(created.matchId, events, beforeCorrectionSnapshot);
-      const protectedSync = await getMatchSync({ pool, matchId: created.matchId, lastEventSeq: 3 });
+      const protectedSync = await getMatchSync({ pool, matchId: created.matchId, lastEventSeq: 5 });
       const mountedSyncResponse = await app.inject({
         method: "GET",
-        url: `/api/v1/matches/${created.matchId}/sync?lastEventSeq=3`,
+        url: `/api/v1/matches/${created.matchId}/sync?lastEventSeq=5`,
         headers: adminHeaders
       });
       expect(mountedSyncResponse.statusCode).toBe(200);
@@ -1495,7 +1503,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       expect(liveProjection.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
       expect(snapshotTail.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
       expect(snapshotTail.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
-      expect(mountedSync.missedEvents.map((event) => event.seqNo)).toEqual([4, 5, 6, 7]);
+      expect(mountedSync.missedEvents.map((event) => event.seqNo)).toEqual([6, 7, 8, 9]);
 
       const [forbiddenRows] = await pool.query<RowDataPacket[]>(
         "SELECT event_type FROM match_events WHERE match_id = ? AND event_type IN ('TIMEOUT_GRANTED', 'TIMEOUT_ENDED', 'TIMEOUT_CORRECTED', 'TEAM_TIMEOUT_GRANTED', 'TEAM_TIMEOUT_ENDED', 'TEAM_TIMEOUT_CORRECTED')",
@@ -1536,7 +1544,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
           operatorSocket.connect();
           await connected;
           const operatorSnapshotPromise = onceSocketEvent<{ projection: typeof fullReplay; missedEvents: Array<{ seqNo: number }> }>(operatorSocket, "match:operator-snapshot");
-          operatorSocket.emit("match:join", { matchId: created.matchId, lastSeq: 3, view: "OPERATOR" });
+          operatorSocket.emit("match:join", { matchId: created.matchId, lastSeq: 5, view: "OPERATOR" });
           operatorSnapshots.push(await operatorSnapshotPromise);
           operatorSocket.disconnect();
         }
@@ -1546,7 +1554,7 @@ describeDb("match event store MVP", { timeout: DB_INTEGRATION_TEST_TIMEOUT_MS },
       for (const operatorSnapshot of operatorSnapshots) {
         expect(operatorSnapshot.projection.timeoutOpportunity).toEqual(fullReplay.timeoutOpportunity);
         expect(operatorSnapshot.projection.timeoutOpportunityHistory).toEqual(fullReplay.timeoutOpportunityHistory);
-        expect(operatorSnapshot.missedEvents.map((event) => event.seqNo)).toEqual([4, 5, 6, 7]);
+        expect(operatorSnapshot.missedEvents.map((event) => event.seqNo)).toEqual([6, 7, 8, 9]);
       }
       const socket = createSocketClient(address, { transports: ["polling"], forceNew: true, reconnection: false, autoConnect: false });
       try {

@@ -65,6 +65,22 @@ type ApiSuccess<T> = {
   data: T;
 };
 
+export type RosterBaselineView = {
+  teamSide: "HOME" | "AWAY";
+  version: { eventSeq: number; eventId: string; canonicalPayloadHash: string } | null;
+  readiness: { state: string; effective: boolean; starterCount: number; requiredStarterCount: number | null };
+  integrityIssues: string[];
+  members: Array<{ displayName: string; jerseyNumber: string | null; isStarter: boolean; isCaptain: boolean }>;
+};
+
+export type RosterBaselineImportResult = {
+  status: "ACCEPTED" | "DUPLICATE_ACCEPTED" | "REJECTED" | "SYNC_REQUIRED";
+  currentSeq: number;
+  reasonCode: string | null;
+  message: string | null;
+  projection?: RosterBaselineView;
+};
+
 type ApiErrorEnvelope = {
   error?:
     | string
@@ -492,6 +508,19 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
         `/matches/${encodeURIComponent(matchId)}/lineup`
       );
       return data;
+    },
+    async getRosterBaseline(matchId: string, teamSide: "HOME" | "AWAY") {
+      return request<RosterBaselineView>(`/matches/${encodeURIComponent(matchId)}/roster-baseline/${teamSide}`);
+    },
+    async importRosterBaseline(matchId: string, teamSide: "HOME" | "AWAY", expectedSeq: number) {
+      return request<RosterBaselineImportResult>(`/matches/${encodeURIComponent(matchId)}/roster-baseline/import`, {
+        method: "POST",
+        headers: {
+          "x-expected-seq": String(expectedSeq),
+          "idempotency-key": crypto.randomUUID()
+        },
+        body: JSON.stringify({ teamSide })
+      }, false, { acceptRawSuccess: true });
     },
     async selectLineupStarter(matchId: string, teamSide: "HOME" | "AWAY", playerId: string, reason: string | null = null) {
       return lineupMutation(matchId, `/lineup/${teamSide}/starters/${encodeURIComponent(playerId)}`, reason);

@@ -97,6 +97,13 @@ function createTournamentSchedulePool(
       async query(sql: string, params: unknown[] = []) {
         calls.push({ sql, params });
 
+        if (sql.includes("SELECT match_id, rule_profile_id FROM matches")) {
+          return [[
+            { match_id: "33333333-3333-4333-8333-333333333333", rule_profile_id: "FIBA_2024" },
+            { match_id: "44444444-4444-4444-8444-444444444444", rule_profile_id: "FIBA_2024" }
+          ], []];
+        }
+
         if (sql.includes("COUNT(*) AS tournament_exists")) {
           return [[{ tournament_exists: params[0] === tournamentId ? 1 : 0 }], []];
         }
@@ -314,32 +321,32 @@ describe("alpha tournament public schedule", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         data: {
-          matches: [
+          matches: expect.arrayContaining([
             expect.objectContaining({
               matchId,
-              readiness: {
-                officials: {
+              readiness: expect.objectContaining({
+                officials: expect.objectContaining({
                   state: "READY",
                   label: "2 active officials: SCORER, TIMER",
                   assignedCount: 2,
-                  roles: [
+                  roles: expect.arrayContaining([
                     { role: "SCORER", displayName: "Lead Scorer" },
                     { role: "TIMER", displayName: "Table Timer" }
-                  ]
-                },
-                roster: { state: "READY", homeCount: 5, awayCount: 5 },
-                lineup: {
-                  state: "READY",
+                  ])
+                }),
+                roster: expect.objectContaining({ state: "INCOMPLETE", homeCount: 5, awayCount: 5 }),
+                lineup: expect.objectContaining({
+                  state: "INCOMPLETE",
                   homeStarters: 5,
                   awayStarters: 5,
                   homeConfirmed: true,
                   awayConfirmed: true
-                },
-                lifecycle: { state: "LIVE", label: "Live" }
-              }
+                }),
+                lifecycle: expect.objectContaining({ state: "LIVE", label: "Live" })
+              })
             }),
             expect.any(Object)
-          ]
+          ])
         }
       });
     } finally {

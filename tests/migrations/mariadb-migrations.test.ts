@@ -30,7 +30,8 @@ describe("MariaDB migration foundation", () => {
       "013_create_display_screen_tables.sql",
       "014_allow_multi_event_commands.sql",
       "015_create_match_head_coach_designations.sql",
-      "016_create_match_assistant_coach_designations.sql"
+      "016_create_match_assistant_coach_designations.sql",
+      "017_create_match_roster_baseline_snapshots.sql"
     ]);
   });
 
@@ -51,6 +52,7 @@ describe("MariaDB migration foundation", () => {
       "match_officials",
       "match_roster_players",
       "match_roster_confirmations",
+      "match_roster_baseline_snapshots",
       "venues",
       "courts",
       "tournament_display_themes",
@@ -301,6 +303,19 @@ describe("MariaDB migration foundation", () => {
     expect(migrationSql).toContain("unique key uq_match_assistant_coach_designation (match_id, team_side)");
     expect(migrationSql).toContain("foreign key (match_id) references matches");
     expect(migrationSql).toContain("foreign key (designated_by) references users");
+    expect(migrationSql).not.toContain(["update", "match_events"].join(" "));
+    expect(migrationSql).not.toContain(["delete", "from", "match_events"].join(" "));
+  });
+
+  it("adds an append-only derived roster baseline snapshot without a competing roster source", () => {
+    const migrationSql = compact(readMigration("017_create_match_roster_baseline_snapshots.sql"));
+    expect(migrationSql).toContain("create table if not exists match_roster_baseline_snapshots");
+    expect(migrationSql).toContain("event_seq bigint unsigned not null");
+    expect(migrationSql).toContain("event_id char(36) not null");
+    expect(migrationSql).toContain("canonical_payload_hash char(64) not null");
+    expect(migrationSql).toContain("projection_data json not null");
+    expect(migrationSql).toContain("unique key uq_match_roster_baseline_snapshots_match_side_seq");
+    expect(migrationSql).toContain("foreign key (match_id) references matches");
     expect(migrationSql).not.toContain(["update", "match_events"].join(" "));
     expect(migrationSql).not.toContain(["delete", "from", "match_events"].join(" "));
   });

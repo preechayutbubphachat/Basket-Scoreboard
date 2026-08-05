@@ -6,6 +6,7 @@ import type {
   TournamentScheduleMatch,
   TournamentLiveDashboardResponse,
   TournamentScheduleResponse,
+  PublicMatchReadiness,
   TournamentSummary
 } from "@basket-scoreboard/api-contracts";
 import { parseJsonField } from "../matchEventStore/json.js";
@@ -141,7 +142,7 @@ export async function getTournamentSchedule(
   return {
     tournament,
     matches: options.publicOnly
-      ? matches
+      ? await decoratePublicScheduleRows(pool, matches)
       : await decorateProtectedScheduleRows(pool, matches),
     generatedAt: new Date().toISOString()
   };
@@ -215,6 +216,31 @@ async function decorateProtectedScheduleRows(
       decorated.readiness = readiness;
     }
     return decorated;
+  });
+}
+
+async function decoratePublicScheduleRows(
+  pool: Pool,
+  matches: TournamentScheduleMatch[]
+): Promise<TournamentScheduleMatch[]> {
+  const readinessByMatchId = await getReadinessForMatches(pool, matches.map((match) => ({
+    matchId: match.matchId,
+    status: match.status
+  })));
+  return matches.map((match) => {
+    const readiness = readinessByMatchId.get(match.matchId);
+    if (!readiness?.authoritativeBaseline) return match;
+    const publicReadiness: PublicMatchReadiness = {
+      home: {
+        status: readiness.authoritativeBaseline.home.effective ? "READY" : "NOT_READY",
+        initialized: readiness.authoritativeBaseline.home.initialized
+      },
+      away: {
+        status: readiness.authoritativeBaseline.away.effective ? "READY" : "NOT_READY",
+        initialized: readiness.authoritativeBaseline.away.initialized
+      }
+    };
+    return { ...match, publicReadiness };
   });
 }
 

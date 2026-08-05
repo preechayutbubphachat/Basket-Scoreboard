@@ -2592,6 +2592,24 @@ describe("roster control UI policy", () => {
     expect(getRosterPlayerRoleLabels(matchRosters.rosters.HOME[0])).toEqual(["STARTER", "CAPTAIN"]);
     expect(getRosterPlayerRoleLabels(matchRosters.rosters.HOME[1])).toEqual(["BENCH"]);
     expect(buildRosterReadinessLabel(matchRosters.readiness!.home)).toBe("NEEDS STARTERS");
+    const legacyReady = {
+      ...matchRosters.readiness!.home,
+      playerCount: 5,
+      starterCount: 5,
+      captainSet: true,
+      confirmed: true,
+      ready: false
+    };
+    expect(buildRosterReadinessLabel(legacyReady)).toBe("NOT EVALUATED");
+    expect(buildRosterSetupSummary({
+      ...matchRosters,
+      readiness: { home: legacyReady, away: legacyReady }
+    }).state).toBe("INCOMPLETE");
+    expect(buildLineupSetupSummary({
+      ...matchLineup,
+      home: { ...matchLineup.home, readiness: { ...matchLineup.home.readiness, starterCount: 5, confirmed: true, ready: true } },
+      away: { ...matchLineup.away, readiness: { ...matchLineup.away.readiness, starterCount: 5, confirmed: true, ready: true } }
+    }).state).toBe("INCOMPLETE");
     expect(buildRosterSetupSummary(matchRosters)).toEqual({
       state: "INCOMPLETE",
       homeCount: 2,
@@ -4466,14 +4484,24 @@ describe("match lifecycle control UI policy", () => {
     });
   });
 
-  test("enables only phase-safe lifecycle actions", () => {
+  test("enables only phase-safe lifecycle actions after authoritative setup readiness", () => {
     expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "READY" })).toMatchObject({
-      startMatch: { enabled: true },
+      startMatch: { enabled: false },
       endPeriod: { enabled: false },
       startNextPeriod: { enabled: false },
       startOvertime: { enabled: false },
       finishMatch: { enabled: false }
     });
+
+    expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "READY" }, {
+      ...incompleteReadiness,
+      lineup: { ...incompleteReadiness.lineup, state: "READY", awayConfirmed: true },
+      authoritativeBaseline: {
+        source: "EVENT_BACKED_BASELINE",
+        home: { initialized: true, state: "READY", effective: true, rosterCount: 8, starterCount: 5, confirmed: true, blockingCode: null },
+        away: { initialized: true, state: "READY", effective: true, rosterCount: 8, starterCount: 5, confirmed: true, blockingCode: null }
+      }
+    })).toMatchObject({ startMatch: { enabled: true } });
 
     expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "PERIOD_BREAK", periodNumber: 4, homeScore: 80, awayScore: 80 }))
       .toMatchObject({
@@ -4523,10 +4551,10 @@ describe("match lifecycle control UI policy", () => {
     });
   });
 
-  test("builds lifecycle readiness context without hard blocking start controls", () => {
+  test("hard blocks lifecycle start when readiness is incomplete", () => {
     expect(buildLifecycleReadinessContext(incompleteReadiness)).toEqual({
       warning: "Setup readiness is incomplete. Review roster, lineup, and official assignments before starting.",
-      hardBlock: false,
+      hardBlock: true,
       items: [
         { label: "Officials", state: "READY", detail: "2 active officials" },
         { label: "Roster", state: "READY", detail: "HOME 7 / AWAY 8" },
@@ -4536,14 +4564,14 @@ describe("match lifecycle control UI policy", () => {
     });
   });
 
-  test("builds advisory match start checklist without hard blocking start controls", () => {
+  test("hard blocks match start when the checklist is incomplete", () => {
     expect(buildMatchStartChecklist(scoreboardProjection, incompleteReadiness)).toEqual({
       state: "WARNING",
-      readyCount: 4,
-      warningCount: 1,
+      readyCount: 3,
+      warningCount: 2,
       missingCount: 0,
-      advisoryWarning: "Setup checklist has warnings. This Alpha checklist is advisory and does not enforce official start rules.",
-      hardBlock: false,
+      advisoryWarning: "Setup checklist is incomplete. Match start is blocked until authoritative readiness is READY.",
+      hardBlock: true,
       items: [
         {
           key: "officials",
@@ -4556,8 +4584,8 @@ describe("match lifecycle control UI policy", () => {
         {
           key: "roster",
           label: "Roster",
-          status: "READY",
-          message: "HOME 7 / AWAY 8",
+          status: "WARNING",
+          message: "Event-backed FIBA_2024 roster baseline is missing or not READY.",
           actionLabel: "Setup Roster",
           actionUrl: `/admin/matches/${scoreboardProjection.matchId}/rosters`
         },
@@ -4588,7 +4616,7 @@ describe("match lifecycle control UI policy", () => {
       ]
     });
 
-    expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "READY" }).startMatch.enabled).toBe(true);
+    expect(getLifecycleActionPlan({ ...scoreboardProjection, status: "READY" }).startMatch.enabled).toBe(false);
   });
 });
 

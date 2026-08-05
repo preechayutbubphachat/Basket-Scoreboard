@@ -118,6 +118,7 @@ export function registerMatchRoutes(
         | "match.audit.read",
       getMatchId: (request: FastifyRequest) => string
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
+    requireProtectedRosterAccess: (getMatchId: (request: FastifyRequest) => string) => (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
     requireCsrf: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
   },
   realtime: ProjectionRealtime
@@ -277,7 +278,7 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
-        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+        auth.requireProtectedRosterAccess((request) => (request.params as { matchId: string }).matchId)
       ]
     },
     async (request) => {
@@ -296,7 +297,7 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
-        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+        auth.requireProtectedRosterAccess((request) => (request.params as { matchId: string }).matchId)
       ]
     },
     async (request, reply) => {
@@ -315,7 +316,7 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
-        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+        auth.requireProtectedRosterAccess((request) => (request.params as { matchId: string }).matchId)
       ]
     },
     async (request, reply) => {
@@ -366,7 +367,7 @@ export function registerMatchRoutes(
     {
       preHandler: [
         auth.requireAuth,
-        auth.requireMatchPermission("match.read", (request) => (request.params as { matchId: string }).matchId)
+        auth.requireProtectedRosterAccess((request) => (request.params as { matchId: string }).matchId)
       ]
     },
     async (request) => {

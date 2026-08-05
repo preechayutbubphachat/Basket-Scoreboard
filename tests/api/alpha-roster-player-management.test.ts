@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApiApp } from "../../apps/api/src/app";
 import {
   createInitialScoreboardProjection,
   type ScoreboardProjection
 } from "../../apps/api/src/matchEventStore/projection";
+
+beforeEach(() => {
+  vi.stubEnv("AUTH_TEST_PROVIDER", "server-owned");
+});
 
 const matchId = "11111111-1111-4111-8111-111111111111";
 const homeTeamId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -194,7 +198,18 @@ function createRosterPool(options: {
       }
 
       if (sql.includes("SELECT projection_data, last_event_seq FROM match_projections")) {
+        if (sql.includes("projection_type = ?")) return [[], []];
         return [[{ projection_data: JSON.stringify(projection), last_event_seq: currentSeq }], []];
+      }
+
+      if (sql.includes("JSON_EXTRACT(payload")) {
+        return [events
+          .filter((event) => event.eventType === "MATCH_ROSTER_BASELINE_IMPORTED")
+          .map((event) => ({ event_id: event.eventId })), []];
+      }
+
+      if (sql.includes("FROM match_events")) {
+        return [events, []];
       }
 
       if (sql.includes("INSERT INTO match_events")) {
@@ -295,6 +310,8 @@ function seedSupportedOnCourtFive(
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   delete process.env.AUTH_TEST_DISABLE_CSRF;
 });
 

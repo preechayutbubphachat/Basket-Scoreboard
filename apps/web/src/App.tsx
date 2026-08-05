@@ -47,7 +47,13 @@ import { PublicLiveScoreboard } from "./components/PublicLiveScoreboard";
 import { UiCommandSafetyPanel, UiConnectionStatus } from "./components/ui";
 import "./styles/authenticated-dashboard.css";
 import "./styles/score-correction-workspace.css";
-import { ApiClientError, createClientCommandId, getDefaultApiBaseUrl, type AssignmentRecord } from "./lib/apiClient";
+import { ApiClientError, createClientCommandId, getDefaultApiBaseUrl, type AssignmentRecord, type RosterBaselineView } from "./lib/apiClient";
+import {
+  applyMatchCommandSequenceAction,
+  createMatchCommandSequenceState,
+  type MatchCommandSequenceAction,
+  type MatchCommandSequenceState
+} from "./lib/matchCommandSequence";
 import { shouldBootstrapAuthForPath } from "./lib/authRoutePolicy";
 import {
   canManageAssignments,
@@ -6823,6 +6829,97 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
   );
 }
 
+function RosterBaselineReadinessPage({ matchId }: { matchId: string }) {
+  const { api, currentUser } = useCurrentUser();
+  const [baseline, setBaseline] = useState<Record<"HOME" | "AWAY", RosterBaselineView | null>>({ HOME: null, AWAY: null });
+  const [sequenceState, setSequenceState] = useState<MatchCommandSequenceState>(() => createMatchCommandSequenceState(matchId));
+  const [pendingSide, setPendingSide] = useState<"HOME" | "AWAY" | null>(null);
+  const [resyncing, setResyncing] = useState(false);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+  const sequenceRef = useRef<MatchCommandSequenceState>(createMatchCommandSequenceState(matchId));
+
+  const applySequenceAction = useCallback((action: MatchCommandSequenceAction) => {
+    if (action.type !== "MATCH_CHANGED" && sequenceRef.current.matchId !== matchId) return sequenceRef.current;
+    const next = applyMatchCommandSequenceAction(sequenceRef.current, action);
+    sequenceRef.current = next;
+    setSequenceState(next);
+    return next;
+  }, [matchId]);
+
+  useEffect(() => {
+    const next = applyMatchCommandSequenceAction(sequenceRef.current, { type: "MATCH_CHANGED", matchId });
+    sequenceRef.current = next;
+    setSequenceState(next);
+  }, [matchId]);
+
+  const canImport = currentUser?.role === "ADMIN" || currentUser?.role === "REFEREE" || currentUser?.role === "SCORER";
+
+  const load = useCallback(async () => {
+    applySequenceAction({ type: "SYNC_STARTED" });
+    setMessage(null);
+    try {
+      const sync = await api.syncMatch(matchId, sequenceRef.current.currentSeq);
+      const hydrated = applySequenceAction({ type: "AUTHORITATIVE_HYDRATED", currentSeq: sync.currentSeq });
+      const sides = await Promise.all((["HOME", "AWAY"] as const).map(async (teamSide) => {
+        try { return [teamSide, await api.getRosterBaseline(matchId, teamSide)] as const; }
+        catch (error) { if (error instanceof ApiClientError && error.status === 404) return [teamSide, null] as const; throw error; }
+      }));
+      setBaseline(Object.fromEntries(sides) as Record<"HOME" | "AWAY", RosterBaselineView | null>);
+      return hydrated?.currentSeq ?? sequenceRef.current.currentSeq;
+    } catch (error) {
+      applySequenceAction({ type: "SYNC_REQUIRED" });
+      throw error;
+    }
+  }, [api, applySequenceAction, matchId]);
+
+  useEffect(() => { void load().catch((error) => setMessage(toUiMessage(error))); }, [load]);
+
+  async function importSide(teamSide: "HOME" | "AWAY") {
+    if (!canImport || pendingSide || resyncing || sequenceState.syncStatus !== "SYNCED") return;
+    setPendingSide(teamSide);
+    setMessage(null);
+    try {
+      const expectedSeq = sequenceRef.current.currentSeq;
+      const result = await api.importRosterBaseline(matchId, teamSide, expectedSeq);
+      if (result.status === "SYNC_REQUIRED") {
+        applySequenceAction({ type: "SYNC_REQUIRED" });
+        throw new ApiClientError({ status: 409, reasonCode: result.reasonCode ?? "SYNC_REQUIRED", message: result.message ?? "Refresh required", recoverable: true });
+      }
+      if (result.status === "REJECTED") throw new ApiClientError({ status: 422, reasonCode: result.reasonCode ?? "REJECTED", message: result.message ?? "Import rejected" });
+      applySequenceAction({ type: "ACCEPTED", currentSeq: result.currentSeq });
+      await load();
+      setMessage({ tone: "success", text: `${teamSide} authoritative baseline imported.` });
+    } catch (error) { setMessage(toUiMessage(error)); }
+    finally { setPendingSide(null); }
+  }
+
+  async function resyncAuthoritativeState() {
+    if (resyncing) return;
+    setResyncing(true);
+    try {
+      await load();
+      setMessage({ tone: "success", text: "Authoritative roster baseline state resynchronized." });
+    } catch (error) {
+      setMessage(toUiMessage(error));
+    } finally {
+      setResyncing(false);
+    }
+  }
+
+  return <section className="stack" aria-label="Authoritative roster baseline readiness">
+    <div className="panel"><h1>Roster Baseline Readiness</h1><p className="muted">Server-derived import only. Roster, starter, captain, lock, and correction changes are unavailable here.</p>{sequenceState.syncStatus === "SYNCING" ? <p role="status">Synchronizing authoritative match state</p> : null}{message ? <Notice {...message} /> : null}{message?.code === "SYNC_REQUIRED" || message?.code === "INVALID_EXPECTED_SEQ" ? <button type="button" onClick={() => void resyncAuthoritativeState()} disabled={resyncing}>{resyncing ? "Resynchronizing..." : "Resync authoritative state"}</button> : null}</div>
+    <section className="score-actions">
+      {(["HOME", "AWAY"] as const).map((teamSide) => {
+        const side = baseline[teamSide];
+        return <article className="panel" key={teamSide}><h2>{teamSide}</h2><dl className="state-strip"><div><dt>Readiness</dt><dd>{side?.readiness.state ?? "ROSTER_NOT_INITIALIZED"}</dd></div><div><dt>Sequence</dt><dd>{side?.version?.eventSeq ?? sequenceState.currentSeq}</dd></div><div><dt>Integrity</dt><dd>{side?.integrityIssues.length ? "BLOCKED" : "CLEAR"}</dd></div></dl>
+          {!canImport ? <p className="muted">Active Admin, Referee, or Scorer permission is required to import.</p> : null}
+          <button type="button" disabled={!canImport || Boolean(pendingSide) || resyncing || sequenceState.syncStatus !== "SYNCED" || Boolean(side)} onClick={() => void importSide(teamSide)}>{pendingSide === teamSide ? "Importing baseline..." : side ? "Baseline imported" : `Import ${teamSide} baseline`}</button>
+        </article>;
+      })}
+    </section>
+  </section>;
+}
+
 function AdminRostersPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
@@ -7417,14 +7514,14 @@ function RoutedApp({ route }: { route: Route }) {
         );
       case "admin-rosters":
         return (
-          <ProtectedRoute requireAdmin>
-            <AdminRostersPage matchId={route.matchId} />
+          <ProtectedRoute>
+            <RosterBaselineReadinessPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "admin-lineup":
         return (
-          <ProtectedRoute requireAdmin>
-            <AdminLineupPage matchId={route.matchId} />
+          <ProtectedRoute>
+            <RosterBaselineReadinessPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "admin-summary":

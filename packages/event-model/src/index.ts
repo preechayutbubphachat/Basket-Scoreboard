@@ -51,7 +51,21 @@ export const teamTimeoutEventTypes = [
 
 export type TimeoutOpportunityEventType = (typeof timeoutOpportunityEventTypes)[number];
 
-export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType | TimeoutOpportunityEventType | (typeof teamTimeoutEventTypes)[number];
+export const rosterBaselineEventTypes = ["MATCH_ROSTER_BASELINE_IMPORTED"] as const;
+export type RosterBaselineEventType = (typeof rosterBaselineEventTypes)[number];
+
+export type MatchEventType = "SCORE_ADDED" | FoulEventType | ClockEventType | CorrectionEventType | TimeoutOpportunityEventType | RosterBaselineEventType | (typeof teamTimeoutEventTypes)[number];
+
+export type MatchRosterBaselineImportedPayload = {
+  teamSide: TeamSide;
+  matchTeamId: string;
+  members: Array<{ playerId: string; teamId: string; rosterStatus: "ACTIVE" | "BENCH" | "INACTIVE"; jerseyNumber: string | null; isStarter: boolean; isCaptain: boolean; eligibilityState: "ELIGIBLE" | "BLOCKING_REVIEW" | "NOT_EVALUATED" }>;
+  source: { legacyRosterRevision: string; importedAt: string };
+  rulesProfile: "FIBA_2024";
+  rosterVersion: { eventSeq: number; eventId: string; canonicalPayloadHash: string };
+  integrity: { issues: string[] };
+  confirmation: { status: "UNCONFIRMED" | "LEGACY_UNVERSIONED" | "VERSIONED" };
+};
 
 export type CorrectionRequestedPayload = {
   targetSeq: number;

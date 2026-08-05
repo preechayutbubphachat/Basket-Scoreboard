@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApiApp } from "../../apps/api/src/app";
+
+beforeEach(() => {
+  vi.stubEnv("AUTH_TEST_PROVIDER", "server-owned");
+});
 
 const matchId = "11111111-1111-4111-8111-111111111111";
 const finishedMatchId = "11111111-1111-4111-8111-111111111112";
@@ -78,6 +82,10 @@ function createLineupPool() {
         return [[...confirmations.entries()].map(([teamSide, confirmation]) => ({ team_side: teamSide, ...confirmation })), []];
       }
 
+      if (sql.includes("SELECT event_id, event_type FROM match_events")) {
+        return [[], []];
+      }
+
       if (sql.includes("UPDATE match_roster_players SET is_starter = 1")) {
         const entry = roster.find((player) => player.match_id === params[0] && player.team_side === params[1] && player.player_id === params[2]);
         if (entry) entry.is_starter = 1;
@@ -131,6 +139,8 @@ function headers(role = "ADMIN") {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   delete process.env.AUTH_TEST_DISABLE_CSRF;
 });
 
@@ -277,7 +287,7 @@ describe("alpha lineup and starter management", () => {
       expect(confirmed.json()).toMatchObject({
         ok: true,
         data: {
-          home: { readiness: { starterCount: 5, captainSet: true, confirmed: true, ready: true } }
+          home: { readiness: { starterCount: 5, captainSet: true, confirmed: true, ready: false } }
         }
       });
     } finally {

@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApiApp } from "../../apps/api/src/app";
+
+beforeEach(() => {
+  vi.stubEnv("AUTH_TEST_PROVIDER", "dev-header");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe("health endpoint", () => {
   it("returns an ok status for the API", async () => {

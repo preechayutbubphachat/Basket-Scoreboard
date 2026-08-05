@@ -137,6 +137,9 @@ describe("operator match list route auth", () => {
     const pool = {
       async query(sql: string) {
         const normalized = sql.replace(/\s+/g, " ");
+        if (normalized.includes("SELECT match_id, rule_profile_id FROM matches")) {
+          return [[{ match_id: "match-1", rule_profile_id: "FIBA_2024" }], []];
+        }
         if (normalized.includes("FROM matches m")) {
           return [[{
             match_id: "match-1",
@@ -189,8 +192,8 @@ describe("operator match list route auth", () => {
             assignedCount: 1,
             roles: [{ role: "SCORER", displayName: "Lead Scorer" }]
           },
-          roster: { state: "READY", homeCount: 5, awayCount: 5 },
-          lineup: expect.objectContaining({ state: "READY" })
+          roster: { state: "INCOMPLETE", homeCount: 5, awayCount: 5 },
+          lineup: expect.objectContaining({ state: "INCOMPLETE" })
         })
       })
     ]);
@@ -298,5 +301,5 @@ describeDb("operator and admin match listing", { timeout: DB_INTEGRATION_TEST_TI
       await app.close();
       await pool.end();
     }
-  });
+  }, DB_INTEGRATION_TEST_TIMEOUT_MS);
 });

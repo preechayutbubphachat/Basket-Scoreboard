@@ -4,9 +4,11 @@ import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import { buildApiApp } from "../../apps/api/src/app";
 import { createDatabasePool } from "../../apps/api/src/db";
 import { hasDatabaseEnv } from "../../apps/api/src/config/env";
+import { getReadinessForMatches } from "../../apps/api/src/matchReadiness/matchReadinessService";
 import { MariaDbMigrationConnection, getDefaultMigrationsDir, runMigrations } from "../../apps/api/src/migrations";
 import { appendTimeoutGrantCommand, type TimeoutCommandFailureSeam } from "../../apps/api/src/matchEventStore/appendTimeoutCommand";
 import { timeoutGrantCommandSchema, type AuthenticatedUser } from "@basket-scoreboard/api-contracts";
+import { prepareAuthoritativeLifecycleFixture } from "../helpers/authoritativeLifecycleFixture";
 
 const describeDb = hasDatabaseEnv() ? describe : describe.skip;
 const admin = { "x-dev-user-role": "ADMIN", "x-dev-user-id": "00000000-0000-4000-8000-0000000000aa" };
@@ -27,32 +29,34 @@ describeDb("RM-07 timeout control on isolated MariaDB", { timeout: 60_000 }, () 
       const created = await app.inject({ method: "POST", url: "/api/v1/matches", headers: admin, payload: { matchCode: `RM07-TIMEOUT-${randomUUID()}`, ruleProfileId: "FIBA_2024" } });
       expect(created.statusCode).toBe(201);
       const { matchId } = created.json<{ matchId: string }>();
-      const started = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/lifecycle/start-match`, headers: admin, payload: envelope(matchId, 0, { reason: null }) });
-      expect(started.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/clock/game/start`, headers: admin, payload: envelope(matchId, 1, {}) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
-      const opportunity = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/score/add`, headers: admin, payload: envelope(matchId, 2, { teamSide: "HOME", points: 2, playerId: null, periodNumber: 1, gameClockRemainingMs: 590000, note: null }) });
-      expect(opportunity.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      await prepareAuthoritativeLifecycleFixture(pool, matchId);
+      await assertAuthoritativeLifecycleReadiness(pool, matchId);
+      const started = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/lifecycle/start-match`, headers: admin, payload: envelope(matchId, 2, { reason: null }) });
+      expect(started.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+      expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/clock/game/start`, headers: admin, payload: envelope(matchId, 3, {}) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      const opportunity = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/score/add`, headers: admin, payload: envelope(matchId, 4, { teamSide: "HOME", points: 2, playerId: null, periodNumber: 1, gameClockRemainingMs: 590000, note: null }) });
+      expect(opportunity.json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
 
       const commandId = randomUUID();
-      const grant = envelope(matchId, 3, { teamSide: "AWAY" }, commandId);
+      const grant = envelope(matchId, 5, { teamSide: "AWAY" }, commandId);
       const accepted = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/timeout/grant`, headers: admin, payload: grant });
-      expect(accepted.json(), accepted.body).toMatchObject({ status: "ACCEPTED", currentSeq: 4, appendedEvents: [{ eventType: "TEAM_TIMEOUT_GRANTED" }] });
+      expect(accepted.json(), accepted.body).toMatchObject({ status: "ACCEPTED", currentSeq: 6, appendedEvents: [{ eventType: "TEAM_TIMEOUT_GRANTED" }] });
       const duplicate = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/timeout/grant`, headers: admin, payload: grant });
-      expect(duplicate.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 4, appendedEvents: [] });
+      expect(duplicate.json()).toMatchObject({ status: "DUPLICATE_ACCEPTED", currentSeq: 6, appendedEvents: [] });
       const collision = await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/timeout/grant`, headers: admin, payload: { ...grant, payload: { teamSide: "HOME" } } });
       expect(collision.json()).toMatchObject({ status: "REJECTED", reasonCode: "DUPLICATE_COMMAND" });
 
       const [events] = await pool.query<RowDataPacket[]>("SELECT event_type, payload FROM match_events WHERE match_id = ? ORDER BY seq_no", [matchId]);
-      expect(events).toHaveLength(4);
-      const persisted = JSON.parse(events[3]!.payload);
-      expect(persisted).toMatchObject({ teamSide: "AWAY", ruleProfileId: "FIBA_2024", opportunitySeq: 3, quotaWindow: "FIRST_HALF", usedBefore: 0, usedAfter: 1, remainingAfter: 1 });
+      expect(events).toHaveLength(6);
+      const persisted = JSON.parse(events[5]!.payload);
+      expect(persisted).toMatchObject({ teamSide: "AWAY", ruleProfileId: "FIBA_2024", opportunitySeq: 5, quotaWindow: "FIRST_HALF", usedBefore: 0, usedAfter: 1, remainingAfter: 1 });
       const [receipts] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) AS count FROM command_deduplication WHERE match_id = ? AND command_id = ?", [matchId, commandId]);
       expect(Number(receipts[0]!.count)).toBe(1);
       const [audits] = await pool.query<RowDataPacket[]>("SELECT action FROM audit_logs WHERE entity_id = ? AND action = 'TEAM_TIMEOUT_GRANTED'", [matchId]);
       expect(audits).toHaveLength(1);
 
       const projection = await app.inject({ method: "GET", url: `/api/v1/matches/${matchId}/projection`, headers: admin });
-      expect(projection.json()).toMatchObject({ currentSeq: 4, timeoutsByHalf: { firstHalf: { away: 1 } }, activeTimeout: { teamSide: "AWAY" } });
+      expect(projection.json()).toMatchObject({ currentSeq: 6, timeoutsByHalf: { firstHalf: { away: 1 } }, activeTimeout: { teamSide: "AWAY" } });
       const publicState = await app.inject({ method: "GET", url: `/api/v1/public/matches/${matchId}/scoreboard` });
       const serialized = JSON.stringify(publicState.json());
       expect(serialized).not.toContain("timeoutOpportunity");
@@ -69,9 +73,9 @@ describeDb("RM-07 timeout control on isolated MariaDB", { timeout: 60_000 }, () 
     try { await runMigrations({ migrationsDir: getDefaultMigrationsDir(), connection: new MariaDbMigrationConnection(migration) }); } finally { migration.release(); }
     const app = buildApiApp({ pool });
     try {
-      const matchId = await createOpenOpportunity(app, `RM07-ROLLBACK-${seam}-${randomUUID()}`);
-      const baseline = await durableState(pool, matchId);
-      const command = timeoutGrantCommandSchema.parse(envelope(matchId, 3, { teamSide: "AWAY" }));
+    const matchId = await createOpenOpportunity(app, pool, `RM07-ROLLBACK-${seam}-${randomUUID()}`);
+    const baseline = await durableState(pool, matchId);
+    const command = timeoutGrantCommandSchema.parse(envelope(matchId, 5, { teamSide: "AWAY" }));
       let seamObserved = false;
 
       await expect(appendTimeoutGrantCommand({
@@ -91,7 +95,7 @@ describeDb("RM-07 timeout control on isolated MariaDB", { timeout: 60_000 }, () 
 
       expect(seamObserved).toBe(true);
       expect(await durableState(pool, matchId, command.commandId)).toEqual({ ...baseline, receipts: 0, audits: 0 });
-      await expect(appendTimeoutGrantCommand({ pool, command, user: taskUser })).resolves.toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+      await expect(appendTimeoutGrantCommand({ pool, command, user: taskUser })).resolves.toMatchObject({ status: "ACCEPTED", currentSeq: 6 });
     } finally { await app.close(); await pool.end(); }
   });
 
@@ -102,13 +106,13 @@ describeDb("RM-07 timeout control on isolated MariaDB", { timeout: 60_000 }, () 
     try { await runMigrations({ migrationsDir: getDefaultMigrationsDir(), connection: new MariaDbMigrationConnection(migration) }); } finally { migration.release(); }
     const app = buildApiApp({ pool });
     try {
-      const matchId = await createOpenOpportunity(app, `RM07-CONCURRENCY-${randomUUID()}`);
+      const matchId = await createOpenOpportunity(app, pool, `RM07-CONCURRENCY-${randomUUID()}`);
       let arrivals = 0;
       let release!: () => void;
       const gate = new Promise<void>((resolve) => { release = resolve; });
       const barrier = async () => { arrivals += 1; if (arrivals === 2) release(); await gate; };
-      const first = timeoutGrantCommandSchema.parse(envelope(matchId, 3, { teamSide: "AWAY" }));
-      const second = timeoutGrantCommandSchema.parse(envelope(matchId, 3, { teamSide: "AWAY" }));
+      const first = timeoutGrantCommandSchema.parse(envelope(matchId, 5, { teamSide: "AWAY" }));
+      const second = timeoutGrantCommandSchema.parse(envelope(matchId, 5, { teamSide: "AWAY" }));
 
       const results = await Promise.all([
         appendTimeoutGrantCommand({ pool, command: first, user: taskUser, beforeStreamLockBarrier: barrier }),
@@ -117,24 +121,41 @@ describeDb("RM-07 timeout control on isolated MariaDB", { timeout: 60_000 }, () 
       expect(results.map((result) => result.status).sort(), JSON.stringify(results)).toEqual(["ACCEPTED", "SYNC_REQUIRED"]);
       const acceptedCommandId = results[0]!.status === "ACCEPTED" ? first.commandId : second.commandId;
       const state = await durableState(pool, matchId, acceptedCommandId);
-      expect(state).toMatchObject({ events: 4, head: 4, projection: 4, receipts: 1, audits: 1 });
+      expect(state).toMatchObject({ events: 6, head: 6, projection: 6, receipts: 1, audits: 1 });
       const observer = await pool.getConnection();
       try {
         const [rows] = await observer.query<RowDataPacket[]>("SELECT seq_no FROM match_events WHERE match_id = ? ORDER BY seq_no", [matchId]);
-        expect(rows.map((row) => Number(row.seq_no))).toEqual([1, 2, 3, 4]);
+        expect(rows.map((row) => Number(row.seq_no))).toEqual([1, 2, 3, 4, 5, 6]);
       } finally { observer.release(); }
     } finally { await app.close(); await pool.end(); }
   });
 });
 
-async function createOpenOpportunity(app: ReturnType<typeof buildApiApp>, matchCode: string) {
+async function createOpenOpportunity(app: ReturnType<typeof buildApiApp>, pool: Pool, matchCode: string) {
   const created = await app.inject({ method: "POST", url: "/api/v1/matches", headers: admin, payload: { matchCode, ruleProfileId: "FIBA_2024" } });
   expect(created.statusCode).toBe(201);
   const { matchId } = created.json<{ matchId: string }>();
-  expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/lifecycle/start-match`, headers: admin, payload: envelope(matchId, 0, { reason: null }) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 1 });
-  expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/clock/game/start`, headers: admin, payload: envelope(matchId, 1, {}) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 2 });
-  expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/score/add`, headers: admin, payload: envelope(matchId, 2, { teamSide: "HOME", points: 2, playerId: null, periodNumber: 1, gameClockRemainingMs: 590000, note: null }) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+  await prepareAuthoritativeLifecycleFixture(pool, matchId);
+  await assertAuthoritativeLifecycleReadiness(pool, matchId);
+  expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/lifecycle/start-match`, headers: admin, payload: envelope(matchId, 2, { reason: null }) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 3 });
+  expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/clock/game/start`, headers: admin, payload: envelope(matchId, 3, {}) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 4 });
+  expect((await app.inject({ method: "POST", url: `/api/v1/matches/${matchId}/commands/score/add`, headers: admin, payload: envelope(matchId, 4, { teamSide: "HOME", points: 2, playerId: null, periodNumber: 1, gameClockRemainingMs: 590000, note: null }) })).json()).toMatchObject({ status: "ACCEPTED", currentSeq: 5 });
   return matchId;
+}
+
+async function assertAuthoritativeLifecycleReadiness(pool: Pool, matchId: string) {
+  const [matches] = await pool.query<RowDataPacket[]>("SELECT rule_profile_id, home_team_id, away_team_id FROM matches WHERE match_id = ?", [matchId]);
+  expect(matches).toHaveLength(1);
+  expect(matches[0]).toMatchObject({ rule_profile_id: "FIBA_2024" });
+  expect(matches[0]!.home_team_id).toBeTruthy();
+  expect(matches[0]!.away_team_id).toBeTruthy();
+  const readiness = (await getReadinessForMatches(pool, [{ matchId, status: "SCHEDULED" }])).get(matchId);
+  expect(readiness?.officials.state).toBe("READY");
+  expect(readiness?.roster.state).toBe("READY");
+  expect(readiness?.lineup.state).toBe("READY");
+  expect(readiness?.authoritativeBaseline.source).toBe("EVENT_BACKED_BASELINE");
+  expect(readiness?.authoritativeBaseline.home).toMatchObject({ state: "READY", effective: true, confirmed: true });
+  expect(readiness?.authoritativeBaseline.away).toMatchObject({ state: "READY", effective: true, confirmed: true });
 }
 
 async function transactionState(connection: PoolConnection, matchId: string, commandId: string) {

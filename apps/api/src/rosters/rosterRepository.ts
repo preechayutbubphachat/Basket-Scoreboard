@@ -14,6 +14,7 @@ import type {
   UpdateRosterPlayerRequest
 } from "@basket-scoreboard/api-contracts";
 import { parseJsonField } from "../matchEventStore/json.js";
+import { rejectLegacyRosterWriteAfterBaseline } from "./rosterLegacyWriteGuard.js";
 
 type TeamRow = RowDataPacket & { team_id: string };
 type PlayerRow = RowDataPacket & {
@@ -196,6 +197,11 @@ export async function selectLineupStarter(
 
   try {
     await connection.beginTransaction();
+    const blocked = await rejectLegacyRosterWriteAfterBaseline(connection, options.matchId, options.teamSide);
+    if (blocked) {
+      await connection.rollback();
+      return blocked;
+    }
     const validation = await validateLineupMutation(connection, options);
     if (!validation.ok) {
       await connection.rollback();
@@ -236,6 +242,11 @@ export async function removeLineupStarter(
 
   try {
     await connection.beginTransaction();
+    const blocked = await rejectLegacyRosterWriteAfterBaseline(connection, options.matchId, options.teamSide);
+    if (blocked) {
+      await connection.rollback();
+      return blocked;
+    }
     const validation = await validateLineupMutation(connection, options, { allowInactive: true });
     if (!validation.ok) {
       await connection.rollback();
@@ -266,6 +277,11 @@ export async function setLineupCaptain(
 
   try {
     await connection.beginTransaction();
+    const blocked = await rejectLegacyRosterWriteAfterBaseline(connection, options.matchId, options.teamSide);
+    if (blocked) {
+      await connection.rollback();
+      return blocked;
+    }
     const validation = await validateLineupMutation(connection, options);
     if (!validation.ok) {
       await connection.rollback();
@@ -300,6 +316,11 @@ export async function confirmLineupRoster(
 
   try {
     await connection.beginTransaction();
+    const blocked = await rejectLegacyRosterWriteAfterBaseline(connection, options.matchId, options.teamSide);
+    if (blocked) {
+      await connection.rollback();
+      return blocked;
+    }
     const match = await getMatchTeams(connection, options.matchId);
     if (!match) {
       await connection.rollback();
@@ -342,6 +363,11 @@ export async function assignPlayerToMatchRoster(
 
   try {
     await connection.beginTransaction();
+    const blocked = await rejectLegacyRosterWriteAfterBaseline(connection, options.matchId, options.teamSide);
+    if (blocked) {
+      await connection.rollback();
+      return blocked;
+    }
     const match = await getMatchTeams(connection, options.matchId);
     if (!match) {
       await connection.rollback();
@@ -400,8 +426,15 @@ export async function updateMatchRosterPlayer(
   const connection = await pool.getConnection();
 
   try {
+    await connection.beginTransaction();
+    const blocked = await rejectLegacyRosterWriteAfterBaseline(connection, options.matchId, options.teamSide);
+    if (blocked) {
+      await connection.rollback();
+      return blocked;
+    }
     const entry = await getRosterEntryForPlayer(connection, options.matchId, options.playerId);
     if (!entry || entry.teamSide !== options.teamSide) {
+      await connection.rollback();
       return { ok: false as const, statusCode: 404, reasonCode: "MATCH_NOT_FOUND", message: "Roster player was not found" };
     }
 
@@ -417,7 +450,11 @@ export async function updateMatchRosterPlayer(
     );
 
     const updated = await getRosterEntryForPlayer(connection, options.matchId, options.playerId);
+    await connection.commit();
     return { ok: true as const, statusCode: 200, entry: updated! };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
   } finally {
     connection.release();
   }
@@ -638,7 +675,8 @@ function buildReadiness(players: MatchRosterPlayer[], confirmed: boolean): Roste
    starterCount,
    captainSet,
    confirmed,
-   ready: confirmed && starterCount === 5
+   // Legacy rows contain no eligibility or validated rule-profile state; fail closed.
+   ready: false
  };
 }
 

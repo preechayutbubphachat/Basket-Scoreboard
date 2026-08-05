@@ -89,22 +89,22 @@ export function buildRosterPlayerDisplayLabel(player: MatchRosterPlayer) {
 
 export function buildRosterReadinessLabel(readiness: RosterReadiness | null | undefined) {
   if (!readiness) return "NEEDS STARTERS";
-  if (readiness.confirmed && readiness.ready) return "CONFIRMED";
   if (readiness.starterCount !== 5) return "NEEDS STARTERS";
+  if (readiness.confirmed && readiness.ready) return "NOT EVALUATED";
   if (!readiness.captainSet) return "NEEDS CAPTAIN";
-  return "READY";
+  return "NOT EVALUATED";
 }
 
 export function buildRosterSetupSummary(rosters: MatchRostersResponse | null) {
   const homeCount = rosters?.readiness?.home.playerCount ?? rosters?.rosters.HOME.length ?? 0;
   const awayCount = rosters?.readiness?.away.playerCount ?? rosters?.rosters.AWAY.length ?? 0;
-  const state = homeCount > 0 && awayCount > 0 ? "READY" : homeCount > 0 || awayCount > 0 ? "INCOMPLETE" : "MISSING";
+  const state = homeCount > 0 && awayCount > 0 ? "INCOMPLETE" : homeCount > 0 || awayCount > 0 ? "INCOMPLETE" : "MISSING";
   return {
     state,
     homeCount,
     awayCount,
     nextAction:
-      state === "READY"
+      homeCount > 0 && awayCount > 0
         ? "Open lineup setup to select starters, captain, and confirmations."
         : "Add players to both teams before lineup confirmation."
   };
@@ -117,11 +117,9 @@ export function buildLineupSetupSummary(lineup: MatchLineupResponse | null) {
   const awayStarters = away?.starterCount ?? 0;
   const homeConfirmed = Boolean(home?.confirmed);
   const awayConfirmed = Boolean(away?.confirmed);
-  const state = home?.ready && away?.ready
-    ? "READY"
-    : homeStarters === 0 && awayStarters === 0
-      ? "MISSING"
-      : "INCOMPLETE";
+  const state = homeStarters === 0 && awayStarters === 0
+    ? "MISSING"
+    : "INCOMPLETE";
 
   return {
     state,
@@ -129,7 +127,7 @@ export function buildLineupSetupSummary(lineup: MatchLineupResponse | null) {
     awayStarters,
     homeConfirmed,
     awayConfirmed,
-    nextAction: buildLineupNextAction(homeStarters, awayStarters, homeConfirmed, awayConfirmed, state)
+    nextAction: buildLineupNextAction(homeStarters, awayStarters, homeConfirmed, awayConfirmed)
   };
 }
 
@@ -137,12 +135,8 @@ function buildLineupNextAction(
   homeStarters: number,
   awayStarters: number,
   homeConfirmed: boolean,
-  awayConfirmed: boolean,
-  state: "READY" | "INCOMPLETE" | "MISSING"
+  awayConfirmed: boolean
 ) {
-  if (state === "READY") {
-    return "Lineup is ready for Alpha match operation.";
-  }
   const starterSides = [
     homeStarters < 5 ? "HOME" : null,
     awayStarters < 5 ? "AWAY" : null

@@ -44,7 +44,7 @@ export function buildLifecycleControlState(projection: ScoreboardProjection) {
   };
 }
 
-export function getLifecycleActionPlan(projection: ScoreboardProjection) {
+export function getLifecycleActionPlan(projection: ScoreboardProjection, readiness?: MatchReadiness | null) {
   const status = projection.status;
   const periodNumber = projection.periodNumber ?? projection.period ?? 1;
   const regulationPeriods = projection.regulationPeriods ?? 4;
@@ -53,10 +53,17 @@ export function getLifecycleActionPlan(projection: ScoreboardProjection) {
   const canFinish =
     (status === "PERIOD_BREAK" || status === "LIVE" || status === "OVERTIME") &&
     !tied;
+  const rosterReady = readiness?.roster.state === "READY";
+  const lineupReady = readiness?.lineup.state === "READY";
+  const officialsReady = readiness?.officials.state === "READY";
+  const authoritativeBaselineReady = readiness?.authoritativeBaseline?.source === "EVENT_BACKED_BASELINE"
+    && readiness.authoritativeBaseline.home.effective
+    && readiness.authoritativeBaseline.away.effective;
+  const authoritativeSetupReady = rosterReady && lineupReady && officialsReady && authoritativeBaselineReady;
 
   return {
     startMatch: {
-      enabled: status === "SCHEDULED" || status === "READY",
+      enabled: (status === "SCHEDULED" || status === "READY") && authoritativeSetupReady,
       requiresConfirmation: false,
       label: "Start Match"
     },
@@ -138,13 +145,16 @@ export function buildLifecycleReadinessContext(readiness: MatchReadiness | null 
 
   const incomplete = readiness.officials.state !== "READY"
     || readiness.roster.state !== "READY"
-    || readiness.lineup.state !== "READY";
+    || readiness.lineup.state !== "READY"
+    || readiness.authoritativeBaseline?.source !== "EVENT_BACKED_BASELINE"
+    || !readiness.authoritativeBaseline.home.effective
+    || !readiness.authoritativeBaseline.away.effective;
 
   return {
     warning: incomplete
       ? "Setup readiness is incomplete. Review roster, lineup, and official assignments before starting."
       : null,
-    hardBlock: false,
+    hardBlock: incomplete,
     items: [
       { label: "Officials", state: readiness.officials.state, detail: readiness.officials.label },
       {
@@ -191,8 +201,8 @@ export function buildMatchStartChecklist(
     advisoryWarning:
       state === "READY"
         ? null
-        : "Setup checklist has warnings. This Alpha checklist is advisory and does not enforce official start rules.",
-    hardBlock: false,
+        : "Setup checklist is incomplete. Match start is blocked until authoritative readiness is READY.",
+    hardBlock: state !== "READY",
     items
   };
 }
@@ -212,11 +222,16 @@ function buildOfficialsChecklistItem(matchId: string, readiness: MatchReadiness 
 function buildRosterChecklistItem(matchId: string, readiness: MatchReadiness | null | undefined): MatchStartChecklistItem {
   const roster = readiness?.roster;
   const state = roster?.state ?? "MISSING";
+  const authoritativeBaselineReady = readiness?.authoritativeBaseline?.source === "EVENT_BACKED_BASELINE"
+    && readiness.authoritativeBaseline.home.effective
+    && readiness.authoritativeBaseline.away.effective;
   return {
     key: "roster",
     label: "Roster",
-    status: state === "READY" ? "READY" : state === "INCOMPLETE" ? "WARNING" : "MISSING",
-    message: roster ? `HOME ${roster.homeCount} / AWAY ${roster.awayCount}` : "Roster setup is missing.",
+    status: state === "READY" && authoritativeBaselineReady ? "READY" : state === "READY" ? "WARNING" : state === "INCOMPLETE" ? "WARNING" : "MISSING",
+    message: !authoritativeBaselineReady
+      ? "Event-backed FIBA_2024 roster baseline is missing or not READY."
+      : roster ? `HOME ${roster.homeCount} / AWAY ${roster.awayCount}` : "Roster setup is missing.",
     actionLabel: "Setup Roster",
     actionUrl: matchId ? `/admin/matches/${encodeURIComponent(matchId)}/rosters` : null
   };

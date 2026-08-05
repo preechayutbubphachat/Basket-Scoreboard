@@ -107,6 +107,27 @@ function scoreCommand(matchId: string, expectedSeq: number) {
   };
 }
 
+async function withEnvironment(
+  values: Record<string, string | undefined>,
+  callback: () => Promise<void>
+) {
+  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
+
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
+  try {
+    await callback();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 describe("production auth safety", () => {
   it("exempts routes from broad auth and csrf write guards through route metadata", async () => {
     const app = Fastify({ logger: false });
@@ -165,31 +186,125 @@ describe("production auth safety", () => {
     }
   });
 
-  it("rejects dev headers in production unless DEV_AUTH_ENABLED is true", async () => {
-    const previousNodeEnv = process.env.NODE_ENV;
-    const previousDevAuthEnabled = process.env.DEV_AUTH_ENABLED;
-    process.env.NODE_ENV = "production";
-    delete process.env.DEV_AUTH_ENABLED;
-    const app = buildApiApp({ pool: {} as never });
+  it.each([
+    ["enabled", "true"],
+    ["disabled", "false"],
+    ["invalid", "unexpected"],
+    ["missing", undefined]
+  ] as const)("rejects dev headers in production when the flag is %s", async (_label, flag) => {
+    await withEnvironment({ NODE_ENV: "production", AUTH_DEV_HEADER_ENABLED: flag }, async () => {
+      const app = buildApiApp({ pool: {} as never });
 
-    try {
-      const response = await app.inject({
-        method: "GET",
-        url: "/api/v1/auth/me",
-        headers: { "x-dev-user-role": "ADMIN" }
-      });
+      try {
+        const response = await app.inject({
+          method: "GET",
+          url: "/api/v1/auth/me",
+          headers: {
+            "x-dev-user-role": "ADMIN",
+            "x-dev-user-id": "production-dev-admin",
+            "x-dev-match-ids": "11111111-1111-4111-8111-111111111111"
+          }
+        });
 
-      expect(response.statusCode).toBe(401);
-      expect(response.json()).toMatchObject({
-        error: { reasonCode: "DEV_AUTH_DISABLED" }
-      });
-    } finally {
-      await app.close();
-      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = previousNodeEnv;
-      if (previousDevAuthEnabled === undefined) delete process.env.DEV_AUTH_ENABLED;
-      else process.env.DEV_AUTH_ENABLED = previousDevAuthEnabled;
-    }
+        expect(response.statusCode).toBe(401);
+        expect(response.json()).toMatchObject({
+          error: { reasonCode: "DEV_AUTH_DISABLED" }
+        });
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
+  it.each([
+    ["enabled", "true", 200],
+    ["disabled", "false", 401],
+    ["invalid", "unexpected", 401],
+    ["missing", undefined, 401]
+  ] as const)("applies the development flag contract when the flag is %s", async (_label, flag, expectedStatus) => {
+    await withEnvironment({ NODE_ENV: "development", AUTH_DEV_HEADER_ENABLED: flag }, async () => {
+      const app = buildApiApp({ pool: {} as never });
+
+      try {
+        const response = await app.inject({
+          method: "GET",
+          url: "/api/v1/auth/me",
+          headers: {
+            "x-dev-user-role": "SCORER",
+            "x-dev-user-id": "development-scorer",
+            "x-dev-match-ids": "11111111-1111-4111-8111-111111111111"
+          }
+        });
+
+        expect(response.statusCode).toBe(expectedStatus);
+        if (expectedStatus === 200) {
+          expect(response.json()).toMatchObject({
+            ok: true,
+            data: { user: { authMode: "DEV_HEADER", role: "SCORER" } }
+          });
+        } else {
+          expect(response.json()).toMatchObject({
+            error: { reasonCode: "DEV_AUTH_DISABLED" }
+          });
+        }
+      } finally {
+        await app.close();
+      }
+    });
+  });
+
+  it("does not reach downstream global or match authorization from a production dev header", async () => {
+    await withEnvironment({ NODE_ENV: "production", AUTH_DEV_HEADER_ENABLED: "true" }, async () => {
+      let connectionAttempts = 0;
+      const pool = {
+        async getConnection() {
+          connectionAttempts += 1;
+          throw new Error("production dev-header denial must not open a session connection");
+        }
+      } as never;
+      const app = Fastify({ logger: false });
+      const auth = createAuthHandlers(pool);
+
+      app.get(
+        "/auth-boundary/admin",
+        { preHandler: [auth.requireAuth, auth.requirePermission("match.create")] },
+        async () => ({ privileged: true })
+      );
+      app.get(
+        "/auth-boundary/matches/:matchId",
+        {
+          preHandler: [
+            auth.requireAuth,
+            auth.requireMatchPermission("match.read", (request) =>
+              (request.params as { matchId: string }).matchId
+            )
+          ]
+        },
+        async () => ({ assigned: true })
+      );
+
+      try {
+        const headers = {
+          "x-dev-user-role": "ADMIN",
+          "x-dev-user-id": "production-dev-admin",
+          "x-dev-match-ids": "11111111-1111-4111-8111-111111111111"
+        };
+        const adminResponse = await app.inject({ method: "GET", url: "/auth-boundary/admin", headers });
+        const assignedResponse = await app.inject({
+          method: "GET",
+          url: "/auth-boundary/matches/11111111-1111-4111-8111-111111111111",
+          headers
+        });
+
+        expect(adminResponse.statusCode).toBe(401);
+        expect(assignedResponse.statusCode).toBe(401);
+        expect(adminResponse.json()).toMatchObject({ error: { reasonCode: "DEV_AUTH_DISABLED" } });
+        expect(assignedResponse.json()).toMatchObject({ error: { reasonCode: "DEV_AUTH_DISABLED" } });
+        expect(connectionAttempts).toBe(0);
+      } finally {
+        await app.close();
+      }
+    });
   });
 });
 

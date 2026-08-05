@@ -55,7 +55,10 @@ export async function evaluateAuthorization(
       user.authMode === "DEV_HEADER"
         ? user.assignedMatchIds.includes(resource.matchId) &&
           assignmentRoleAllowsPermission(defaultAssignmentRoleForSystemRole(user.role) ?? "", permission)
-        : await isUserAssignedToMatch(pool, user.userId, resource.matchId, permission);
+        : user.authMode === "TEST_PROVIDER"
+          ? user.assignedMatchIds.includes(resource.matchId) &&
+            assignmentRoleAllowsPermission(defaultAssignmentRoleForSystemRole(user.role) ?? "", permission)
+          : await isUserAssignedToMatch(pool, user.userId, resource.matchId, permission);
 
     if (!assigned) {
       return {
@@ -67,6 +70,36 @@ export async function evaluateAuthorization(
   }
 
   return { allowed: true };
+}
+
+/**
+ * Shared protected roster-state policy. Session assignments are authoritative;
+ * DEV_HEADER is retained only for the non-production mounted test harness.
+ */
+export async function canAccessProtectedRosterState(
+  pool: Pool,
+  user: AuthenticatedUser | null | undefined,
+  matchId: string
+) {
+  if (!user || (user.role !== "ADMIN" && user.role !== "REFEREE" && user.role !== "SCORER")) {
+    return false;
+  }
+
+  if (user.role === "ADMIN" && user.authMode !== "DEV_HEADER") return true;
+
+  if (user.authMode === "DEV_HEADER") return false;
+
+  if (user.authMode === "TEST_PROVIDER") {
+    return user.assignedMatchIds.includes(matchId);
+  }
+
+  const assignments = await getUserMatchAssignments(pool, user.userId);
+  return assignments.some(
+    (assignment) =>
+      assignment.matchId === matchId &&
+      assignment.assignmentStatus === "ACTIVE" &&
+      (assignment.roleCode === "REFEREE" || assignment.roleCode === "SCORER")
+  );
 }
 
 type UserRow = RowDataPacket & {
@@ -92,7 +125,30 @@ type RolePermissionRow = RowDataPacket & {
 };
 
 function devAuthEnabled() {
-  return process.env.NODE_ENV !== "production" || process.env.DEV_AUTH_ENABLED === "true";
+  const nodeEnv = process.env.NODE_ENV;
+  const flag = process.env.AUTH_DEV_HEADER_ENABLED;
+
+  if (nodeEnv === "production") {
+    return false;
+  }
+
+  if (flag !== undefined && flag !== "true" && flag !== "false") {
+    return false;
+  }
+
+  if (nodeEnv === "test") {
+    return flag === undefined ? true : flag === "true";
+  }
+
+  if (nodeEnv === "development") {
+    return flag === "true";
+  }
+
+  return false;
+}
+
+function serverOwnedTestProviderEnabled() {
+  return process.env.NODE_ENV === "test" && process.env.AUTH_TEST_PROVIDER === "server-owned";
 }
 
 function headerValue(value: string | string[] | undefined) {
@@ -246,7 +302,7 @@ export function resolveDevUser(request: FastifyRequest): AuthenticatedUser | nul
     permissions: permissionsForSystemRole(role),
     assignedMatchIds,
     deviceId: `dev-${role.toLowerCase()}-device`,
-    authMode: "DEV_HEADER"
+    authMode: serverOwnedTestProviderEnabled() ? "TEST_PROVIDER" : "DEV_HEADER"
   };
 }
 
@@ -404,9 +460,6 @@ export function createAuthHandlers(pool: Pool) {
 
       const { roles, permissions } = await loadRolesAndPermissions(connection, userRow.user_id);
       const matchAssignments = await getUserMatchAssignments(connection, userRow.user_id);
-      await connection.query("UPDATE user_sessions SET last_seen_at = NOW(3) WHERE id = ?", [
-        session.id
-      ]);
       const user = publicUser(userRow, roles, permissions, matchAssignments, session);
       const csrfToken = headerValue(request.headers["x-csrf-token"]);
 
@@ -532,6 +585,16 @@ export function createAuthHandlers(pool: Pool) {
     };
   }
 
+  function requireProtectedRosterAccess(getMatchId: (request: FastifyRequest) => string) {
+    return async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!(await canAccessProtectedRosterState(pool, request.user, getMatchId(request)))) {
+        return reply
+          .status(403)
+          .send(apiError(reasonCodes.FORBIDDEN, "Protected roster access is restricted to an admin or assigned referee/scorer"));
+      }
+    };
+  }
+
   async function requireCsrf(request: FastifyRequest, reply: FastifyReply) {
     if (isCsrfExempt(request)) {
       return;
@@ -573,6 +636,7 @@ export function createAuthHandlers(pool: Pool) {
     requireAuth,
     requirePermission,
     requireMatchPermission,
+    requireProtectedRosterAccess,
     requireCsrf
   };
 }

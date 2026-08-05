@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 const allowedMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-const allowedHeaders = "Content-Type, Accept, x-csrf-token";
+const allowedHeaders = "Content-Type, Accept, x-csrf-token, Idempotency-Key, x-expected-seq";
 
 function getAllowedOrigins() {
   return (process.env.API_ALLOWED_ORIGINS ?? "")

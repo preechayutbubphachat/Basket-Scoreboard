@@ -50,7 +50,7 @@ export function buildApiApp(options: {
   registerAuthRoutes(app, pool, auth);
   registerMatchRoutes(app, pool, auth, realtime);
   registerMatchOfficialRoutes(app, pool, auth);
-  registerRosterRoutes(app, pool, auth);
+  registerRosterRoutes(app, pool, auth, realtime);
   registerTournamentRoutes(app, pool, auth);
   registerOperatorRoutes(app, pool, auth);
   registerDisplayScreenRoutes(app, pool, auth);

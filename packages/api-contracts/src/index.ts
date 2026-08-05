@@ -445,6 +445,23 @@ export type ScheduleConflictWarning = {
 export type MatchReadinessState = "READY" | "PARTIAL" | "MISSING" | "UNKNOWN" | "INCOMPLETE";
 export type MatchLifecycleReadinessState = "NOT_STARTED" | "LIVE" | "FINISHED" | "UNKNOWN";
 
+export type AuthoritativeReadinessSource = "EVENT_BACKED_BASELINE" | "LEGACY_COMPATIBILITY_PATH";
+
+export type AuthoritativeTeamReadiness = {
+  initialized: boolean;
+  state: string;
+  effective: boolean;
+  rosterCount: number;
+  starterCount: number;
+  confirmed: boolean;
+  blockingCode: string | null;
+};
+
+export type PublicMatchReadiness = {
+  home: { status: "READY" | "NOT_READY"; initialized: boolean };
+  away: { status: "READY" | "NOT_READY"; initialized: boolean };
+};
+
 export type MatchReadiness = {
   officials: {
     state: "READY" | "PARTIAL" | "MISSING" | "UNKNOWN";
@@ -470,6 +487,11 @@ export type MatchReadiness = {
   lifecycle: {
     state: MatchLifecycleReadinessState;
     label: string;
+  };
+  authoritativeBaseline?: {
+    source: AuthoritativeReadinessSource;
+    home: AuthoritativeTeamReadiness;
+    away: AuthoritativeTeamReadiness;
   };
 };
 
@@ -515,6 +537,7 @@ export type TournamentScheduleMatch = {
   conflicts?: ScheduleConflictWarning[];
   operations?: MatchOperationLinks;
   readiness?: MatchReadiness;
+  publicReadiness?: PublicMatchReadiness;
 };
 
 export type TournamentListResponse = {
@@ -889,7 +912,7 @@ export type AuthenticatedUser = {
   assignedMatchIds: string[];
   matchAssignments?: MatchAssignment[];
   deviceId: string;
-  authMode: "DEV_HEADER" | "SESSION";
+  authMode: "DEV_HEADER" | "SESSION" | "TEST_PROVIDER";
   sessionId?: string;
   csrfToken?: string;
 };
@@ -1564,7 +1587,16 @@ export type MatchEventType =
   | "GAME_CLOCK_CORRECTED"
   | "SHOT_CLOCK_CORRECTED"
   | "TIMEOUT_OPPORTUNITY_FACT_RECORDED"
-  | "TIMEOUT_OPPORTUNITY_CORRECTED";
+  | "TIMEOUT_OPPORTUNITY_CORRECTED"
+  | "MATCH_ROSTER_BASELINE_IMPORTED";
+
+export const rosterBaselineImportSchema = z.object({
+  teamSide: z.enum(["HOME", "AWAY"])
+}).strict();
+export type RosterBaselineImportRequest = z.infer<typeof rosterBaselineImportSchema>;
+export type RosterBaselineVersion = { eventSeq: number; eventId: string; canonicalPayloadHash: string };
+export type RosterBaselineReadiness = { status: "READY" | "NOT_READY" };
+export type PublicRosterBaselineProjection = { teamSide: "HOME" | "AWAY"; readiness: RosterBaselineReadiness; initialized: boolean };
 
 export type CorrectionEligibleEvent = {
   seqNo: number;
