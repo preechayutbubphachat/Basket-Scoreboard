@@ -1,14 +1,18 @@
 import mysql from "mysql2/promise";
+import { getDatabaseConfig } from "./config/env.js";
 
 export function createDatabasePool() {
+  const config = getDatabaseConfig();
+
   return mysql.createPool({
-    host: process.env.DATABASE_HOST ?? "localhost",
-    port: Number(process.env.DATABASE_PORT ?? 3306),
-    database: process.env.DATABASE_NAME ?? "basketball_scoreboard",
-    user: process.env.DATABASE_USER ?? "root",
-    password: process.env.DATABASE_PASSWORD ?? "",
+    host: config.host,
+    port: config.port,
+    database: config.database,
+    user: config.user,
+    password: config.password,
     waitForConnections: true,
     connectionLimit: 10,
+    multipleStatements: true,
     namedPlaceholders: true
   });
 }
