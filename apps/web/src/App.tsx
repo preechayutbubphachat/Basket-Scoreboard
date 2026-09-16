@@ -24,6 +24,7 @@ import type {
   ReplayGroupFilter,
   ReplayItem,
   PublicScoreboardProjection,
+  RosterLineupProjection,
   ScoreboardProjection,
 
   TournamentLiveDashboardResponse,
@@ -167,16 +168,20 @@ import {
 } from "./lib/lifecycleControl";
 import {
   buildCreatePlayerPayload,
-  buildLineupSetupSummary,
   buildRosterPlayerDisplayLabel,
   buildRosterPlayerLabel,
-  buildRosterReadinessLabel,
+  buildSourceNeutralLineupSetupSummary,
+  buildSourceNeutralRosterMetadataLabel,
+  buildSourceNeutralRosterSidePresentation,
   buildRosterSetupSummary,
   buildSetupQuickLinks,
   buildScorePlayerOptions,
   createPlayerFormState,
+  getAuthoritativeRosterReadinessLabel,
   getRosterPlayersForSide,
   getRosterTeamLabel,
+  isRosterReadinessSubmitDisabled,
+  type RosterReadinessUiState,
   type CreatePlayerFormState
 } from "./lib/rosterControl";
 import {
@@ -184,7 +189,12 @@ import {
   buildReplayEventMeta,
   buildReplayCorrectionDetail,
   buildReplayRowClassName,
-  getReplayScoreAfterLabel
+  createReplayCursorState,
+  getReplayStateAtCursor,
+  getReplayScoreAfterLabel,
+  jumpReplayCursor,
+  stepReplayCursor,
+  type ReplayCursorState
 } from "./lib/replayControl";
 import {
   buildAuditCorrectionDetailRows,
@@ -3077,6 +3087,151 @@ function OperatorMatchesPage() {
   );
 }
 
+type RealtimeReadiness = {
+  transport_connected: boolean;
+  match_join_status: "NOT_REQUESTED" | "JOINING" | "JOINED" | "FAILED";
+  authoritative_sync_status: "UNKNOWN" | "SYNCING" | "CURRENT" | "STALE";
+};
+
+export type AsyncOperationOwner = {
+  matchId: string;
+  generation: number;
+  lifetime: number;
+};
+
+let asyncOperationGeneration = 0;
+
+function createAsyncOperationOwner(matchId: string): AsyncOperationOwner {
+  const generation = ++asyncOperationGeneration;
+  return { matchId, generation, lifetime: generation };
+}
+
+export function isCurrentAsyncOperation(
+  candidate: AsyncOperationOwner,
+  current: AsyncOperationOwner
+) {
+  return candidate.matchId === current.matchId &&
+    candidate.generation === current.generation &&
+    candidate.lifetime === current.lifetime;
+}
+
+export function createInitialRealtimeReadiness(): RealtimeReadiness {
+  return {
+    transport_connected: false,
+    match_join_status: "NOT_REQUESTED",
+    authoritative_sync_status: "UNKNOWN"
+  };
+}
+
+export function createRealtimeDiagnosticState(matchId: string, readiness: RealtimeReadiness) {
+  return {
+    ...readiness,
+    realtime_state: deriveRealtimeConnectionState(readiness),
+    matchId
+  };
+}
+
+type ProjectionRequestHandle = {
+  controller: AbortController;
+  generation: number;
+  matchId: string;
+  owner: AsyncOperationOwner;
+};
+
+type AsyncOperationHandle = {
+  controller: AbortController;
+  owner: AsyncOperationOwner;
+};
+
+function useProjectionRequestFence(matchId: string) {
+  const mountedRef = useRef(true);
+  const latestRef = useRef<ProjectionRequestHandle | null>(null);
+  const routeOwnerRef = useRef<AsyncOperationOwner>(createAsyncOperationOwner(matchId));
+  const activeOperationRef = useRef<AsyncOperationHandle | null>(null);
+  const operationGenerationRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    routeOwnerRef.current = createAsyncOperationOwner(matchId);
+    activeOperationRef.current = null;
+    operationGenerationRef.current = 0;
+    return () => {
+      mountedRef.current = false;
+      routeOwnerRef.current = createAsyncOperationOwner(`unmounted:${matchId}`);
+      activeOperationRef.current?.controller.abort();
+      activeOperationRef.current = null;
+      latestRef.current?.controller.abort();
+      latestRef.current = null;
+    };
+  }, [matchId]);
+
+  const beginOperation = useCallback((): AsyncOperationHandle => {
+    latestRef.current?.controller.abort();
+    latestRef.current = null;
+    activeOperationRef.current?.controller.abort();
+    const routeOwner = routeOwnerRef.current;
+    const owner: AsyncOperationOwner = {
+      matchId,
+      generation: ++operationGenerationRef.current,
+      lifetime: routeOwner.lifetime
+    };
+    const operation = { owner, controller: new AbortController() };
+    activeOperationRef.current = operation;
+    return operation;
+  }, [matchId]);
+
+  const begin = useCallback(() => {
+    const operation = beginOperation();
+    const handle: ProjectionRequestHandle = {
+      controller: operation.controller,
+      generation: operation.owner.generation,
+      matchId,
+      owner: operation.owner
+    };
+    latestRef.current = handle;
+    return handle;
+  }, [beginOperation, matchId]);
+
+  const isCurrent = useCallback((handle: ProjectionRequestHandle) =>
+    mountedRef.current &&
+    latestRef.current === handle &&
+    handle.matchId === matchId &&
+    handle.owner.lifetime === routeOwnerRef.current.lifetime &&
+    !handle.controller.signal.aborted,
+  [matchId]);
+
+  const isCurrentOperation = useCallback((operation: AsyncOperationHandle) =>
+    mountedRef.current &&
+    activeOperationRef.current === operation &&
+    operation.owner.matchId === matchId &&
+    operation.owner.lifetime === routeOwnerRef.current.lifetime &&
+    !operation.controller.signal.aborted,
+  [matchId]);
+
+  return { begin, beginOperation, isCurrent, isCurrentOperation };
+}
+
+export function isIntentionalRequestTeardown(error: unknown, signal: AbortSignal) {
+  return signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+}
+
+function deriveRealtimeConnectionState(readiness: RealtimeReadiness): RealtimeConnectionState {
+  if (
+    readiness.transport_connected &&
+    readiness.match_join_status === "JOINED" &&
+    readiness.authoritative_sync_status === "CURRENT"
+  ) {
+    return "CONNECTED";
+  }
+  if (!readiness.transport_connected && readiness.match_join_status === "FAILED") {
+    return "UNAVAILABLE";
+  }
+  if (!readiness.transport_connected && readiness.match_join_status !== "NOT_REQUESTED") {
+    return "RECONNECTING";
+  }
+  return "POLLING_FALLBACK";
+}
+
 function usePublicProjectionRealtime(
   matchId: string,
   _projection: ScoreboardProjection | PublicScoreboardProjection | null,
@@ -3085,10 +3240,10 @@ function usePublicProjectionRealtime(
   onSequenceGap?: () => void | Promise<void>,
   visibility: "PROTECTED" | "PUBLIC" = "PROTECTED"
 ) {
-  const [realtimeState, setRealtimeState] = useState<RealtimeConnectionState>("POLLING_FALLBACK");
+  const [readiness, setReadiness] = useState<RealtimeReadiness>(createInitialRealtimeReadiness);
   const onProjectionReceivedRef = useRef(onProjectionReceived);
   const onSequenceGapRef = useRef(onSequenceGap);
-  const fallbackTimerRef = useRef<number | null>(null);
+  const joinTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     onProjectionReceivedRef.current = onProjectionReceived;
@@ -3099,78 +3254,126 @@ function usePublicProjectionRealtime(
   }, [onSequenceGap]);
 
   useEffect(() => {
+    let mounted = true;
+    const initialReadiness = createInitialRealtimeReadiness();
+    setReadiness(initialReadiness);
+    (window as Window & { __RM08_REALTIME_STATE__?: RealtimeReadiness & { realtime_state: RealtimeConnectionState; matchId: string } }).__RM08_REALTIME_STATE__ =
+      createRealtimeDiagnosticState(matchId, initialReadiness);
     const socket = createPublicProjectionSocket(getDefaultApiBaseUrl());
 
-    const clearFallbackTimer = () => {
-      if (fallbackTimerRef.current !== null) {
-        window.clearTimeout(fallbackTimerRef.current);
-        fallbackTimerRef.current = null;
+    const clearJoinTimeout = () => {
+      if (joinTimeoutRef.current !== null) {
+        window.clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
       }
     };
 
-    const schedulePollingFallback = () => {
-      clearFallbackTimer();
-      fallbackTimerRef.current = window.setTimeout(() => {
-        setRealtimeState("POLLING_FALLBACK");
-      }, 1500);
+    const updateReadiness = (next: Partial<RealtimeReadiness>) => {
+      if (mounted) {
+        setReadiness((current) => {
+          const nextReadiness = { ...current, ...next };
+          (window as Window & { __RM08_REALTIME_STATE__?: RealtimeReadiness & { realtime_state: RealtimeConnectionState; matchId: string } }).__RM08_REALTIME_STATE__ = {
+            ...nextReadiness,
+            realtime_state: deriveRealtimeConnectionState(nextReadiness),
+            matchId
+          };
+          return nextReadiness;
+        });
+      }
     };
 
     const joinPublicRoom = () => {
-      clearFallbackTimer();
-      setRealtimeState("CONNECTED");
+      clearJoinTimeout();
+      updateReadiness({
+        transport_connected: true,
+        match_join_status: "JOINING",
+        authoritative_sync_status: "SYNCING"
+      });
       socket.emit("match:join", {
         matchId,
         view: "PUBLIC_SCOREBOARD"
       });
+      joinTimeoutRef.current = window.setTimeout(() => {
+        if (mounted) {
+          updateReadiness({ match_join_status: "FAILED", authoritative_sync_status: "STALE" });
+        }
+      }, 5000);
     };
 
     const applyProjection = (next: PublicScoreboardProjection) => {
+      if (!mounted || next.matchId !== matchId) return;
       if (visibility === "PROTECTED") {
         void onSequenceGapRef.current?.();
         return;
       }
 
       const publicSetter = setProjection as React.Dispatch<React.SetStateAction<PublicScoreboardProjection | null>>;
-      publicSetter((current) => applyRealtimeProjectionUpdate(current, next));
+      publicSetter((current) => applyRealtimeProjectionUpdate(current, next, matchId));
       onProjectionReceivedRef.current?.();
     };
 
     socket.on("connect", joinPublicRoom);
     socket.on("disconnect", () => {
-      setRealtimeState("RECONNECTING");
-      schedulePollingFallback();
+      clearJoinTimeout();
+      updateReadiness({
+        transport_connected: false,
+        match_join_status: "NOT_REQUESTED",
+        authoritative_sync_status: "STALE"
+      });
     });
     socket.on("connect_error", () => {
-      setRealtimeState("UNAVAILABLE");
-      schedulePollingFallback();
+      clearJoinTimeout();
+      updateReadiness({
+        transport_connected: false,
+        match_join_status: "FAILED",
+        authoritative_sync_status: "STALE"
+      });
     });
     socket.io.on("reconnect_attempt", () => {
-      setRealtimeState("RECONNECTING");
-      schedulePollingFallback();
+      clearJoinTimeout();
+      updateReadiness({
+        transport_connected: false,
+        match_join_status: "JOINING",
+        authoritative_sync_status: "STALE"
+      });
     });
     socket.on("match:snapshot", (payload) => {
-      if (payload.matchId === matchId) {
-        applyProjection(payload.publicScoreboard);
-      }
+      if (payload.matchId !== matchId) return;
+      clearJoinTimeout();
+      updateReadiness({
+        transport_connected: true,
+        match_join_status: "JOINED",
+        authoritative_sync_status: "CURRENT"
+      });
+      applyProjection(payload.publicScoreboard);
     });
     socket.on("projection.updated", (payload) => {
-      if (payload.matchId === matchId) {
-        applyProjection(payload.publicScoreboard);
-      }
+      if (payload.matchId !== matchId) return;
+      updateReadiness({
+        match_join_status: "JOINED",
+        authoritative_sync_status: "CURRENT"
+      });
+      applyProjection(payload.publicScoreboard);
     });
     socket.on("match:error", () => {
-      setRealtimeState("UNAVAILABLE");
-      schedulePollingFallback();
+      clearJoinTimeout();
+      updateReadiness({
+        transport_connected: true,
+        match_join_status: "FAILED",
+        authoritative_sync_status: "STALE"
+      });
     });
 
     return () => {
-      clearFallbackTimer();
+      mounted = false;
+      clearJoinTimeout();
       socket.close();
     };
-  }, [matchId, setProjection]);
+  }, [matchId, setProjection, visibility]);
 
-  return realtimeState;
+  return deriveRealtimeConnectionState(readiness);
 }
+
 
 type OperatorLiveMatchFrameProps = {
   children: React.ReactNode;
@@ -3279,48 +3482,66 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const accessState = resolveScoreEffectiveAccess(matchId, accessPhase, effectiveAccess);
   const canSubmitScore = accessState.canOperateScore;
   scoreAccessRef.current = canSubmitScore;
+  const {
+    begin: beginProjectionRequest,
+    beginOperation,
+    isCurrent: isCurrentProjectionRequest,
+    isCurrentOperation
+  } = useProjectionRequestFence(matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshAuthoritativeScoreState);
 
   async function loadState() {
+    const request = beginProjectionRequest();
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
     setAccessPhase("loading");
     try {
       const [nextProjection, nextRosters, nextEffectiveAccess] = await Promise.all([
-        api.getMatchProjection(matchId),
-        api.getMatchRosters(matchId).catch(() => null),
-        api.getEffectiveMatchAccess(matchId)
+        api.getMatchProjection(matchId, request.controller.signal),
+        api.getMatchRosters(matchId, request.controller.signal).catch(() => null),
+        api.getEffectiveMatchAccess(matchId, request.controller.signal)
       ]);
+      if (!isCurrentProjectionRequest(request)) return;
       setProjection(nextProjection);
       setRosters(nextRosters);
       setEffectiveAccess(nextEffectiveAccess);
       setAccessPhase("ready");
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setEffectiveAccess(null);
       setAccessPhase("error");
       setMessage(toUiMessage(error));
     } finally {
-      setLoading(false);
+      if (isCurrentProjectionRequest(request)) setLoading(false);
     }
   }
 
   useEffect(() => {
     dispatchedAttemptRef.current = null;
     dispatchScoreQueue({ type: "DISCARD_ALL" });
+    setProjection(null);
+    setRosters(null);
+    setEffectiveAccess(null);
+    setAccessPhase("loading");
+    setLoading(true);
+    setMessage(null);
     void loadState();
   }, [matchId]);
 
   async function refreshAuthoritativeScoreState() {
+    const request = beginProjectionRequest();
     try {
       const [nextProjection, nextAccess] = await Promise.all([
-        api.getMatchProjection(matchId),
-        api.getEffectiveMatchAccess(matchId)
+        api.getMatchProjection(matchId, request.controller.signal),
+        api.getEffectiveMatchAccess(matchId, request.controller.signal)
       ]);
+      if (!isCurrentProjectionRequest(request)) return;
       setProjection(nextProjection);
       setEffectiveAccess(nextAccess);
       setAccessPhase("ready");
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setEffectiveAccess(null);
       setAccessPhase("error");
       setMessage(toUiMessage(error));
@@ -3335,14 +3556,18 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     return () => window.clearInterval(timer);
   }, [api, matchId, realtimeState]);
 
-  async function refreshAfterCommand(lastSeq: number) {
+  async function refreshAfterCommand(lastSeq: number, operation: AsyncOperationHandle) {
+    const { signal } = operation.controller;
     const [sync, nextAccess] = await Promise.all([
-      api.syncMatch(matchId, lastSeq),
-      api.getEffectiveMatchAccess(matchId)
+      api.syncMatch(matchId, lastSeq, signal),
+      api.getEffectiveMatchAccess(matchId, signal)
     ]);
+    if (!isCurrentOperation(operation)) return;
     setEffectiveAccess(nextAccess);
     setAccessPhase("ready");
-    setProjection(sync.projection ?? await api.getMatchProjection(matchId));
+    const nextProjection = sync.projection ?? await api.getMatchProjection(matchId, signal);
+    if (!isCurrentOperation(operation)) return;
+    setProjection(nextProjection);
   }
 
   function enqueueScoreIntent(teamSide: ScoreControlTeamSide, points: ScoreControlPoint) {
@@ -3387,6 +3612,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
     const attemptKey = `${intent.localIntentId}:${scoreQueue.retryNonce}`;
     if (dispatchedAttemptRef.current === attemptKey) return;
     dispatchedAttemptRef.current = attemptKey;
+    const operation = beginOperation();
     const previousSeq = projection.currentSeq;
 
     void (async () => {
@@ -3405,6 +3631,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
           }
         });
 
+        if (!isCurrentOperation(operation)) return;
         if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
           setMessage(getScoreControlFeedback(result));
           dispatchScoreQueue({
@@ -3412,7 +3639,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
             reason: "SYNC_REQUIRED",
             detail: "Authoritative score was refreshed. Review or discard the queued actions; the failed action will not replay."
           });
-          await refreshAfterCommand(previousSeq);
+          await refreshAfterCommand(previousSeq, operation);
           return;
         }
 
@@ -3427,14 +3654,20 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         }
 
         const responseProjection = getAcceptedScoreProjection(result);
-        if (responseProjection) setProjection(responseProjection);
-        else await refreshAfterCommand(previousSeq);
+        if (responseProjection) {
+          if (!isCurrentOperation(operation)) return;
+          setProjection(responseProjection);
+        } else {
+          await refreshAfterCommand(previousSeq, operation);
+        }
+        if (!isCurrentOperation(operation)) return;
         setMessage(getScoreControlFeedback(result));
         dispatchScoreQueue({ type: "ACCEPT_ACTIVE" });
         if (!scoreAccessRef.current) {
           dispatchScoreQueue({ type: "PAUSE", reason: "ACCESS_LOST", detail: "Score access changed. Remaining queued actions require review." });
         }
       } catch (error) {
+        if (!isCurrentOperation(operation) || isIntentionalRequestTeardown(error, operation.controller.signal)) return;
         setMessage(toUiMessage(error));
         dispatchScoreQueue({
           type: "PAUSE",
@@ -4458,17 +4691,28 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
   const previousAccessRef = useRef({ game: false, shot: false });
   const pendingCommandRef = useRef(false);
   const nowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
+  const {
+    begin: beginProjectionRequest,
+    beginOperation,
+    isCurrent: isCurrentProjectionRequest,
+    isCurrentOperation
+  } = useProjectionRequestFence(matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, () => {
     setProjectionReceivedAtMs(Date.now());
   }, refreshAuthoritativeClockState);
 
   async function loadState() {
+    const request = beginProjectionRequest();
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
     setAccessPhase("loading");
     try {
-      const [nextProjection, nextEffectiveAccess] = await Promise.all([api.getMatchProjection(matchId), api.getEffectiveMatchAccess(matchId)]);
+      const [nextProjection, nextEffectiveAccess] = await Promise.all([
+        api.getMatchProjection(matchId, request.controller.signal),
+        api.getEffectiveMatchAccess(matchId, request.controller.signal)
+      ]);
+      if (!isCurrentProjectionRequest(request)) return;
       setProjection(nextProjection);
       setEffectiveAccess(nextEffectiveAccess);
       setAccessPhase("ready");
@@ -4477,23 +4721,31 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
       setGameSeconds(Math.floor((nextProjection.gameClockRemainingMs % 60000) / 1000));
       setShotSeconds(Math.ceil((nextProjection.shotClockRemainingMs ?? 24000) / 1000));
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setAccessPhase("error");
       setMessage(toUiMessage(error));
     } finally {
-      setLoading(false);
+      if (isCurrentProjectionRequest(request)) setLoading(false);
     }
   }
 
   useEffect(() => {
+    setProjection(null);
+    setProjectionReceivedAtMs(null);
+    setLoading(true);
+    setMessage(null);
     void loadState();
   }, [matchId]);
 
   async function refreshProjectionSilently() {
+    const request = beginProjectionRequest();
     try {
-      const nextProjection = await api.getMatchProjection(matchId);
+      const nextProjection = await api.getMatchProjection(matchId, request.controller.signal);
+      if (!isCurrentProjectionRequest(request)) return;
       setProjection(nextProjection);
       setProjectionReceivedAtMs(Date.now());
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setMessage(toUiMessage(error));
     }
   }
@@ -4506,9 +4758,12 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     return () => window.clearInterval(timer);
   }, [api, matchId, realtimeState]);
 
-  async function refreshAfterCommand(lastSeq: number) {
-    const sync = await api.syncMatch(matchId, lastSeq);
-    const nextProjection = sync.projection ?? await api.getMatchProjection(matchId);
+  async function refreshAfterCommand(lastSeq: number, operation: AsyncOperationHandle) {
+    const { signal } = operation.controller;
+    const sync = await api.syncMatch(matchId, lastSeq, signal);
+    if (!isCurrentOperation(operation)) return;
+    const nextProjection = sync.projection ?? await api.getMatchProjection(matchId, signal);
+    if (!isCurrentOperation(operation)) return;
     setProjection(nextProjection);
     setProjectionReceivedAtMs(Date.now());
     setGameMinutes(Math.floor(nextProjection.gameClockRemainingMs / 60000));
@@ -4521,38 +4776,51 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
     pendingCommandRef.current = true;
     setPendingKey(key);
     setMessage(null);
+    const operation = beginOperation();
     const previousSeq = projection.currentSeq;
 
     try {
       const result = await command();
+      if (!isCurrentOperation(operation)) return false;
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getClockControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
+        await refreshAfterCommand(previousSeq, operation);
         return false;
       }
 
-      await refreshAfterCommand(previousSeq);
+      await refreshAfterCommand(previousSeq, operation);
+      if (!isCurrentOperation(operation)) return false;
       setMessage(getClockControlFeedback(result));
       const accepted = result.status === "ACCEPTED" || result.status === "DUPLICATE_ACCEPTED";
       if (accepted) setReason("");
       return accepted;
     } catch (error) {
-      setMessage(toUiMessage(error));
+      if (isCurrentOperation(operation) && !isIntentionalRequestTeardown(error, operation.controller.signal)) {
+        setMessage(toUiMessage(error));
+      }
       return false;
     } finally {
-      pendingCommandRef.current = false;
-      setPendingKey(null);
+      if (isCurrentOperation(operation)) {
+        pendingCommandRef.current = false;
+        setPendingKey(null);
+      }
     }
   }
 
   async function refreshAuthoritativeClockState() {
+    const request = beginProjectionRequest();
     try {
-      const [nextProjection, nextEffectiveAccess] = await Promise.all([api.getMatchProjection(matchId), api.getEffectiveMatchAccess(matchId)]);
+      const [nextProjection, nextEffectiveAccess] = await Promise.all([
+        api.getMatchProjection(matchId, request.controller.signal),
+        api.getEffectiveMatchAccess(matchId, request.controller.signal)
+      ]);
+      if (!isCurrentProjectionRequest(request)) return;
       setProjection(nextProjection);
       setProjectionReceivedAtMs(Date.now());
       setEffectiveAccess(nextEffectiveAccess);
       setAccessPhase("ready");
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setEffectiveAccess(null);
       setAccessPhase("error");
       setMessage(toUiMessage(error));
@@ -4713,6 +4981,7 @@ function OperatorClockPage({ matchId }: { matchId: string }) {
 
 function OperatorTimeoutPage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
+  const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [loading, setLoading] = useState(true);
@@ -4722,37 +4991,54 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
     effectiveAccess?.matchId === matchId &&
     effectiveAccess.capabilities.matchRead &&
     effectiveAccess.capabilities.timeoutOperate;
+  const {
+    begin: beginProjectionRequest,
+    beginOperation,
+    isCurrent: isCurrentProjectionRequest,
+    isCurrentOperation
+  } = useProjectionRequestFence(matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
+    const request = beginProjectionRequest();
     setLoading(true);
     setMessage(null);
     setEffectiveAccess(null);
     try {
       const [nextProjection, nextEffectiveAccess] = await Promise.all([
-        api.getMatchProjection(matchId),
-        api.getEffectiveMatchAccess(matchId).catch((error) => {
-          setMessage(toUiMessage(error));
+        api.getMatchProjection(matchId, request.controller.signal),
+        api.getEffectiveMatchAccess(matchId, request.controller.signal).catch((error) => {
+          if (isCurrentProjectionRequest(request) && !isIntentionalRequestTeardown(error, request.controller.signal)) setMessage(toUiMessage(error));
           return null;
         })
       ]);
+      if (!isCurrentProjectionRequest(request)) return;
       setProjection(nextProjection);
       setEffectiveAccess(nextEffectiveAccess?.matchId === matchId ? nextEffectiveAccess : null);
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setMessage(toUiMessage(error));
     } finally {
-      setLoading(false);
+      if (isCurrentProjectionRequest(request)) setLoading(false);
     }
   }
 
   useEffect(() => {
+    setProjection(null);
+    setProjectionReceivedAtMs(null);
+    setLoading(true);
+    setMessage(null);
     void loadState();
   }, [matchId]);
 
   async function refreshProjectionSilently() {
+    const request = beginProjectionRequest();
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const nextProjection = await api.getMatchProjection(matchId, request.controller.signal);
+      if (!isCurrentProjectionRequest(request)) return;
+      setProjection(nextProjection);
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setMessage(toUiMessage(error));
     }
   }
@@ -4765,9 +5051,13 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
     return () => window.clearInterval(timer);
   }, [api, matchId, realtimeState]);
 
-  async function refreshAfterCommand(lastSeq: number) {
-    const sync = await api.syncMatch(matchId, lastSeq);
-    setProjection(sync.projection ?? await api.getMatchProjection(matchId));
+  async function refreshAfterCommand(lastSeq: number, operation: AsyncOperationHandle) {
+    const { signal } = operation.controller;
+    const sync = await api.syncMatch(matchId, lastSeq, signal);
+    if (!isCurrentOperation(operation)) return;
+    const nextProjection = sync.projection ?? await api.getMatchProjection(matchId, signal);
+    if (!isCurrentOperation(operation)) return;
+    setProjection(nextProjection);
   }
 
   async function grantTimeout(teamSide: TimeoutControlTeamSide) {
@@ -4775,6 +5065,7 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
     const key = `grant-${teamSide}`;
     setPendingKey(key);
     setMessage(null);
+    const operation = beginOperation();
     const previousSeq = projection.currentSeq;
 
     try {
@@ -4783,18 +5074,19 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
         buildTimeoutGrantPayload(projection, teamSide)
       );
 
+      if (!isCurrentOperation(operation)) return;
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getTimeoutControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
+        await refreshAfterCommand(previousSeq, operation);
         return;
       }
 
-      await refreshAfterCommand(previousSeq);
-      setMessage(getTimeoutControlFeedback(result));
+      await refreshAfterCommand(previousSeq, operation);
+      if (isCurrentOperation(operation)) setMessage(getTimeoutControlFeedback(result));
     } catch (error) {
-      setMessage(toUiMessage(error));
+      if (isCurrentOperation(operation) && !isIntentionalRequestTeardown(error, operation.controller.signal)) setMessage(toUiMessage(error));
     } finally {
-      setPendingKey(null);
+      if (isCurrentOperation(operation)) setPendingKey(null);
     }
   }
 
@@ -4802,22 +5094,24 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
     if (!projection || !canSubmitTimeout || !projection.activeTimeout) return;
     setPendingKey("end");
     setMessage(null);
+    const operation = beginOperation();
     const previousSeq = projection.currentSeq;
 
     try {
       const result = await api.endTimeout(matchId, buildTimeoutEndPayload(projection, null));
+      if (!isCurrentOperation(operation)) return;
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getTimeoutControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
+        await refreshAfterCommand(previousSeq, operation);
         return;
       }
 
-      await refreshAfterCommand(previousSeq);
-      setMessage(getTimeoutControlFeedback(result));
+      await refreshAfterCommand(previousSeq, operation);
+      if (isCurrentOperation(operation)) setMessage(getTimeoutControlFeedback(result));
     } catch (error) {
-      setMessage(toUiMessage(error));
+      if (isCurrentOperation(operation) && !isIntentionalRequestTeardown(error, operation.controller.signal)) setMessage(toUiMessage(error));
     } finally {
-      setPendingKey(null);
+      if (isCurrentOperation(operation)) setPendingKey(null);
     }
   }
 
@@ -4902,6 +5196,7 @@ function OperatorTimeoutPage({ matchId }: { matchId: string }) {
 
 function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
+  const [projectionReceivedAtMs, setProjectionReceivedAtMs] = useState<number | null>(null);
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
   const [readiness, setReadiness] = useState<OperatorMatchSummary["readiness"] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -4909,39 +5204,58 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const canSubmitLifecycle = canOperateLifecycle(currentUser, matchId);
+  const {
+    begin: beginProjectionRequest,
+    beginOperation,
+    isCurrent: isCurrentProjectionRequest,
+    isCurrentOperation
+  } = useProjectionRequestFence(matchId);
   const realtimeState = usePublicProjectionRealtime(matchId, projection, setProjection, undefined, refreshProjectionSilently);
 
   async function loadState() {
+    const request = beginProjectionRequest();
     setLoading(true);
     setMessage(null);
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const nextProjection = await api.getMatchProjection(matchId, request.controller.signal);
+      if (!isCurrentProjectionRequest(request)) return;
+      setProjection(nextProjection);
       try {
         const matches = await api.getOperatorMatches();
-        setReadiness(matches.find((match) => match.matchId === matchId)?.readiness ?? null);
+        if (isCurrentProjectionRequest(request)) setReadiness(matches.find((match) => match.matchId === matchId)?.readiness ?? null);
       } catch {
-        setReadiness(null);
+        if (isCurrentProjectionRequest(request)) setReadiness(null);
       }
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setMessage(toUiMessage(error));
     } finally {
-      setLoading(false);
+      if (isCurrentProjectionRequest(request)) setLoading(false);
     }
   }
 
   useEffect(() => {
+    setProjection(null);
+    setProjectionReceivedAtMs(null);
+    setLoading(true);
+    setMessage(null);
     void loadState();
   }, [matchId]);
 
   async function refreshProjectionSilently() {
+    const request = beginProjectionRequest();
     try {
-      setProjection(await api.getMatchProjection(matchId));
+      const nextProjection = await api.getMatchProjection(matchId, request.controller.signal);
+      if (!isCurrentProjectionRequest(request)) return;
+      setProjection(nextProjection);
     } catch (error) {
+      if (!isCurrentProjectionRequest(request) || isIntentionalRequestTeardown(error, request.controller.signal)) return;
       setMessage(toUiMessage(error));
     }
   }
 
   useEffect(() => {
+    if (realtimeState === "CONNECTED") return;
     const timer = window.setInterval(
       () => void refreshProjectionSilently(),
       getOperatorPollingIntervalMs(realtimeState)
@@ -4949,9 +5263,13 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
     return () => window.clearInterval(timer);
   }, [api, matchId, realtimeState]);
 
-  async function refreshAfterCommand(lastSeq: number) {
-    const sync = await api.syncMatch(matchId, lastSeq);
-    setProjection(sync.projection ?? await api.getMatchProjection(matchId));
+  async function refreshAfterCommand(lastSeq: number, operation: AsyncOperationHandle) {
+    const { signal } = operation.controller;
+    const sync = await api.syncMatch(matchId, lastSeq, signal);
+    if (!isCurrentOperation(operation)) return;
+    const nextProjection = sync.projection ?? await api.getMatchProjection(matchId, signal);
+    if (!isCurrentOperation(operation)) return;
+    setProjection(nextProjection);
   }
 
   async function runLifecycleCommand(action: LifecycleAction) {
@@ -4964,6 +5282,7 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
 
     setPendingKey(action);
     setMessage(null);
+    const operation = beginOperation();
     const previousSeq = projection.currentSeq;
     const input = buildLifecycleCommandPayload(projection, reason);
 
@@ -4979,19 +5298,21 @@ function OperatorLifecyclePage({ matchId }: { matchId: string }) {
                 ? await api.startOvertime(matchId, input)
                 : await api.finishMatch(matchId, input);
 
+      if (!isCurrentOperation(operation)) return;
       if (result.status === "SYNC_REQUIRED" || result.reasonCode === "INVALID_EXPECTED_SEQ") {
         setMessage(getLifecycleControlFeedback(result));
-        await refreshAfterCommand(previousSeq);
+        await refreshAfterCommand(previousSeq, operation);
         return;
       }
 
-      await refreshAfterCommand(previousSeq);
+      await refreshAfterCommand(previousSeq, operation);
+      if (!isCurrentOperation(operation)) return;
       setMessage(getLifecycleControlFeedback(result));
       setReason("");
     } catch (error) {
-      setMessage(toUiMessage(error));
+      if (isCurrentOperation(operation) && !isIntentionalRequestTeardown(error, operation.controller.signal)) setMessage(toUiMessage(error));
     } finally {
-      setPendingKey(null);
+      if (isCurrentOperation(operation)) setPendingKey(null);
     }
   }
 
@@ -5558,15 +5879,25 @@ function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: str
   const { api } = useCurrentUser();
   const [replay, setReplay] = useState<MatchReplayResponse | null>(null);
   const [group, setGroup] = useState<ReplayGroupFilter>("all");
+  const [cursorState, setCursorState] = useState<ReplayCursorState>({ cursor: null, playing: false });
+  const [jumpTarget, setJumpTarget] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
+
+  const items = replay?.items ?? [];
+  const selectedState = getReplayStateAtCursor(items, cursorState.cursor);
+  const selected = selectedState.selected;
 
   async function loadReplay(nextGroup = group) {
     setLoading(true);
     setMessage(null);
+    setCursorState({ cursor: null, playing: false });
     try {
-      setReplay(await api.getMatchReplay(matchId, { group: nextGroup, limit: 300 }));
+      const nextReplay = await api.getMatchReplay(matchId, { group: nextGroup, limit: 300 });
+      setReplay(nextReplay);
+      setCursorState(createReplayCursorState(nextReplay.items));
     } catch (error) {
+      setReplay(null);
       setMessage(toUiMessage(error));
     } finally {
       setLoading(false);
@@ -5577,8 +5908,31 @@ function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: str
     void loadReplay(group);
   }, [api, matchId, group]);
 
+  useEffect(() => {
+    if (!cursorState.playing || items.length === 0) return;
+    const timer = window.setInterval(() => {
+      setCursorState((current) => stepReplayCursor(current, 1, items.length));
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [cursorState.playing, items.length]);
+
   function selectGroup(nextGroup: ReplayGroupFilter) {
+    setCursorState({ cursor: null, playing: false });
     setGroup(nextGroup);
+  }
+
+  function step(direction: -1 | 1) {
+    setCursorState((current) => stepReplayCursor(current, direction, items.length));
+  }
+
+  function jump() {
+    const result = jumpReplayCursor(items, cursorState, Number(jumpTarget));
+    if (result.error) {
+      setMessage({ tone: "error", text: result.error, code: "INVALID_REPLAY_SEQUENCE" });
+      return;
+    }
+    setMessage(null);
+    setCursorState(result.state);
   }
 
   return (
@@ -5586,30 +5940,11 @@ function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: str
       <div className="panel">
         <h1>Replay Timeline</h1>
         <p className="muted">Match ID: {matchId}</p>
+        <p className="muted">Read-only replay. Controls change only this browser view.</p>
         <div className="button-row">
-          <a
-            className="button-link secondary"
-            href={backHref}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate(backHref);
-            }}
-          >
-            Back
-          </a>
-          <button type="button" onClick={() => void loadReplay(group)} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-          <a
-            className="button-link"
-            href={buildOperatorMatchAuditLogLink(matchId)}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate(buildOperatorMatchAuditLogLink(matchId));
-            }}
-          >
-            Open Audit Log
-          </a>
+          <a className="button-link secondary" href={backHref} onClick={(event) => { event.preventDefault(); navigate(backHref); }}>Back</a>
+          <button type="button" onClick={() => void loadReplay(group)} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
+          <a className="button-link" href={buildOperatorMatchAuditLogLink(matchId)} onClick={(event) => { event.preventDefault(); navigate(buildOperatorMatchAuditLogLink(matchId)); }}>Open Audit Log</a>
         </div>
         {message ? <Notice {...message} /> : null}
       </div>
@@ -5618,70 +5953,50 @@ function MatchReplayPage({ matchId, backHref }: { matchId: string; backHref: str
           <dl className="state-strip">
             <div><dt>Status</dt><dd>{replay.status}</dd></div>
             <div><dt>Current Seq</dt><dd>{replay.currentSeq}</dd></div>
-            <div><dt>Events</dt><dd>{replay.items.length}</dd></div>
-            <div><dt>Generated</dt><dd>{formatDate(replay.generatedAt)}</dd></div>
+            <div><dt>Events</dt><dd>{items.length}</dd></div>
+            <div><dt>Selected Seq</dt><dd>{selected?.seq ?? "-"}</dd></div>
           </dl>
           <div className="score-display">
-            <div>
-              <span>{replay.homeTeamName}</span>
-              <strong>{replay.items.at(-1)?.scoreAfter?.home ?? "-"}</strong>
-            </div>
-            <div>
-              <span>{replay.awayTeamName}</span>
-              <strong>{replay.items.at(-1)?.scoreAfter?.away ?? "-"}</strong>
-            </div>
+            <div><span>{replay.homeTeamName}</span><strong>{selectedState.scoreAfter?.home ?? "-"}</strong></div>
+            <div><span>{replay.awayTeamName}</span><strong>{selectedState.scoreAfter?.away ?? "-"}</strong></div>
           </div>
+          <div className="button-row" role="group" aria-label="Replay playback controls">
+            <button type="button" onClick={() => step(-1)} disabled={!selected || cursorState.cursor === 0}>Step backward</button>
+            <button type="button" onClick={() => step(1)} disabled={!selected || cursorState.cursor === items.length - 1}>Step forward</button>
+            <button type="button" onClick={() => setCursorState((current) => ({ ...current, playing: !current.playing }))} disabled={!selected}>
+              {cursorState.playing ? "Pause" : "Play"}
+            </button>
+            <label>Jump to sequence <input inputMode="numeric" value={jumpTarget} onChange={(event) => setJumpTarget(event.target.value)} /></label>
+            <button type="button" onClick={jump} disabled={!selected || jumpTarget.trim() === ""}>Jump</button>
+          </div>
+          {selected ? <p role="status">Viewing sequence {selected.seq}: {selected.title}</p> : null}
         </section>
       ) : null}
       <section className="panel">
         <div className="button-row" role="group" aria-label="Replay event filters">
-          {buildReplayEventGroupOptions().map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={group === option.value ? "score-button" : undefined}
-              disabled={loading}
-              onClick={() => selectGroup(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
+          {buildReplayEventGroupOptions().map((option) => <button key={option.value} type="button" className={group === option.value ? "score-button" : undefined} disabled={loading} onClick={() => selectGroup(option.value)}>{option.label}</button>)}
         </div>
       </section>
       {loading ? <section className="panel"><p>Loading replay timeline...</p></section> : null}
-      {!loading && replay && replay.items.length === 0 ? (
-        <section className="panel"><p className="muted">No replay events found for this filter.</p></section>
-      ) : null}
-      {replay && replay.items.length > 0 ? (
-        <section className="panel">
-          <h2>Timeline</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Seq</th>
-                  <th>Group</th>
-                  <th>Time</th>
-                  <th>Event</th>
-                  <th>Detail</th>
-                  <th>Score</th>
-                  <th>Actor</th>
-                </tr>
-              </thead>
-              <tbody>
-                {replay.items.map((item) => (
-                  <ReplayTimelineRow key={`${item.seq}-${item.eventType}`} item={item} replay={replay} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+      {!loading && replay && items.length === 0 ? <section className="panel"><p className="muted">No replay events found for this filter.</p></section> : null}
+      {replay && items.length > 0 ? (
+        <section className="panel"><h2>Timeline</h2><div className="table-wrap"><table><thead><tr><th>Seq</th><th>Group</th><th>Time</th><th>Event</th><th>Detail</th><th>Score</th><th>Actor</th></tr></thead><tbody>{items.map((item, index) => <ReplayTimelineRow key={`${item.seq}-${item.eventType}`} item={item} replay={replay} selected={index === cursorState.cursor} onSelect={() => setCursorState({ cursor: index, playing: false })} />)}</tbody></table></div></section>
       ) : null}
     </section>
   );
 }
 
-function ReplayTimelineRow({ item, replay }: { item: ReplayItem; replay: MatchReplayResponse }) {
+function ReplayTimelineRow({
+  item,
+  replay,
+  selected,
+  onSelect
+}: {
+  item: ReplayItem;
+  replay: MatchReplayResponse;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const meta = buildReplayEventMeta(item);
   const scoreAfter = getReplayScoreAfterLabel(item, replay);
   const correctionDetails = buildReplayCorrectionDetail(item);
@@ -5689,27 +6004,15 @@ function ReplayTimelineRow({ item, replay }: { item: ReplayItem; replay: MatchRe
     ? `${item.player.jerseyNumber ? `#${item.player.jerseyNumber} ` : ""}${item.player.displayName}`
     : null;
   return (
-    <tr className={buildReplayRowClassName(item)}>
-      <td>{item.seq}</td>
+    <tr className={`${buildReplayRowClassName(item)}${selected ? " selected-replay-row" : ""}`}>
+      <td><button type="button" className="button-link" onClick={onSelect} aria-label={`Select sequence ${item.seq}`}>{item.seq}</button></td>
       <td>{meta.badge}</td>
       <td>{meta.timestamp}</td>
-      <td>
-        <strong>{meta.title}</strong>
-        <div className="muted">{item.eventType}</div>
-      </td>
+      <td><strong>{meta.title}</strong><div className="muted">{item.eventType}</div></td>
       <td>
         <span>{meta.description}</span>
         {playerLabel ? <div className="muted">{playerLabel}</div> : null}
-        {correctionDetails.length > 0 ? (
-          <dl className="detail-list compact">
-            {correctionDetails.map((detail) => (
-              <div key={detail}>
-                <dt>Correction</dt>
-                <dd>{detail}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
+        {correctionDetails.length > 0 ? <dl className="detail-list compact">{correctionDetails.map((detail) => <div key={detail}><dt>Correction</dt><dd>{detail}</dd></div>)}</dl> : null}
       </td>
       <td>{scoreAfter ?? "-"}</td>
       <td>{item.actor?.role ?? "-"}</td>
@@ -5907,34 +6210,31 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
     setMessage(null);
   }, refreshPublicScoreboard, "PUBLIC");
 
-  async function refreshPublicScoreboard(cancelled?: () => boolean) {
+  const { begin: beginProjectionRequest, isCurrent: isCurrentProjectionRequest } = useProjectionRequestFence(matchId);
+
+  async function refreshPublicScoreboard() {
+    const request = beginProjectionRequest();
     try {
-      const next = await api.getPublicScoreboard(matchId);
-      if (!cancelled?.()) {
-        setProjection(next);
-        setProjectionReceivedAtMs(Date.now());
-        setMessage(null);
-      }
+      const next = await api.getPublicScoreboard(matchId, request.controller.signal);
+      if (!isCurrentProjectionRequest(request)) return;
+      setProjection((current) => applyRealtimeProjectionUpdate(current, next, matchId));
+      setProjectionReceivedAtMs(Date.now());
+      setMessage(null);
     } catch (error) {
-      if (!cancelled?.()) {
-        setMessage(toUiMessage(error));
-      }
+      if (!isCurrentProjectionRequest(request)) return;
+      if (isIntentionalRequestTeardown(error, request.controller.signal)) return;
+      setMessage(toUiMessage(error));
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-
-    void refreshPublicScoreboard(() => cancelled);
+    void refreshPublicScoreboard();
     const timer = window.setInterval(
-      () => void refreshPublicScoreboard(() => cancelled),
+      () => void refreshPublicScoreboard(),
       getPublicPollingIntervalMs(realtimeState)
     );
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [api, matchId, realtimeState]);
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState, beginProjectionRequest, isCurrentProjectionRequest]);
 
   return (
     <section className="panel public-scoreboard">
@@ -6020,34 +6320,31 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     setMessage(null);
   }, refreshPublicScoreboard, "PUBLIC");
 
-  async function refreshPublicScoreboard(cancelled?: () => boolean) {
+  const { begin: beginProjectionRequest, isCurrent: isCurrentProjectionRequest } = useProjectionRequestFence(matchId);
+
+  async function refreshPublicScoreboard() {
+    const request = beginProjectionRequest();
     try {
-      const next = await api.getPublicScoreboard(matchId);
-      if (!cancelled?.()) {
-        setProjection(next);
-        setProjectionReceivedAtMs(Date.now());
-        setMessage(null);
-      }
+      const next = await api.getPublicScoreboard(matchId, request.controller.signal);
+      if (!isCurrentProjectionRequest(request)) return;
+      setProjection((current) => applyRealtimeProjectionUpdate(current, next, matchId));
+      setProjectionReceivedAtMs(Date.now());
+      setMessage(null);
     } catch (error) {
-      if (!cancelled?.()) {
-        setMessage(toUiMessage(error));
-      }
+      if (!isCurrentProjectionRequest(request)) return;
+      if (isIntentionalRequestTeardown(error, request.controller.signal)) return;
+      setMessage(toUiMessage(error));
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-
-    void refreshPublicScoreboard(() => cancelled);
+    void refreshPublicScoreboard();
     const timer = window.setInterval(
-      () => void refreshPublicScoreboard(() => cancelled),
+      () => void refreshPublicScoreboard(),
       getPublicPollingIntervalMs(realtimeState)
     );
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [api, matchId, realtimeState]);
+    return () => window.clearInterval(timer);
+  }, [api, matchId, realtimeState, beginProjectionRequest, isCurrentProjectionRequest]);
 
   useEffect(() => {
     const supportsFullscreen = Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen);
@@ -6829,14 +7126,17 @@ function AdminOfficialsPage({ matchId }: { matchId: string }) {
   );
 }
 
-function RosterBaselineReadinessPage({ matchId }: { matchId: string }) {
+function RosterBaselineReadinessPanel({ matchId }: { matchId: string }) {
   const { api, currentUser } = useCurrentUser();
-  const [baseline, setBaseline] = useState<Record<"HOME" | "AWAY", RosterBaselineView | null>>({ HOME: null, AWAY: null });
+  const [projection, setProjection] = useState<RosterLineupProjection | null>(null);
   const [sequenceState, setSequenceState] = useState<MatchCommandSequenceState>(() => createMatchCommandSequenceState(matchId));
   const [pendingSide, setPendingSide] = useState<"HOME" | "AWAY" | null>(null);
   const [resyncing, setResyncing] = useState(false);
+  const [loadState, setLoadState] = useState<"LOADING" | "READY" | "DENIED" | "ERROR">("LOADING");
+  const [acceptedSide, setAcceptedSide] = useState<"HOME" | "AWAY" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const sequenceRef = useRef<MatchCommandSequenceState>(createMatchCommandSequenceState(matchId));
+  const submitInFlightRef = useRef(false);
 
   const applySequenceAction = useCallback((action: MatchCommandSequenceAction) => {
     if (action.type !== "MATCH_CHANGED" && sequenceRef.current.matchId !== matchId) return sequenceRef.current;
@@ -6853,30 +7153,41 @@ function RosterBaselineReadinessPage({ matchId }: { matchId: string }) {
   }, [matchId]);
 
   const canImport = currentUser?.role === "ADMIN" || currentUser?.role === "REFEREE" || currentUser?.role === "SCORER";
+  const canConfirm = currentUser?.role === "ADMIN" || currentUser?.role === "SCORER";
 
   const load = useCallback(async () => {
     applySequenceAction({ type: "SYNC_STARTED" });
+    setLoadState("LOADING");
+    setProjection(null);
     setMessage(null);
     try {
       const sync = await api.syncMatch(matchId, sequenceRef.current.currentSeq);
-      const hydrated = applySequenceAction({ type: "AUTHORITATIVE_HYDRATED", currentSeq: sync.currentSeq });
-      const sides = await Promise.all((["HOME", "AWAY"] as const).map(async (teamSide) => {
-        try { return [teamSide, await api.getRosterBaseline(matchId, teamSide)] as const; }
-        catch (error) { if (error instanceof ApiClientError && error.status === 404) return [teamSide, null] as const; throw error; }
-      }));
-      setBaseline(Object.fromEntries(sides) as Record<"HOME" | "AWAY", RosterBaselineView | null>);
+      const authoritative = await api.getRosterLineupState(matchId);
+      if (authoritative.currentSeq !== sync.currentSeq) throw new ApiClientError({ status: 409, reasonCode: "SYNC_REQUIRED", message: "Roster projection sequence is stale", recoverable: true });
+      const hydrated = applySequenceAction({ type: "AUTHORITATIVE_HYDRATED", currentSeq: authoritative.currentSeq });
+      setProjection(authoritative);
+      setLoadState("READY");
       return hydrated?.currentSeq ?? sequenceRef.current.currentSeq;
     } catch (error) {
+      setProjection(null);
+      setLoadState(error instanceof ApiClientError && (error.status === 401 || error.status === 403) ? "DENIED" : "ERROR");
       applySequenceAction({ type: "SYNC_REQUIRED" });
       throw error;
     }
   }, [api, applySequenceAction, matchId]);
 
   useEffect(() => { void load().catch((error) => setMessage(toUiMessage(error))); }, [load]);
+  useEffect(() => {
+    const rehydrate = () => { void load().catch((error) => setMessage(toUiMessage(error))); };
+    window.addEventListener("online", rehydrate);
+    return () => window.removeEventListener("online", rehydrate);
+  }, [load]);
 
   async function importSide(teamSide: "HOME" | "AWAY") {
-    if (!canImport || pendingSide || resyncing || sequenceState.syncStatus !== "SYNCED") return;
+    if (!canImport || submitInFlightRef.current || pendingSide || resyncing || sequenceState.syncStatus !== "SYNCED") return;
+    submitInFlightRef.current = true;
     setPendingSide(teamSide);
+    setAcceptedSide(null);
     setMessage(null);
     try {
       const expectedSeq = sequenceRef.current.currentSeq;
@@ -6890,7 +7201,30 @@ function RosterBaselineReadinessPage({ matchId }: { matchId: string }) {
       await load();
       setMessage({ tone: "success", text: `${teamSide} authoritative baseline imported.` });
     } catch (error) { setMessage(toUiMessage(error)); }
-    finally { setPendingSide(null); }
+    finally { submitInFlightRef.current = false; setPendingSide(null); }
+  }
+
+  async function confirmSide(teamSide: "HOME" | "AWAY") {
+    const side = teamSide === "HOME" ? projection?.home : projection?.away;
+    if (!canConfirm || !side?.rosterVersion || submitInFlightRef.current || pendingSide || resyncing || sequenceState.syncStatus !== "SYNCED") return;
+    submitInFlightRef.current = true;
+    setPendingSide(teamSide);
+    setAcceptedSide(null);
+    setMessage(null);
+    try {
+      const result = await api.confirmRosterReadiness(matchId, teamSide, side.rosterVersion, sequenceRef.current.currentSeq);
+      if (result.status === "SYNC_REQUIRED") {
+        applySequenceAction({ type: "SYNC_REQUIRED" });
+        throw new ApiClientError({ status: 409, reasonCode: "SYNC_REQUIRED", message: result.message ?? "Authoritative resync required", recoverable: true });
+      }
+      if (result.status === "REJECTED") throw new ApiClientError({ status: 422, reasonCode: result.reasonCode ?? "REJECTED", message: result.message ?? "Readiness confirmation denied" });
+      applySequenceAction({ type: "ACCEPTED", currentSeq: result.currentSeq });
+      setAcceptedSide(teamSide);
+      await load();
+      setAcceptedSide(teamSide);
+      setMessage({ tone: "success", text: `${teamSide} baseline confirmation accepted. Eligibility and registration remain not evaluated because source authority is insufficient.` });
+    } catch (error) { setMessage(toUiMessage(error)); }
+    finally { submitInFlightRef.current = false; setPendingSide(null); }
   }
 
   async function resyncAuthoritativeState() {
@@ -6907,13 +7241,18 @@ function RosterBaselineReadinessPage({ matchId }: { matchId: string }) {
   }
 
   return <section className="stack" aria-label="Authoritative roster baseline readiness">
-    <div className="panel"><h1>Roster Baseline Readiness</h1><p className="muted">Server-derived import only. Roster, starter, captain, lock, and correction changes are unavailable here.</p>{sequenceState.syncStatus === "SYNCING" ? <p role="status">Synchronizing authoritative match state</p> : null}{message ? <Notice {...message} /> : null}{message?.code === "SYNC_REQUIRED" || message?.code === "INVALID_EXPECTED_SEQ" ? <button type="button" onClick={() => void resyncAuthoritativeState()} disabled={resyncing}>{resyncing ? "Resynchronizing..." : "Resync authoritative state"}</button> : null}</div>
+    <div className="panel"><h1>Roster Readiness</h1><p className="muted">Server-owned roster snapshots only. Source authority is insufficient and has not been accepted or verified. Eligibility and registration remain unresolved and not evaluated. No official competition-rule claim is made.</p>{loadState === "LOADING" || sequenceState.syncStatus === "SYNCING" ? <p role="status">Loading authoritative roster state</p> : null}{loadState === "DENIED" ? <p role="alert">Protected roster access denied or revoked.</p> : null}{message ? <Notice {...message} /> : null}{sequenceState.syncStatus === "SYNC_REQUIRED" ? <p role="status">State is stale — SYNC_REQUIRED.</p> : null}{message?.code === "SYNC_REQUIRED" || message?.code === "INVALID_EXPECTED_SEQ" || sequenceState.syncStatus === "SYNC_REQUIRED" ? <button type="button" onClick={() => void resyncAuthoritativeState()} disabled={resyncing}>{resyncing ? "Resynchronizing..." : "Resync authoritative state"}</button> : null}</div>
     <section className="score-actions">
       {(["HOME", "AWAY"] as const).map((teamSide) => {
-        const side = baseline[teamSide];
-        return <article className="panel" key={teamSide}><h2>{teamSide}</h2><dl className="state-strip"><div><dt>Readiness</dt><dd>{side?.readiness.state ?? "ROSTER_NOT_INITIALIZED"}</dd></div><div><dt>Sequence</dt><dd>{side?.version?.eventSeq ?? sequenceState.currentSeq}</dd></div><div><dt>Integrity</dt><dd>{side?.integrityIssues.length ? "BLOCKED" : "CLEAR"}</dd></div></dl>
+        const side = teamSide === "HOME" ? projection?.home ?? null : projection?.away ?? null;
+        const uiState: RosterReadinessUiState = loadState === "LOADING" ? "LOADING" : loadState === "DENIED" ? "DENIED" : pendingSide === teamSide ? "PENDING" : sequenceState.syncStatus === "SYNC_REQUIRED" ? "SYNC_REQUIRED" : acceptedSide === teamSide ? "ACCEPTED" : side?.confirmation.status === "STALE" ? "STALE" : side?.initialized ? "READY_NOT_CONFIRMED" : "EMPTY";
+        const confirmDisabled = isRosterReadinessSubmitDisabled({ authorized: canConfirm, loading: loadState === "LOADING", pending: Boolean(pendingSide), resyncing, syncStatus: sequenceState.syncStatus, side });
+        const sourceNeutralState = buildSourceNeutralRosterSidePresentation(side);
+        return <article className="panel" key={teamSide} data-governing-eligibility-state="POLICY_NOT_CONFIGURED"><h2>{teamSide}</h2><dl className="state-strip"><div><dt>Readiness</dt><dd>{uiState === "READY_NOT_CONFIRMED" && side?.readiness.dataReady && side.confirmation.status !== "CONFIRMED" ? "DATA READY — NOT CONFIRMED" : getAuthoritativeRosterReadinessLabel(side, uiState)}</dd></div><div><dt>Sequence</dt><dd>{projection?.currentSeq ?? sequenceState.currentSeq}</dd></div><div><dt>Projection</dt><dd>{projection?.projectionVersion ?? "UNAVAILABLE"}</dd></div><div><dt>Baseline</dt><dd>{sourceNeutralState.initialization}</dd></div><div><dt>Version</dt><dd>{sourceNeutralState.projectionVersion.eventSeq === null ? sourceNeutralState.projectionVersion.status : `${sourceNeutralState.projectionVersion.status} — EVENT SEQ ${sourceNeutralState.projectionVersion.eventSeq}`}</dd></div><div><dt>Integrity</dt><dd>{sourceNeutralState.integrity}</dd></div><div><dt>Confirmation</dt><dd>{sourceNeutralState.confirmation}</dd></div><div><dt>Starters recorded</dt><dd>{sourceNeutralState.rosterMetadata.starterCount}</dd></div><div><dt>Captain metadata</dt><dd>{sourceNeutralState.rosterMetadata.captainRecorded ? "RECORDED" : "NOT RECORDED"}</dd></div><div><dt>Source authority</dt><dd>{sourceNeutralState.sourceAuthority.sourceAuthorityEvidence}</dd></div><div><dt>Source acceptance</dt><dd>{sourceNeutralState.sourceAuthority.sourceAcceptance}</dd></div><div><dt>Eligibility / registration</dt><dd>{sourceNeutralState.sourceAuthority.eligibilityAndRegistrationSemantics}</dd></div><div><dt>Privacy</dt><dd>PROTECTED VIEW — {sourceNeutralState.privacy.publicView}</dd></div></dl>
+          {!side?.initialized && loadState === "READY" ? <p>No authoritative roster data for {teamSide}.</p> : null}
+          {side?.members.length ? <ul>{side.members.map((member) => <li key={member.playerId}>{member.jerseyNumberSnapshot ? `#${member.jerseyNumberSnapshot} ` : ""}{member.displayNameSnapshot}{member.isStarter ? " — STARTER" : ""}{member.isCaptain ? " — CAPTAIN" : ""}</li>)}</ul> : null}
           {!canImport ? <p className="muted">Active Admin, Referee, or Scorer permission is required to import.</p> : null}
-          <button type="button" disabled={!canImport || Boolean(pendingSide) || resyncing || sequenceState.syncStatus !== "SYNCED" || Boolean(side)} onClick={() => void importSide(teamSide)}>{pendingSide === teamSide ? "Importing baseline..." : side ? "Baseline imported" : `Import ${teamSide} baseline`}</button>
+          {!side?.initialized ? <button type="button" disabled={!canImport || Boolean(pendingSide) || resyncing || sequenceState.syncStatus !== "SYNCED" || loadState !== "READY"} onClick={() => void importSide(teamSide)}>{pendingSide === teamSide ? "Import pending..." : `Import ${teamSide} baseline`}</button> : <button type="button" disabled={confirmDisabled} onClick={() => void confirmSide(teamSide)}>{pendingSide === teamSide ? "Confirmation pending..." : side.confirmation.status === "CONFIRMED" ? "Confirmation accepted" : `Confirm ${teamSide} baseline data`}</button>}
         </article>;
       })}
     </section>
@@ -6935,6 +7274,7 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const isAdmin = canManageAssignments(currentUser);
+  const [managementOpen, setManagementOpen] = useState(false);
   const rosterSummary = buildRosterSetupSummary(rosters);
   const setupLinks = buildSetupQuickLinks(matchId);
 
@@ -6962,8 +7302,8 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
   }
 
   useEffect(() => {
-    void loadRosters();
-  }, [matchId]);
+    if (managementOpen) void loadRosters();
+  }, [managementOpen, matchId]);
 
   async function createAndAssign(teamSide: "HOME" | "AWAY") {
     if (!isAdmin || !projection) return;
@@ -7000,9 +7340,21 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
       <div className="panel">
         <h1>Match Rosters</h1>
         <p className="muted">Match ID: {matchId}</p>
+        <p className="muted">RM-08 Policy is retained as a compatibility label only; it does not assert policy or official-rule authority.</p>
+        <dl className="state-strip" aria-label="RM-08 source-neutral presentation markers">
+          <div><dt>Source binding</dt><dd>SOURCE_BINDING_UNAVAILABLE</dd></div>
+          <div><dt>First competition date</dt><dd>FIRST COMPETITION DATE UNRESOLVED</dd></div>
+          <div><dt>Publication</dt><dd>PUBLIC ALLOWLIST ONLY</dd></div>
+          <div><dt>Roster layer</dt><dd>Tournament roster</dd></div>
+        </dl>
         {!isAdmin ? <ErrorMessage code="FORBIDDEN" message="Admin role is required to manage rosters." /> : null}
         {message ? <Notice {...message} /> : null}
       </div>
+      <RosterBaselineReadinessPanel matchId={matchId} />
+      <button type="button" className="secondary" onClick={() => setManagementOpen((open) => !open)}>
+        {managementOpen ? "Hide roster management" : "Open roster management"}
+      </button>
+      {managementOpen ? <>
       {loading ? <section className="panel"><p>Loading rosters...</p></section> : null}
       {!loading && projection ? (
         <section className="panel">
@@ -7030,6 +7382,7 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
           </div>
         </section>
       ) : null}
+
       {!loading && projection ? (
         <section className="score-actions">
           {(["HOME", "AWAY"] as const).map((teamSide) => {
@@ -7115,6 +7468,7 @@ function AdminRostersPage({ matchId }: { matchId: string }) {
           })}
         </section>
       ) : null}
+      </> : <p className="muted">Roster management is deferred until explicitly opened.</p>}
     </section>
   );
 }
@@ -7126,7 +7480,7 @@ function AdminLineupPage({ matchId }: { matchId: string }) {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
   const isAdmin = canManageAssignments(currentUser);
-  const lineupSummary = buildLineupSetupSummary(lineup);
+  const lineupSummary = buildSourceNeutralLineupSetupSummary(lineup);
   const setupLinks = buildSetupQuickLinks(matchId);
 
   async function loadLineup(options: { clearMessage?: boolean } = {}) {
@@ -7170,6 +7524,17 @@ function AdminLineupPage({ matchId }: { matchId: string }) {
       <div className="panel">
         <h1>Lineup / Starters</h1>
         <p className="muted">Match ID: {matchId}</p>
+        <aside className="panel" aria-label="Unified lineup status and disclosure">
+          <h2>Unified lineup status</h2>
+          <p><strong>Operational readiness is separate from governing eligibility.</strong></p>
+          <dl className="state-strip">
+            <div><dt>Operational readiness</dt><dd>Visible from the server-read MatchLineupResponse contract.</dd></div>
+            <div><dt>Governing eligibility</dt><dd>NOT_ACCEPTED / UNVERIFIED — not evaluated.</dd></div>
+            <div><dt>Governing source</dt><dd>NOT_ACCEPTED / UNVERIFIED.</dd></div>
+          </dl>
+          <p className="muted">No official rule claim is made. Lock state and correction state are not exposed by the existing MatchLineupResponse contract; actions remain only server-authorized.</p>
+          <p className="muted">No client-only unlock or correction is offered, and this view does not create duplicate truth.</p>
+        </aside>
         {!isAdmin ? <ErrorMessage code="FORBIDDEN" message="Admin role is required to manage lineup." /> : null}
         {pendingKey ? <Notice tone="success" text="Saving..." /> : null}
         {message ? <Notice {...message} /> : null}
@@ -7215,7 +7580,7 @@ function AdminLineupPage({ matchId }: { matchId: string }) {
                 <dl className="state-strip">
                   <div><dt>Starters</dt><dd>{side.readiness.starterCount}/5</dd></div>
                   <div><dt>Captain</dt><dd>{side.readiness.captainSet ? "SET" : "NEEDED"}</dd></div>
-                  <div><dt>Readiness</dt><dd>{buildRosterReadinessLabel(side.readiness)}</dd></div>
+                  <div><dt>Readiness</dt><dd>{buildSourceNeutralRosterMetadataLabel(side.readiness)}</dd></div>
                 </dl>
                 {side.players.length === 0 ? <p className="muted">No roster players assigned.</p> : null}
                 <div className="table-wrap">
@@ -7515,13 +7880,13 @@ function RoutedApp({ route }: { route: Route }) {
       case "admin-rosters":
         return (
           <ProtectedRoute>
-            <RosterBaselineReadinessPage matchId={route.matchId} />
+            <AdminRostersPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "admin-lineup":
         return (
           <ProtectedRoute>
-            <RosterBaselineReadinessPage matchId={route.matchId} />
+            <AdminLineupPage matchId={route.matchId} />
           </ProtectedRoute>
         );
       case "admin-summary":

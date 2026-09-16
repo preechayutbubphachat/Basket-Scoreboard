@@ -50,6 +50,43 @@ export function hasReplayMutationControls() {
   return false;
 }
 
+export type ReplayCursorState = {
+  cursor: number | null;
+  playing: boolean;
+};
+
+export function createReplayCursorState(items: ReplayItem[]): ReplayCursorState {
+  return { cursor: items.length > 0 ? items.length - 1 : null, playing: false };
+}
+
+export function getReplayStateAtCursor(items: ReplayItem[], cursor: number | null) {
+  if (cursor === null || cursor < 0 || cursor >= items.length) {
+    return { selected: null, scoreAfter: null };
+  }
+  let scoreAfter: ReplayItem["scoreAfter"] = null;
+  for (let index = 0; index <= cursor; index += 1) {
+    const item = items[index];
+    if (item?.scoreAfter) scoreAfter = item.scoreAfter;
+  }
+  const selected = items[cursor];
+  return { selected: selected ?? null, scoreAfter };
+}
+
+export function stepReplayCursor(state: ReplayCursorState, direction: -1 | 1, itemCount: number): ReplayCursorState {
+  if (itemCount === 0 || state.cursor === null) return { ...state, playing: false };
+  const cursor = Math.max(0, Math.min(itemCount - 1, state.cursor + direction));
+  return { cursor, playing: cursor === itemCount - 1 ? false : state.playing };
+}
+
+export function jumpReplayCursor(items: ReplayItem[], state: ReplayCursorState, target: unknown) {
+  if (typeof target !== "number" || !Number.isSafeInteger(target) || target < 0) {
+    return { state, error: "Enter a non-negative integer sequence." };
+  }
+  const cursor = items.findIndex((item) => item.seq === target);
+  if (cursor < 0) return { state, error: `Sequence ${target} is not in the current replay.` };
+  return { state: { cursor, playing: false }, error: null };
+}
+
 function formatTimestamp(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
