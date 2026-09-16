@@ -3,6 +3,7 @@ import type {
   AlphaCorrectionResponse,
   ActiveDisplaySceneResponse,
   CommandResult,
+  ConfirmRosterReadinessCommand,
   CorrectionEligibleEventsResponse,
   CreateCourtRequest,
   CreateDisplaySceneInput,
@@ -48,6 +49,9 @@ import type {
   TournamentSetupTeam,
   TournamentSummary,
   PublicScoreboardProjection,
+  RosterBaselineVersion,
+  RosterLineupProjection,
+  RosterReadinessCommandResult,
   PublicDisplayScreenResponse,
   UpdateDisplaySceneInput,
   UpdateDisplayScreenInput,
@@ -512,6 +516,31 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async getRosterBaseline(matchId: string, teamSide: "HOME" | "AWAY") {
       return request<RosterBaselineView>(`/matches/${encodeURIComponent(matchId)}/roster-baseline/${teamSide}`);
     },
+    async getRosterLineupState(matchId: string) {
+      return request<RosterLineupProjection>(`/matches/${encodeURIComponent(matchId)}/roster-lineup-state`);
+    },
+    async confirmRosterReadiness(
+      matchId: string,
+      teamSide: "HOME" | "AWAY",
+      rosterVersion: RosterBaselineVersion,
+      expectedSeq: number,
+      commandId = createCommandId()
+    ) {
+      const command: ConfirmRosterReadinessCommand = {
+        commandId,
+        matchId,
+        expectedSeq,
+        correlationId: commandId,
+        clientTimestamp: new Date().toISOString(),
+        payload: { teamSide, rosterVersion }
+      };
+      return request<RosterReadinessCommandResult>(
+        `/matches/${encodeURIComponent(matchId)}/commands/roster/readiness/confirm`,
+        { method: "POST", body: JSON.stringify(command) },
+        false,
+        { acceptRawSuccess: true }
+      );
+    },
     async importRosterBaseline(matchId: string, teamSide: "HOME" | "AWAY", expectedSeq: number) {
       return request<RosterBaselineImportResult>(`/matches/${encodeURIComponent(matchId)}/roster-baseline/import`, {
         method: "POST",
@@ -928,10 +957,10 @@ export function createApiClient(options: { baseUrl?: string; fetchImpl?: FetchLi
     async finishMatch(matchId: string, input: { expectedSeq: number; payload: LifecycleCommandPayload }) {
       return lifecycleCommand("/commands/lifecycle/finish-match", matchId, input);
     },
-    async getPublicScoreboard(matchId: string) {
+    async getPublicScoreboard(matchId: string, signal?: AbortSignal) {
       return request<PublicScoreboardProjection>(
         `/public/matches/${encodeURIComponent(matchId)}/scoreboard`,
-        {},
+        signal ? { signal } : {},
         false,
         { acceptRawSuccess: true }
       );

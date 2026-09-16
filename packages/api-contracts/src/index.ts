@@ -32,7 +32,12 @@ export const reasonCodes = {
   MATCH_NOT_FOUND: "MATCH_NOT_FOUND",
   INVALID_EXPECTED_SEQ: "INVALID_EXPECTED_SEQ",
   DUPLICATE_COMMAND: "DUPLICATE_COMMAND",
+  COMMAND_ID_COLLISION: "COMMAND_ID_COLLISION",
+  POLICY_NOT_CONFIGURED: "POLICY_NOT_CONFIGURED",
   DB_CONSTRAINT_ERROR: "DB_CONSTRAINT_ERROR",
+  DUPLICATE_DIVISION_PLAYER: "DUPLICATE_DIVISION_PLAYER",
+  TEAM_OFFICIAL_LIMIT_REACHED: "TEAM_OFFICIAL_LIMIT_REACHED",
+  DIVISION_REGISTRATION_REQUIRED: "DIVISION_REGISTRATION_REQUIRED",
   INTERNAL_ERROR: "INTERNAL_ERROR"
 } as const;
 
@@ -99,10 +104,19 @@ export const rosterStatusSchema = z.enum(["ACTIVE", "BENCH", "INACTIVE"]);
 
 export const createPlayerSchema = z.object({
   playerId: z.string().uuid().optional(),
+  divisionId: z.string().uuid().optional(),
+  divisionCode: z.string().trim().min(1).max(80).optional(),
   displayName: z.string().trim().min(1).max(200),
   jerseyNumber: z.string().trim().min(1).max(12).nullable().optional(),
   position: playerPositionSchema.default("UNKNOWN"),
   active: z.boolean().default(true)
+});
+
+export const registerTeamOfficialSchema = z.object({
+  divisionCode: z.string().trim().min(1).max(80),
+  officialId: z.string().uuid(),
+  displayName: z.string().trim().min(1).max(200),
+  roleCode: z.string().trim().min(1).max(40).nullable().optional()
 });
 
 export const updatePlayerSchema = z.object({
@@ -131,6 +145,7 @@ export const lineupActionSchema = z.object({
 export type PlayerPosition = z.infer<typeof playerPositionSchema>;
 export type RosterStatus = z.infer<typeof rosterStatusSchema>;
 export type CreatePlayerRequest = z.infer<typeof createPlayerSchema>;
+export type RegisterTeamOfficialRequest = z.infer<typeof registerTeamOfficialSchema>;
 export type UpdatePlayerRequest = z.infer<typeof updatePlayerSchema>;
 export type AssignRosterPlayerRequest = z.infer<typeof assignRosterPlayerSchema>;
 export type UpdateRosterPlayerRequest = z.infer<typeof updateRosterPlayerSchema>;
@@ -169,6 +184,29 @@ export type RosterReadiness = {
   ready: boolean;
 };
 
+export const RM08_SOURCE_AUTHORITY_BOUNDARY = {
+  sourceAuthorityEvidence: "INSUFFICIENT",
+  sourceAcceptance: "NOT_ACCEPTED / UNVERIFIED",
+  officialRuleClaimsAllowed: false,
+  eligibilityAndRegistrationSemantics: "UNRESOLVED / NOT_EVALUATED"
+} as const;
+
+export type RosterSourceAuthorityBoundary = typeof RM08_SOURCE_AUTHORITY_BOUNDARY;
+
+/**
+ * Compatibility-only payload from the pre-existing RM08 policy endpoint.
+ * Its shape is deliberately opaque: consumers must not interpret it as an
+ * accepted governing source while the source-authority boundary is unresolved.
+ */
+export type Rm08RosterPolicyView = unknown;
+
+export type PublicRosterPlayer = {
+  displayName: string;
+  jerseyNumber: string | null;
+  team: "HOME" | "AWAY";
+  captain: boolean;
+};
+
 export type MatchRostersResponse = {
   matchId: string;
   rosters: {
@@ -179,6 +217,8 @@ export type MatchRostersResponse = {
     home: RosterReadiness;
     away: RosterReadiness;
   };
+  sourceAuthority?: RosterSourceAuthorityBoundary;
+  policy?: Rm08RosterPolicyView;
 };
 
 export type LineupTeamResponse = {
@@ -827,6 +867,7 @@ export type PermissionCode =
   | "match.clock.shot.operate"
   | "match.timeout.operate"
   | "match.lifecycle.operate"
+  | "match.roster.confirm"
   | "match.correction.request"
   | "match.correction.apply"
   | "match.correction.reject"
@@ -839,7 +880,8 @@ export type MatchOperatorPermission =
   | "match.clock.game.operate"
   | "match.clock.shot.operate"
   | "match.timeout.operate"
-  | "match.lifecycle.operate";
+  | "match.lifecycle.operate"
+  | "match.roster.confirm";
 
 export type EffectiveMatchCapabilities = {
   matchRead: boolean;
@@ -871,15 +913,16 @@ export const matchOperatorPermissions: readonly MatchOperatorPermission[] = [
   "match.clock.game.operate",
   "match.clock.shot.operate",
   "match.timeout.operate",
-  "match.lifecycle.operate"
+  "match.lifecycle.operate",
+  "match.roster.confirm"
 ];
 
 export function assignmentRoleAllowsPermission(roleCode: string, permission: PermissionCode) {
   if (permission === "match.read") return true;
 
   const operatorPermissionsByAssignment: Partial<Record<MatchOfficialRoleCode, readonly MatchOperatorPermission[]>> = {
-    SCORER: ["match.score.operate", "match.foul.operate"],
-    ASSISTANT_SCORER: ["match.score.operate", "match.foul.operate"],
+    SCORER: ["match.score.operate", "match.foul.operate", "match.roster.confirm"],
+    ASSISTANT_SCORER: ["match.score.operate", "match.foul.operate", "match.roster.confirm"],
     TIMER: ["match.clock.game.operate"],
     SHOT_CLOCK_OPERATOR: ["match.clock.shot.operate"],
     MATCH_OPERATOR: matchOperatorPermissions
@@ -1345,6 +1388,19 @@ const commandEnvelopeBaseSchema = z.object({
   clientTimestamp: z.string().datetime()
 });
 
+export const rosterBaselineVersionSchema = z.object({
+  eventSeq: z.number().int().positive(),
+  eventId: z.string().uuid(),
+  canonicalPayloadHash: z.string().regex(/^[0-9a-f]{64}$/)
+}).strict();
+
+export const confirmRosterReadinessCommandSchema = commandEnvelopeBaseSchema.extend({
+  payload: z.object({
+    teamSide: z.enum(["HOME", "AWAY"]),
+    rosterVersion: rosterBaselineVersionSchema
+  }).strict()
+}).strict();
+
 export const correctionRequestCommandSchema = commandEnvelopeBaseSchema.extend({
   payload: correctionRequestPayloadSchema
 });
@@ -1550,6 +1606,7 @@ export type EligibleCorrectionEventsQuery = z.infer<typeof eligibleCorrectionEve
 export type CommandResultStatus = z.infer<typeof commandResultStatusSchema>;
 export type RealtimeView = z.infer<typeof realtimeViewSchema>;
 export type MatchJoinPayload = z.infer<typeof matchJoinPayloadSchema>;
+export type ConfirmRosterReadinessCommand = z.infer<typeof confirmRosterReadinessCommandSchema>;
 
 export type MatchEventType =
   | "MATCH_STARTED"
@@ -1588,7 +1645,8 @@ export type MatchEventType =
   | "SHOT_CLOCK_CORRECTED"
   | "TIMEOUT_OPPORTUNITY_FACT_RECORDED"
   | "TIMEOUT_OPPORTUNITY_CORRECTED"
-  | "MATCH_ROSTER_BASELINE_IMPORTED";
+  | "MATCH_ROSTER_BASELINE_IMPORTED"
+  | "ROSTER_READINESS_CONFIRMED";
 
 export const rosterBaselineImportSchema = z.object({
   teamSide: z.enum(["HOME", "AWAY"])
@@ -1596,7 +1654,79 @@ export const rosterBaselineImportSchema = z.object({
 export type RosterBaselineImportRequest = z.infer<typeof rosterBaselineImportSchema>;
 export type RosterBaselineVersion = { eventSeq: number; eventId: string; canonicalPayloadHash: string };
 export type RosterBaselineReadiness = { status: "READY" | "NOT_READY" };
-export type PublicRosterBaselineProjection = { teamSide: "HOME" | "AWAY"; readiness: RosterBaselineReadiness; initialized: boolean };
+export type PublicRosterBaselineProjection = {
+  teamSide: "HOME" | "AWAY";
+  readiness: RosterBaselineReadiness;
+  initialized: boolean;
+  players: PublicRosterPlayer[];
+};
+
+export type RosterLineupMemberSnapshot = {
+  playerId: string;
+  teamId: string;
+  displayNameSnapshot: string;
+  jerseyNumberSnapshot: string | null;
+  rosterStatus: "ACTIVE" | "BENCH" | "INACTIVE";
+  isStarter: boolean;
+  isCaptain: boolean;
+  eligibilityStatus: "NOT_EVALUATED" | "POLICY_NOT_CONFIGURED";
+};
+
+export type RosterLineupSideProjection = {
+  teamSide: "HOME" | "AWAY";
+  matchTeamId: string | null;
+  initialized: boolean;
+  rosterVersion: RosterBaselineVersion | null;
+  members: RosterLineupMemberSnapshot[];
+  starterIds: string[];
+  captainId: string | null;
+  confirmation: {
+    status: "NOT_CONFIRMED" | "CONFIRMED" | "STALE";
+    rosterVersion: RosterBaselineVersion | null;
+    eventId: string | null;
+    eventSeq: number | null;
+  };
+  readiness: {
+    dataReady: boolean;
+    eligibilityVerified: false;
+    eligibilityStatus: "POLICY_NOT_CONFIGURED";
+    status: "EMPTY" | "MALFORMED_LEGACY_STATE" | "READY_NOT_CONFIRMED" | "POLICY_NOT_CONFIGURED";
+    blockingReasons: string[];
+    sourceAuthority?: RosterSourceAuthorityBoundary;
+  };
+};
+
+export type RosterLineupProjection = {
+  matchId: string;
+  currentSeq: number;
+  projectionVersion: "roster-lineup-v1";
+  home: RosterLineupSideProjection;
+  away: RosterLineupSideProjection;
+  lockState: "OUT_OF_SCOPE";
+  correctionState: "OUT_OF_SCOPE";
+  updatedAt: string | null;
+};
+
+export type PublicRosterLineupProjection = {
+  matchId: string;
+  currentSeq: number;
+  projectionVersion: "roster-lineup-public-v1";
+  readiness: {
+    home: { status: "READY" | "NOT_READY"; initialized: boolean };
+    away: { status: "READY" | "NOT_READY"; initialized: boolean };
+  };
+};
+
+export type RosterReadinessCommandResult = {
+  status: "ACCEPTED" | "REJECTED" | "SYNC_REQUIRED";
+  commandId: string;
+  matchId: string;
+  currentSeq: number;
+  appendedEvents: Array<{ eventId: string; seqNo: number; eventType: "ROSTER_READINESS_CONFIRMED" }>;
+  reasonCode: string | null;
+  message: string | null;
+  projection?: RosterLineupProjection;
+};
 
 export type CorrectionEligibleEvent = {
   seqNo: number;
@@ -1755,6 +1885,7 @@ export type PublicRecentAction =
 
 export type PublicScoreboardProjection = {
   matchId: string;
+  currentSeq: number;
   homeTeamName?: string | null;
   awayTeamName?: string | null;
   homeScore: number;
