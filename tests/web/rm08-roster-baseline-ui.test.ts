@@ -3,21 +3,20 @@ import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync("apps/web/src/App.tsx", "utf8");
 
-describe("RM-08 P1A import-only roster UI", () => {
-  it("mounts the bounded readiness page on both legacy setup routes", () => {
+describe("RM-08 source-backed roster/lineup UI", () => {
+  it("mounts the existing roster and lineup dashboards on the setup routes", () => {
     const routeArea = appSource.slice(appSource.indexOf('case "admin-rosters"'), appSource.indexOf('case "admin-summary"'));
-    expect(routeArea).toContain("RosterBaselineReadinessPage");
-    expect(routeArea).not.toContain("AdminRostersPage");
-    expect(routeArea).not.toContain("AdminLineupPage");
+    expect(routeArea).toContain("AdminRostersPage");
+    expect(routeArea).toContain("AdminLineupPage");
+    expect(routeArea).not.toContain("<RosterBaselineReadinessPage matchId={route.matchId} />");
   });
 
-  it("contains import-only controls and no member/starter/captain/lock/correction mutation action", () => {
-    const page = appSource.slice(appSource.indexOf("function RosterBaselineReadinessPage"), appSource.indexOf("function AdminRostersPage"));
-    expect(page).toContain("api.importRosterBaseline");
-    expect(page).toContain("Import ${teamSide} baseline");
-    expect(page).not.toContain("Select starter");
-    expect(page).not.toContain("Set captain");
-    expect(page).not.toContain("Confirm");
-    expect(page).not.toContain("members.map");
+  it("shows source binding, bounded policy values and privacy state", () => {
+    const page = appSource.slice(appSource.indexOf("function AdminRostersPage"), appSource.indexOf("function AdminLineupPage"));
+    expect(page).toContain("RM-08 Policy");
+    expect(page).toContain("SOURCE_BINDING_UNAVAILABLE");
+    expect(page).toContain("FIRST COMPETITION DATE UNRESOLVED");
+    expect(page).toContain("PUBLIC ALLOWLIST ONLY");
+    expect(page).toContain("Tournament roster");
   });
 });
