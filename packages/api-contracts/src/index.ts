@@ -1885,7 +1885,6 @@ export type PublicRecentAction =
 
 export type PublicScoreboardProjection = {
   matchId: string;
-  currentSeq: number;
   homeTeamName?: string | null;
   awayTeamName?: string | null;
   homeScore: number;
