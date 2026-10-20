@@ -3308,7 +3308,7 @@ function usePublicProjectionRealtime(
       }
 
       const publicSetter = setProjection as React.Dispatch<React.SetStateAction<PublicScoreboardProjection | null>>;
-      publicSetter((current) => applyRealtimeProjectionUpdate(current, next, matchId));
+      publicSetter((current) => applyRealtimeProjectionUpdate(current, next));
       onProjectionReceivedRef.current?.();
     };
 
@@ -6217,7 +6217,7 @@ function PublicScoreboardPage({ matchId }: { matchId: string }) {
     try {
       const next = await api.getPublicScoreboard(matchId, request.controller.signal);
       if (!isCurrentProjectionRequest(request)) return;
-      setProjection((current) => applyRealtimeProjectionUpdate(current, next, matchId));
+      setProjection((current) => applyRealtimeProjectionUpdate(current, next));
       setProjectionReceivedAtMs(Date.now());
       setMessage(null);
     } catch (error) {
@@ -6327,7 +6327,7 @@ function PublicScoreboardDisplayPage({ matchId }: { matchId: string }) {
     try {
       const next = await api.getPublicScoreboard(matchId, request.controller.signal);
       if (!isCurrentProjectionRequest(request)) return;
-      setProjection((current) => applyRealtimeProjectionUpdate(current, next, matchId));
+      setProjection((current) => applyRealtimeProjectionUpdate(current, next));
       setProjectionReceivedAtMs(Date.now());
       setMessage(null);
     } catch (error) {
