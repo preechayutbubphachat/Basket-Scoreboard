@@ -236,6 +236,59 @@ describe("alpha replay timeline", () => {
     }
   });
 
+  it("replays alpha and legacy compensating score corrections at their own sequence", async () => {
+    const { pool } = createReplayPool({ events: [
+      eventRow(1, "SCORE_ADDED", { teamSide: "HOME", points: 2 }),
+      eventRow(2, "SCORE_ADDED", { teamSide: "AWAY", points: 1 }),
+      eventRow(3, "SHOT_CLOCK_RESET", { resetToMs: 24000 }),
+      eventRow(4, "SCORE_CORRECTED", {
+        correctedEventSeq: 2,
+        correctedEventType: "SCORE_ADDED",
+        correctionKind: "SCORE_UNDO",
+        oldValue: { teamSide: "AWAY", points: 1 },
+        newValue: { teamSide: "AWAY", points: 0 },
+        delta: { teamSide: "AWAY", points: -1 }
+      }),
+      eventRow(5, "SCORE_ADDED", { teamSide: "AWAY", points: 3 }),
+      eventRow(6, "SCORE_REMOVED_BY_CORRECTION", {
+        originalScoreSeq: 5,
+        teamSide: "AWAY",
+        points: 3
+      }),
+      eventRow(7, "GAME_CLOCK_STARTED", { remainingMsBeforeStart: 500000 }),
+      eventRow(8, "GAME_CLOCK_STOPPED", { remainingMsAfterStop: 498000 })
+    ] });
+    const app = buildApiApp({ pool: pool as never });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/v1/matches/${matchId}/replay`,
+        headers: { "x-dev-user-role": "ADMIN" }
+      });
+      expect(response.statusCode).toBe(200);
+      const items = response.json().items;
+      expect(items).toHaveLength(8);
+      expect(items.map((item: { scoreAfter: unknown }) => item.scoreAfter)).toEqual([
+        { home: 2, away: 0 },
+        { home: 2, away: 1 },
+        null,
+        { home: 2, away: 0 },
+        { home: 2, away: 3 },
+        { home: 2, away: 0 },
+        null,
+        null
+      ]);
+      expect(items[1].eventType).toBe("SCORE_ADDED");
+      expect(items[3]).toMatchObject({
+        eventType: "SCORE_CORRECTED",
+        correctionDetails: { correctedEventSeq: 2, correctionKind: "SCORE_UNDO" }
+      });
+      expect(items[5].eventType).toBe("SCORE_REMOVED_BY_CORRECTION");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("filters replay items by event group and caps the requested limit", async () => {
     const { pool } = createReplayPool();
     const app = buildApiApp({ pool: pool as never });

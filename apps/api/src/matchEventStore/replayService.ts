@@ -155,7 +155,11 @@ function toReplayItem(
   const teamSide = parseTeamSide(payload.teamSide);
   const eventType = String(event.eventType);
   const eventGroup = eventGroups[eventType] ?? "OTHER";
-  const scoreAfter = eventType === "SCORE_ADDED" ? applyScore(payload, teamSide, score) : null;
+  const scoreAfter = eventType === "SCORE_ADDED"
+    ? applyScore(payload, teamSide, score)
+    : eventType === "SCORE_CORRECTED" || eventType === "SCORE_REMOVED_BY_CORRECTION"
+      ? applyScoreRemoval(eventType, payload, score)
+      : null;
   const player = buildPlayer(payload);
   const voidedByCorrection = voidedConsequenceCorrections.get(event.eventId) ?? null;
   const title = buildTitle(eventType, payload, teamSide);
@@ -202,6 +206,29 @@ function applyScore(
   }
   if (teamSide === "AWAY") {
     score.away += points;
+  }
+  return { ...score };
+}
+
+/**
+ * Replays compensating score events in sequence without rewriting the original
+ * SCORE_ADDED row. Alpha SCORE_CORRECTED carries its original score in oldValue;
+ * the legacy SCORE_REMOVED_BY_CORRECTION uses top-level teamSide/points.
+ */
+function applyScoreRemoval(
+  eventType: "SCORE_CORRECTED" | "SCORE_REMOVED_BY_CORRECTION",
+  payload: Record<string, unknown>,
+  score: { home: number; away: number }
+) {
+  const original = eventType === "SCORE_CORRECTED" ? payloadRecord(payload.oldValue) : payload;
+  const teamSide = parseTeamSide(original.teamSide);
+  const points = numberOrDefault(original.points, 0);
+  if (!teamSide || !Number.isInteger(points) || points <= 0) return null;
+
+  if (teamSide === "HOME") {
+    score.home = Math.max(0, score.home - points);
+  } else {
+    score.away = Math.max(0, score.away - points);
   }
   return { ...score };
 }
