@@ -77,6 +77,7 @@ export function buildPublicScoreboardDisplayModel(
     arenaFrameClassName: [
       "public-display-frame",
       "arena-layout",
+      "arena-live-scoreboard-frame",
       hasRenderableArenaMatchMetadata(matchMetadata) ? "has-match-metadata" : "",
       `arena-background-${theme.backgroundStyle.toLowerCase().replace(/_/g, "-")}`,
       theme.flags.textOnlyFallback ? "theme-text-only" : "",
@@ -357,16 +358,16 @@ const defaultTournamentColors: ResolvedDisplayColors = {
 };
 
 const defaultHomeColors: ResolvedDisplayColors = {
-  primaryColor: "#38bdf8",
+  primaryColor: "#ef4444",
   secondaryColor: "#101827",
-  accentColor: "#38bdf8",
+  accentColor: "#ef4444",
   textColor: "#f8fafc"
 };
 
 const defaultAwayColors: ResolvedDisplayColors = {
-  primaryColor: "#f97316",
+  primaryColor: "#0ea5e9",
   secondaryColor: "#101827",
-  accentColor: "#f97316",
+  accentColor: "#0ea5e9",
   textColor: "#f8fafc"
 };
 
