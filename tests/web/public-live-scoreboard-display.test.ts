@@ -84,6 +84,27 @@ describe("public live scoreboard arena visual contract", () => {
     expect(componentSource).not.toContain("matchCodeLabel");
   });
 
+  test("scopes the approved neon arena design without changing other public scenes", () => {
+    expect(displayModelSource).toContain('"arena-live-scoreboard-frame"');
+    expect(displayModelSource).toContain('primaryColor: "#ef4444"');
+    expect(displayModelSource).toContain('primaryColor: "#0ea5e9"');
+    expect(displayModelSource).toContain('colors: DisplayColors | null | undefined');
+    expect(styles).toContain("BSB Arena V1:");
+    expect(styles).toContain(".arena-live-scoreboard-frame .public-display-team");
+    expect(styles).toContain(".arena-live-scoreboard-frame .central-clock-panel");
+    expect(styles).toContain("aspect-ratio: 16 / 9");
+  });
+
+  test("reflows the live public display into scrollable tablet and phone layouts", () => {
+    expect(styles).toContain("@media (max-width: 760px), (max-width: 1100px) and (orientation: portrait)");
+    expect(styles).toContain(".public-display-shell:has(> .arena-live-scoreboard-frame)");
+    expect(styles).toContain("min-height: 100dvh");
+    expect(styles).toContain('grid-template-areas: "home away" "clocks clocks"');
+    expect(styles).toContain("@media (max-width: 600px)");
+    expect(styles).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(styles).toContain(".arena-live-scoreboard-frame .compact-system-strip");
+  });
+
   test("does not derive bonus or fabricate recent activity", () => {
     expect(componentSource).toContain('className="arena-neutral-value">--');
     expect(componentSource).not.toMatch(/fouls\s*[><=]+\s*\d+/);

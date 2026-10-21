@@ -2760,3 +2760,310 @@ th {
 @media (prefers-reduced-motion: reduce) {
   .score-pulse, .public-display-shot-clock.shot-clock-critical { animation-duration: var(--arena-reduced-motion-duration); animation-iteration-count: 1; }
 }
+
+/* BSB Arena V1: approved desktop neon visual language with responsive public-only layout. */
+/* The existing 16:9 broadcast grid remains the default for projectors and TVs.
+   All enhancements are scoped to the public LIVE arena, never the other scenes. */
+.arena-live-scoreboard-frame {
+  background:
+    radial-gradient(ellipse at 3% 6%, rgba(239, 68, 68, 0.14), transparent 34%),
+    radial-gradient(ellipse at 96% 7%, rgba(14, 165, 233, 0.18), transparent 36%),
+    linear-gradient(170deg, #02050d, #08111f 55%, #02050d);
+  border-color: rgba(56, 189, 248, 0.48);
+}
+
+.arena-live-scoreboard-frame .public-display-team {
+  background:
+    radial-gradient(ellipse at 50% 10%, color-mix(in srgb, var(--team-accent) 22%, transparent), transparent 64%),
+    repeating-linear-gradient(105deg, transparent 0 27px, rgba(255, 255, 255, 0.018) 27px 28px),
+    linear-gradient(180deg, color-mix(in srgb, var(--team-secondary) 75%, #02040a), #02040a 90%);
+  border: 2px solid var(--team-accent);
+  border-radius: 18px;
+}
+
+.arena-live-scoreboard-frame .home-panel {
+  box-shadow: inset 0 0 40px color-mix(in srgb, var(--team-accent) 14%, transparent),
+    0 0 23px color-mix(in srgb, var(--team-accent) 29%, transparent);
+}
+
+.arena-live-scoreboard-frame .away-panel {
+  box-shadow: inset 0 0 40px color-mix(in srgb, var(--team-accent) 14%, transparent),
+    0 0 23px color-mix(in srgb, var(--team-accent) 29%, transparent);
+}
+
+.arena-live-scoreboard-frame .public-display-team-badge {
+  border-radius: 0 0 14px 14px;
+}
+
+.arena-live-scoreboard-frame .central-clock-panel {
+  background: linear-gradient(180deg, rgba(2, 8, 22, 0.96), rgba(2, 6, 23, 0.88));
+}
+
+.arena-live-scoreboard-frame .public-display-shot-clock {
+  box-shadow: inset 0 0 20px rgba(248, 47, 47, 0.19), 0 0 18px rgba(239, 68, 68, 0.16);
+}
+
+.arena-live-scoreboard-frame .recent-event-ticker {
+  background: linear-gradient(95deg, rgba(127, 29, 29, 0.4), rgba(9, 20, 42, 0.98) 45%, rgba(14, 51, 112, 0.36));
+  border-color: rgba(56, 189, 248, 0.44);
+  opacity: 1;
+}
+.arena-live-scoreboard-frame .recent-event-ticker strong {
+  color: #f8fafc;
+  font-size: clamp(1rem, 2.7vh, 1.75rem);
+}
+.arena-live-scoreboard-frame .compact-system-strip div {
+  background: rgba(3, 9, 23, 0.94);
+  border: 1px solid rgba(71, 104, 145, 0.22);
+  border-radius: 8px;
+}
+
+/* Tablets in portrait and all narrow phone orientations are scrollable,
+   content-first scoreboard views rather than a clipped 16:9 thumbnail. */
+@media (max-width: 760px), (max-width: 1100px) and (orientation: portrait) {
+  .public-display-shell:has(> .arena-live-scoreboard-frame) {
+    align-items: stretch;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: clip;
+    padding: 0;
+  }
+
+  .arena-live-scoreboard-frame {
+    --arena-safe-x: clamp(10px, 2.4vw, 22px);
+    --arena-safe-y: clamp(12px, 2.4vw, 22px);
+    aspect-ratio: auto;
+    border-radius: 0;
+    gap: clamp(10px, 2vw, 18px);
+    grid-template-rows: auto auto auto auto;
+    height: auto;
+    max-height: none;
+    max-width: none;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+    padding: var(--arena-safe-y) var(--arena-safe-x);
+    width: 100%;
+  }
+  .arena-live-scoreboard-frame.has-match-metadata {
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .arena-live-scoreboard-frame .arena-header,
+  .arena-live-scoreboard-frame .arena-header.has-match-metadata {
+    align-content: start;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    min-height: 0;
+    padding: 52px 8px 12px;
+  }
+  .kiosk-mode .arena-live-scoreboard-frame .arena-header {
+    padding-top: 8px;
+  }
+  .arena-live-scoreboard-frame .arena-brand-lockup {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .arena-live-scoreboard-frame .arena-header-meta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    padding-inline: 0;
+  }
+  .arena-live-scoreboard-frame .arena-live-badge {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .arena-live-scoreboard-frame .arena-match-metadata {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .arena-live-scoreboard-frame .arena-tournament-title {
+    font-size: clamp(1.1rem, 3vw, 2.2rem);
+    max-width: none;
+    white-space: normal;
+  }
+  .arena-live-scoreboard-frame .arena-tournament-logo {
+    height: clamp(36px, 6vw, 60px);
+    width: clamp(36px, 6vw, 60px);
+  }
+  .arena-live-scoreboard-frame .arena-display-actions {
+    max-width: calc(100% - 20px);
+    right: 10px;
+    top: 8px;
+  }
+  .arena-live-scoreboard-frame .arena-display-actions a,
+  .arena-live-scoreboard-frame .arena-display-actions button {
+    min-height: 36px;
+  }
+
+  .arena-live-scoreboard-frame .arena-scoreboard-grid {
+    display: grid;
+    gap: clamp(9px, 1.8vw, 18px);
+    grid-template-areas: "home away" "clocks clocks";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+  }
+  .arena-live-scoreboard-frame .home-panel { grid-area: home; }
+  .arena-live-scoreboard-frame .away-panel { grid-area: away; }
+  .arena-live-scoreboard-frame .central-clock-panel {
+    gap: 12px;
+    grid-area: clocks;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto minmax(155px, auto);
+    padding: 12px;
+  }
+  .arena-live-scoreboard-frame .arena-period-chip { grid-column: 1 / -1; }
+  .arena-live-scoreboard-frame .public-display-game-clock,
+  .arena-live-scoreboard-frame .public-display-shot-clock {
+    border: 1px solid rgba(103, 232, 249, 0.35);
+    border-radius: 12px;
+    margin: 0;
+    min-height: 155px;
+    padding: 12px 8px;
+  }
+  .arena-live-scoreboard-frame .public-display-shot-clock {
+    border-color: rgba(239, 68, 68, 0.72);
+  }
+  .arena-live-scoreboard-frame .public-display-game-clock strong {
+    font-size: clamp(3.5rem, 10vw, 7rem);
+  }
+  .arena-live-scoreboard-frame .public-display-shot-clock strong {
+    font-size: clamp(3.6rem, 9vw, 6rem);
+  }
+  .arena-live-scoreboard-frame .public-display-team {
+    gap: 9px;
+    grid-template-rows: auto auto minmax(110px, 1fr) auto;
+    min-height: clamp(300px, 44vw, 480px);
+    padding: 12px 10px;
+  }
+  .arena-live-scoreboard-frame .public-display-team.has-team-logo {
+    grid-template-rows: auto auto minmax(110px, 1fr) auto;
+  }
+  .arena-live-scoreboard-frame .public-display-team h2 {
+    font-size: clamp(1.1rem, 2.8vw, 2.2rem);
+    min-height: 1.1em;
+  }
+  .arena-live-scoreboard-frame .public-display-score-value {
+    font-size: clamp(5.5rem, 16vw, 10rem);
+  }
+  .arena-live-scoreboard-frame .public-display-team-metrics {
+    min-height: 0;
+  }
+  .arena-live-scoreboard-frame .public-display-team-metrics dt {
+    font-size: clamp(0.56rem, 1.55vw, 0.82rem);
+    white-space: normal;
+  }
+  .arena-live-scoreboard-frame .compact-system-strip {
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    opacity: 0.85;
+  }
+  .arena-live-scoreboard-frame .compact-system-strip div {
+    border-radius: 8px;
+  }
+  .arena-live-scoreboard-frame .recent-event-ticker { min-height: 52px; }
+}
+
+@media (max-width: 600px) {
+  .arena-live-scoreboard-frame .arena-header,
+  .arena-live-scoreboard-frame .arena-header.has-match-metadata {
+    gap: 5px;
+    padding-inline: 0;
+  }
+  .arena-live-scoreboard-frame .arena-brand-lockup { gap: 8px; }
+  .arena-live-scoreboard-frame .arena-tournament-title {
+    font-size: clamp(1rem, 4.5vw, 1.4rem);
+    overflow-wrap: anywhere;
+  }
+  .arena-live-scoreboard-frame .arena-match-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .arena-live-scoreboard-frame .arena-match-metadata > div {
+    padding: 5px 4px 0;
+  }
+  .arena-live-scoreboard-frame .arena-live-badge {
+    font-size: 0.74rem;
+    padding: 8px 9px;
+  }
+  .arena-live-scoreboard-frame .arena-scoreboard-grid { gap: 8px; }
+  .arena-live-scoreboard-frame .public-display-team {
+    border-radius: 12px;
+    gap: 6px;
+    grid-template-rows: auto auto minmax(90px, 1fr) auto;
+    min-height: 285px;
+    padding: 9px 5px;
+  }
+  .arena-live-scoreboard-frame .public-display-team.has-team-logo {
+    grid-template-rows: auto auto minmax(90px, 1fr) auto;
+  }
+  .arena-live-scoreboard-frame .public-display-team-badge {
+    margin-top: -9px;
+    min-width: 0;
+    padding: 8px 15px;
+  }
+  .arena-live-scoreboard-frame .public-display-team-badge span { font-size: 0.8rem; }
+  .arena-live-scoreboard-frame .public-display-team h2 {
+    font-size: clamp(0.95rem, 4vw, 1.5rem);
+    line-height: 1.08;
+  }
+  .arena-live-scoreboard-frame .public-display-team-watermark { opacity: 0.08; }
+  .arena-live-scoreboard-frame .public-display-score-value {
+    font-size: clamp(4.8rem, 21vw, 7.6rem);
+    line-height: 0.86;
+  }
+  .arena-live-scoreboard-frame .public-display-team-metrics div {
+    gap: 3px;
+    padding: 7px 2px;
+  }
+  .arena-live-scoreboard-frame .public-display-team-metrics dt {
+    font-size: clamp(0.46rem, 1.95vw, 0.65rem);
+    overflow-wrap: anywhere;
+  }
+  .arena-live-scoreboard-frame .public-display-team-metrics dd { font-size: 1.05rem; }
+  .arena-live-scoreboard-frame .arena-timeout-dots {
+    flex-wrap: wrap;
+    gap: 2px;
+    justify-content: center;
+  }
+  .arena-live-scoreboard-frame .arena-timeout-dots i {
+    height: 6px;
+    width: 6px;
+  }
+  .arena-live-scoreboard-frame .central-clock-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    padding: 8px;
+  }
+  .arena-live-scoreboard-frame .public-display-game-clock,
+  .arena-live-scoreboard-frame .public-display-shot-clock {
+    min-height: 132px;
+    padding: 12px;
+  }
+  .arena-live-scoreboard-frame .public-display-game-clock strong {
+    font-size: clamp(4rem, 17vw, 6.5rem);
+  }
+  .arena-live-scoreboard-frame .public-display-shot-clock strong {
+    font-size: clamp(4rem, 16vw, 6.2rem);
+  }
+  .arena-live-scoreboard-frame .recent-event-ticker {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 12px;
+  }
+  .arena-live-scoreboard-frame .recent-event-ticker strong {
+    font-size: clamp(0.95rem, 3.5vw, 1.35rem);
+    overflow-wrap: anywhere;
+  }
+  .arena-live-scoreboard-frame .compact-system-strip { gap: 6px; }
+  .arena-live-scoreboard-frame .compact-system-strip div { padding: 7px; }
+  .arena-live-scoreboard-frame .compact-system-strip strong { overflow-wrap: anywhere; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-live-scoreboard-frame .public-display-score-value {
+    animation: none;
+  }
+}
