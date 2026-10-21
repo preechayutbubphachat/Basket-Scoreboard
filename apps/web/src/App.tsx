@@ -1215,7 +1215,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
   }
 
   return (
-    <section className="panel">
+    <section className="panel bsb-match-pairing">
       <div className="page-header">
         <div>
           <h1>Tournament Schedule</h1>
@@ -2618,7 +2618,7 @@ function TournamentLiveDashboardPage({
   const scheduleHref = buildAdminTournamentScheduleLink(tournamentId);
 
   return (
-    <section className="panel">
+    <section className="panel bsb-main-live-dashboard">
       <div className="page-header">
         <div>
           <p className="eyebrow">{mode === "admin" ? "Admin" : "Operator"}</p>
