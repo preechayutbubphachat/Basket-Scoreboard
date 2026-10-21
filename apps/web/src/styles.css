@@ -2760,3 +2760,19 @@ th {
 @media (prefers-reduced-motion: reduce) {
   .score-pulse, .public-display-shot-clock.shot-clock-critical { animation-duration: var(--arena-reduced-motion-duration); animation-iteration-count: 1; }
 }
+
+/* BSB live-match dark surface compatibility: shared legacy cards */
+.live-match-shell .panel,
+.live-match-shell .state-strip > div,
+.live-match-shell .inline-panel,
+.live-match-shell .foul-count {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.live-match-shell .state-strip dt,
+.live-match-shell .foul-count span,
+.live-match-shell .panel .muted {
+  color: var(--color-text-secondary);
+}
