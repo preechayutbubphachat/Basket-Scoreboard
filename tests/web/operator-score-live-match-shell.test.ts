@@ -77,7 +77,7 @@ describe("operator Score LiveMatchShell adoption", () => {
     expect(scoreSource).toContain("<LiveMatchShell");
     expect(scoreSource).toContain("buildLiveMatchPresentationContext");
     expect(scoreSource).toContain("buildLiveMatchNavigation");
-    expect(scoreSource).toContain("api.getEffectiveMatchAccess(matchId)");
+    expect(scoreSource).toContain("api.getEffectiveMatchAccess(matchId, request.controller.signal)");
     expect(scoreSource).toContain("usePublicProjectionRealtime(");
     expect(scoreSource).toContain("window.setInterval(");
     expect(scoreSource).toContain("createScoreIntent({");

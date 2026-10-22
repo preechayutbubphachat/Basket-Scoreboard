@@ -7,6 +7,7 @@ import "./styles/live-match-shell.css";
 import "./styles/clock-workspace.css";
 import "./styles/score-workspace.css";
 import "./styles.css";
+import "./styles/bsb-design-adoption.css";
 
 const rootElement = document.getElementById("root");
 

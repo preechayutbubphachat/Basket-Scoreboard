@@ -82,9 +82,9 @@ describe("RM-05-P1 Score workspace", () => {
     );
 
     for (const ownerSignal of [
-      "api.getMatchProjection(matchId)",
-      "api.getMatchRosters(matchId)",
-      "api.getEffectiveMatchAccess(matchId)",
+      "api.getMatchProjection(matchId, request.controller.signal)",
+      "api.getMatchRosters(matchId, request.controller.signal)",
+      "api.getEffectiveMatchAccess(matchId, request.controller.signal)",
       "usePublicProjectionRealtime(",
       "window.setInterval(",
       "api.syncMatch(matchId",
