@@ -41,12 +41,23 @@ describe("BSB design adoption — existing working operator routes", () => {
     expect(page).toContain("api.createTournamentMatch(tournamentId, createTournamentMatchPayload(matchForm))");
     expect(page).toContain("buildVenueCourtOptions(venues)");
     expect(page).toContain("<ScheduleTable matches={matches}");
+    expect(page).toContain('aria-label="Pairing match review"');
+    expect(page).toContain("const selectedMatch = matches.find(");
+    expect(page).toContain("buildScheduleRowMeta(selectedMatch)");
+    expect(page).toContain("selectedMatch.operations?.operatorScoreUrl");
+    expect(page).toContain("Select scheduled match");
+    expect(page).toContain("This view does not change pairings.");
+    expect(css).toContain(".bsb-pairing-review__details");
   });
 
   test("keeps score controls server-guarded and correction separate", () => {
     expect(score).toContain("disabled={!controlsEnabled || commandPending}");
     expect(score).toContain("onScore(panel.teamSide, button.points)");
     expect(score).toContain("No player attribution");
+    const scorePage = pageSource("function OperatorScorePage", "function OperatorFoulPage");
+    expect(scorePage).toContain('className="stack bsb-score-control-screen"');
+    expect(css).toContain(".bsb-score-control-screen > .panel");
+    expect(css).toContain(".bsb-score-control-screen > .score-control");
     expect(score).toContain('aria-label="Score correction entry"');
     expect(css).toContain(".score-workspace .score-workspace__score-actions button:disabled");
     expect(css).toContain("opacity: .44");
