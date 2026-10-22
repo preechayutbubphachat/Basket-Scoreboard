@@ -41,6 +41,7 @@ import { AuthenticatedDashboardShell, type AuthenticatedDashboardNavigationItem 
 import { ClockWorkspace } from "./components/ClockWorkspace";
 import { LiveMatchShell } from "./components/LiveMatchShell";
 import { ScoreWorkspace } from "./components/ScoreWorkspace";
+import { buildScoreWorkspaceFacts } from "./lib/scoreWorkspaceFacts";
 import { ScoreCorrectionWorkspace } from "./components/ScoreCorrectionWorkspace";
 import { PublicDisplayShell } from "./components/PublicDisplayShell";
 import { PublicFinalSummaryDisplayScene } from "./components/PublicFinalSummaryDisplayScene";
@@ -3519,6 +3520,7 @@ function OperatorLiveMatchFrame({
 function OperatorScorePage({ matchId }: { matchId: string }) {
   const { api, currentUser, roleSummary, logout } = useCurrentUser();
   const [projection, setProjection] = useState<ScoreboardProjection | null>(null);
+  const clockNowMs = useLiveClockNow(Boolean(projection?.gameClock?.running || projection?.shotClock?.running));
   const [rosters, setRosters] = useState<MatchRostersResponse | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveMatchAccess | null>(null);
   const [accessPhase, setAccessPhase] = useState<"loading" | "ready" | "error">("loading");
@@ -3768,6 +3770,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
   const connection = buildOperatorScoreConnection(realtimeState, isReadOnly);
   const commandStatus = buildOperatorScoreCommandStatus(pendingKey, message);
   const correctionNavigationItem = liveMatchNavigation.find((item) => item.id === "corrections") ?? null;
+  const scoreMatchFacts = projection ? buildScoreWorkspaceFacts(projection, clockNowMs) : undefined;
   const scoreWorkspacePanels = projection
     ? buildScoreControlPanels(projection).map((panel) => ({
         ...panel,
@@ -3849,6 +3852,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
               ) : null}
               <ScoreWorkspace
                 commandPending={false}
+                {...(scoreMatchFacts ? { matchFacts: scoreMatchFacts } : {})}
                 connectionLabel={getRealtimeConnectionLabel(realtimeState)}
                 controlsEnabled={canUseLiveMatchControls(projection, canSubmitScore, false) && !scoreQueue.pauseReason}
                 scoreControlsVisible={canSubmitScore}
