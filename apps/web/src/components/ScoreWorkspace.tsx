@@ -19,6 +19,15 @@ export type ScoreWorkspaceProps = {
   commandPending: boolean;
   connectionLabel: string;
   controlsEnabled: boolean;
+  matchFacts?: {
+    gameClockLabel: string;
+    gameClockState: string;
+    shotClockLabel: string;
+    shotClockState: string;
+    homeTimeoutsRemaining: string;
+    awayTimeoutsRemaining: string;
+  };
+
   scoreControlsVisible: boolean;
   correctionEntry?: {
     blocked?: boolean;
@@ -50,6 +59,7 @@ export function ScoreWorkspace({
   commandPending,
   connectionLabel,
   controlsEnabled,
+  matchFacts,
   scoreControlsVisible,
   correctionEntry,
   currentSeq,
@@ -70,6 +80,35 @@ export function ScoreWorkspace({
         </div>
         <p>Record one, two, or three points for the intended team. Player attribution remains optional.</p>
       </header>
+
+      {matchFacts ? (
+        <section className="score-workspace__match-facts" aria-label="Read-only match clocks and timeouts">
+          <div className="score-workspace__match-facts-heading">
+            <strong>Live match overview</strong>
+            <span>Read-only display · match projection</span>
+          </div>
+          <dl>
+            <div>
+              <dt>Game clock</dt>
+              <dd>{matchFacts.gameClockLabel}</dd>
+              <small>{matchFacts.gameClockState}</small>
+            </div>
+            <div>
+              <dt>Shot clock</dt>
+              <dd>{matchFacts.shotClockLabel}</dd>
+              <small>{matchFacts.shotClockState}</small>
+            </div>
+            <div>
+              <dt>Home timeouts left</dt>
+              <dd>{matchFacts.homeTimeoutsRemaining}</dd>
+            </div>
+            <div>
+              <dt>Away timeouts left</dt>
+              <dd>{matchFacts.awayTimeoutsRemaining}</dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       <div className="score-workspace__domains">
         {panels.map((panel) => {
