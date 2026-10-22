@@ -239,6 +239,107 @@
   color: #d4f1ff;
 }
 
+/*
+ * Match Pairing selected-match review reads the same schedule result already
+ * rendered in the table. It never creates a separate editable local pairing.
+ */
+.bsb-match-pairing .bsb-pairing-review {
+  background: linear-gradient(145deg, #0e1e34, #091425);
+  border: 1px solid rgba(103, 232, 249, .55);
+  border-radius: 14px;
+  color: #f8fafc;
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 16px;
+  min-width: 0;
+  padding: clamp(14px, 2vw, 22px);
+}
+.bsb-pairing-review__selector {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
+}
+.bsb-pairing-review__selector h2 {
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+  margin: 0 0 6px;
+}
+.bsb-pairing-review__selector p { margin: 0; }
+.bsb-pairing-review__selector label {
+  color: #cbd5e1;
+  display: grid;
+  font-weight: 700;
+  gap: 6px;
+}
+.bsb-pairing-review__selector select {
+  background: #070f1e;
+  border: 1px solid #5885a5;
+  border-radius: 8px;
+  color: #f8fafc;
+  min-height: 44px;
+  min-width: 0;
+  padding: 6px 10px;
+}
+.bsb-pairing-review__selector option {
+  background: #101b30;
+  color: #f8fafc;
+}
+.bsb-pairing-review__details {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+  min-width: 0;
+}
+.bsb-pairing-review__details > div {
+  background: #060e1d;
+  border: 1px solid #324b67;
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+.bsb-pairing-review__details span {
+  color: #afc6de;
+  font-size: .75rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.bsb-pairing-review__details strong {
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+}
+.bsb-pairing-review__details .bsb-pairing-review__action {
+  align-content: center;
+  background: transparent;
+  border-color: transparent;
+}
+.bsb-pairing-review__action a {
+  background: #174969;
+  border: 1px solid #38bdf8;
+  color: #eff9ff;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Only the operator Score route receives this parent treatment; do not change
+ * other authenticated match-operation pages or control semantics. */
+.bsb-score-control-screen > .panel {
+  background: linear-gradient(145deg, #101d32, #0a1425);
+  border: 1px solid #334b68;
+  border-radius: 12px;
+  color: #f8fafc;
+}
+.bsb-score-control-screen > .panel .muted {
+  color: #b5c7dc;
+}
+.bsb-score-control-screen > .score-control {
+  border-color: #40688d;
+}
+.bsb-score-control-screen > .panel strong {
+  color: #f8fafc;
+}
+
 /* Score Control: maintain authoritative +1/+2/+3 buttons and their guards.
    A stronger broadcast appearance must never look enabled while disabled. */
 .score-workspace .score-workspace__domain {
@@ -324,6 +425,13 @@
   }
 }
 @media (max-width: 700px) {
+  .bsb-pairing-review__selector {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bsb-pairing-review__details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .panel.bsb-main-live-dashboard,
   .panel.bsb-match-pairing { padding: 12px; }
   .bsb-main-live-dashboard .state-strip {
@@ -338,6 +446,8 @@
   .score-workspace .score-workspace__domain { padding: 12px; }
 }
 @media (max-width: 360px) {
+  .bsb-pairing-review__details { grid-template-columns: minmax(0, 1fr); }
+
   .bsb-main-live-dashboard .state-strip { grid-template-columns: minmax(0, 1fr); }
   .score-workspace .score-workspace__score-actions { gap: 6px; }
   .score-workspace .score-workspace__score-actions button {
