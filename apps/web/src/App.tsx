@@ -1111,6 +1111,7 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
   const [courtForm, setCourtForm] = useState<CourtFormState>(createCourtFormState);
   const [matchForm, setMatchForm] = useState(createScheduledMatchFormState);
   const [filter, setFilter] = useState<ScheduleStatusFilter>("all");
+  const [selectedMatchId, setSelectedMatchId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [savingSetup, setSavingSetup] = useState<"team" | "match" | "venue" | "court" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string; code?: string } | null>(null);
@@ -1143,6 +1144,11 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
   }, [api, tournamentId]);
 
   const matches = filterScheduleMatches(schedule?.matches ?? [], filter);
+  const selectedMatch = matches.find((candidate) => candidate.matchId === selectedMatchId) ?? null;
+  const selectedMatchMeta = selectedMatch ? buildScheduleRowMeta(selectedMatch) : null;
+  const selectedMatchOpsHref = selectedMatch
+    ? selectedMatch.operations?.operatorScoreUrl ?? buildOperatorMatchScoreLink(selectedMatch.matchId)
+    : null;
   const tournamentTeams = teams.filter((team) => team.tournamentId === null || team.tournamentId === tournamentId);
   const courtOptions = buildVenueCourtOptions(venues);
   const selectedCourtPreview = buildSelectedCourtPreview(venues, matchForm.courtId);
@@ -1481,6 +1487,51 @@ function AdminTournamentSchedulePage({ tournamentId }: { tournamentId: string })
         <section className="empty-state">
           <h2>No scheduled matches</h2>
           <p>{schedule?.matches.length ? "No matches match the current filter." : "Create a scheduled match to populate this tournament schedule."}</p>
+        </section>
+      ) : null}
+      {matches.length > 0 ? (
+        <section className="bsb-pairing-review" aria-label="Pairing match review">
+          <div className="bsb-pairing-review__selector">
+            <div>
+              <h2>Selected match details</h2>
+              <p className="muted">Review the authoritative scheduled pairing before opening its existing match operations.</p>
+            </div>
+            <label htmlFor="bsb-pairing-selected-match">
+              Select scheduled match
+              <select
+                id="bsb-pairing-selected-match"
+                value={selectedMatch?.matchId ?? ""}
+                onChange={(event) => setSelectedMatchId(event.target.value)}
+              >
+                <option value="">Choose a match</option>
+                {matches.map((match) => {
+                  const row = buildScheduleRowMeta(match);
+                  return <option key={match.matchId} value={match.matchId}>{row.matchupLabel} · {row.scheduleLabel}</option>;
+                })}
+              </select>
+            </label>
+          </div>
+          {selectedMatch && selectedMatchMeta ? (
+            <div className="bsb-pairing-review__details" aria-live="polite">
+              <div><span>Fixture</span><strong>{selectedMatchMeta.matchupLabel}</strong></div>
+              <div><span>Scheduled</span><strong>{selectedMatchMeta.scheduleLabel}</strong></div>
+              <div><span>Court</span><strong>{selectedMatchMeta.locationLabel}</strong></div>
+              <div><span>Status</span><strong>{selectedMatch.status}</strong></div>
+              <div><span>Score</span><strong>{selectedMatchMeta.scoreLabel}</strong></div>
+              <div className="bsb-pairing-review__action">
+                <a
+                  className="button-link secondary"
+                  href={selectedMatchOpsHref ?? "#"}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (selectedMatchOpsHref) navigate(selectedMatchOpsHref);
+                  }}
+                >
+                  Open existing match operations
+                </a>
+              </div>
+            </div>
+          ) : <p className="muted">Select a match to view its schedule and operation link. This view does not change pairings.</p>}
         </section>
       ) : null}
       {matches.length > 0 ? <ScheduleTable matches={matches} mode="admin" /> : null}
@@ -3765,7 +3816,7 @@ function OperatorScorePage({ matchId }: { matchId: string }) {
         match={liveMatchContext}
         navigation={liveMatchNavigation}
       >
-        <section className="stack" aria-label="Score workspace">
+        <section className="stack bsb-score-control-screen" aria-label="Score workspace">
           <section
             aria-atomic="true"
             aria-live="polite"
